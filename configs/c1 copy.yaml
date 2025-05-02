@@ -1,0 +1,107 @@
+general:
+  name: c1  # Identifier for this config (useful for logs/checkpoints)
+  root_dir: null  # If desired, set a base directory for saving outputs
+
+dset:
+  cls: ReflectivityDataLoader  # Main data loader class
+  prior_sampler:
+    cls: SubpriorParametricSampler  # Generates parameter samples for the reflectivity model
+    kwargs:
+      # param_ranges define the physical parameter limits for thickness, roughness, and SLD
+      param_ranges:
+        thicknesses: [1., 500.]  # Layer thickness range (Å), can adjust for neutron/X-ray
+        roughnesses: [0., 60.]   # Interface roughness range (Å)
+        slds: [0., 25.]         # Scattering length density range (×10^-6 Å^-2)
+      # bound_width_ranges define how much each parameter can vary from its initial guess
+      bound_width_ranges:
+        thicknesses: [1.0e-2, 500.]
+        roughnesses: [1.0e-2, 60.]
+        slds: [1.0e-2, 4.]
+      model_name: standard_model          # Reflectometry model type (e.g., standard multilayer)
+      max_num_layers: 2                  # Max layers in the sample
+      constrained_roughness: true        # Ensures physically realistic roughness constraints
+      max_thickness_share: 0.5           # Limits thickness proportion of individual layers
+      logdist: false                     # False => linear parameter sampling (instead of log)
+      scale_params_by_ranges: false      # If True, normalizes parameters to [-1, 1] or similar
+      scaled_range: [-1., 1.]            # Range if scaling is enabled
+      device: 'cuda'                     # GPU usage
+
+  q_generator:
+    cls: ConstantQ  # Class to generate evenly spaced Q values
+    kwargs:
+      q: [0.02, 0.15, 128]  # [min Q, max Q, number of points]
+      device: 'cuda'        # Perform generation on GPU
+
+  intensity_noise:
+    cls: BasicExpIntensityNoise  # Adds realistic counting/statistical noise to intensity
+    kwargs:
+      relative_errors: [0.0, 0.2]    # Range of fractional errors in reflectivity
+      abs_errors: 0.0               # Absolute error component (disabled here)
+      consistent_rel_err: true      # Applies a consistent error across the curve
+      logdist: false                # False => linear distribution of noise magnitude
+      apply_shift: true             # Introduces vertical shifts to mimic alignment error
+      shift_range: [-0.3, 0.3]      # Range of possible shifts (log-scale reflectivity shifts)
+      apply_scaling: true           # Introduces multiplicative scaling
+      scale_range: [-0.02, 0.02]    # A ±2% scaling factor
+      apply_background: false       # If true, adds constant background to reflectivity
+      background_range: [1.0e-10, 1.0e-8]  # Range for background noise (if enabled)
+
+  q_noise:
+    cls: BasicQNoiseGenerator   # Adds uncertainty to the Q values themselves
+    kwargs:
+      shift_std: 1.0e-3         # Global systematic shift in Q
+      noise_std: [0., 1.0e-3]   # Point-to-point variation in Q
+
+  curves_scaler:
+    cls: LogAffineCurvesScaler  # Applies log and affine transform to reflectivity data
+    kwargs:
+      weight: 0.2              # Multiplier for log(value + eps), controls compression
+      bias: 1.0                # Vertical shift after log-scaling
+      eps: 1.0e-10             # Small offset to avoid log(0)
+
+model:
+  network:
+    cls: NetworkWithPriorsConvEmb  # Convolutional model incorporating prior knowledge
+    pretrained_name: null          # Optionally specify a checkpoint to load
+    device: 'cuda'                 # Use GPU for inference/training
+    kwargs:
+      in_channels: 1               # Single-channel input (1D reflectivity)
+      hidden_channels: [32, 64, 128, 256, 512]  # Progressive CNN feature widths
+      dim_embedding: 128           # Latent embedding size
+      dim_avpool: 1               # Global average pooling dimension
+      embedding_net_activation: 'gelu'  # Activation in the embedding network
+      use_batch_norm: true         # Improves training stability
+      dim_out: 8                   # Output dimension (e.g., parameters for 2 layers)
+      layer_width: 512             # Width of MLP layers after convolution features
+      num_blocks: 6                # Number of convolutional blocks
+      repeats_per_block: 2         # Repetitions within each block, increasing network depth
+      mlp_activation: 'gelu'       # Activation within the MLP
+      dropout_rate: 0.0            # No dropout used (can enable if overfitting)
+      pretrained_embedding_net: null  # Optionally load a pretrained subnetwork
+
+training:
+  num_iterations: 10000       # Total training iterations
+  batch_size: 4096            # Number of samples per batch
+  lr: 1.0e-4                  # Learning rate for the optimizer
+  grad_accumulation_steps: 1  # Accumulate gradients if batch doesn't fit in memory
+  clip_grad_norm_max: null    # Enable gradient clipping if needed
+  train_with_q_input: False   # Include Q as input or not (False by default)
+  update_tqdm_freq: 1         # Progress bar update frequency
+  optimizer: AdamW            # AdamW => Adam optimizer with weight decay
+  trainer_kwargs:
+    optim_kwargs:
+      betas: [0.9, 0.999]     # Adam momentum parameters
+      weight_decay: 0.0005    # L2 regularization for weights
+
+  callbacks:
+    save_best_model:
+      enable: true            # Save the best model during training
+      freq: 500               # Check/deploy best model every 500 steps
+    lr_scheduler:
+      cls: StepLR             # Learning rate decays by gamma in steps
+      kwargs:
+        step_size: 500        # Decay every 500 steps
+        gamma: 0.5            # LR reduced by factor of 0.5 at each step
+
+  logger:
+    use_neptune: false         # Set true if logging to Neptune.ai
