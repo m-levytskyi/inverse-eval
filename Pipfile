@@ -6,6 +6,9 @@ name = "pypi"
 [packages]
 reflectorch = "*"
 ipykernel = "*"
+pandas = "*"
+scipy = "*"
+numpy = "*"
 
 [dev-packages]
 
