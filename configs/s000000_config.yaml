@@ -41,7 +41,7 @@ dset:
       shift_range: [-0.3, 0.3]
       apply_scaling: true
       scale_range: [-0.02, 0.02]
-      apply_background: true # Changed to true
+      apply_background: false # Changed to true # then to false to debug cuda errors
       background_range: [1.0e-10, 1.0e-8]
 
   q_noise:
