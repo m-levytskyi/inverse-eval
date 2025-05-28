@@ -1,0 +1,134 @@
+{
+  "s000000_custom": {
+    "model_name": "s000000_custom",
+    "config_name": "s000000_config",
+    "description": "Custom trained 2-layer model for s000000 data",
+    "predicted_params": [
+      299.9999850988388,
+      1100.0,
+      1.0,
+      5.000001102685928,
+      39.99999821186066,
+      8.000000029802322,
+      7.000000089406967,
+      4.999999821186066
+    ],
+    "polished_params": [
+      299.9959107251084,
+      1052.2619709798712,
+      4.94448320342637,
+      5.084253445892865,
+      61.52788786553976,
+      8.000000000000002,
+      8.049583786478518,
+      5.02102100478857
+    ],
+    "param_names": [
+      "Thickness L2",
+      "Thickness L1",
+      "Roughness L2",
+      "Roughness L1",
+      "Roughness sub",
+      "SLD L2",
+      "SLD L1",
+      "SLD sub"
+    ],
+    "fit_metrics": {
+      "chi_squared": 242.79017956234253,
+      "r_squared": 0.9721879384442017,
+      "rmse": 0.07376036907276445
+    },
+    "success": true
+  },
+  "neutron_L3_comp": {
+    "model_name": "neutron_L3_comp",
+    "config_name": "b_mc_point_neutron_conv_standard_L3_comp",
+    "description": "Pre-trained 3-layer neutron model",
+    "predicted_params": [
+      233.81348827973844,
+      1057.1189952692196,
+      200.00000312924385,
+      7.14369005167967,
+      5.000000596046448,
+      72.57130428723642,
+      77.93410614783056,
+      9.285086510698179,
+      7.0,
+      6.951522521827485,
+      6.083886633382605
+    ],
+    "polished_params": [
+      232.70949632362044,
+      952.6214930985673,
+      149.55169331572577,
+      9.052742474295076,
+      5.000000001928062,
+      70.55690342588494,
+      86.38205311597092,
+      8.000000000326171,
+      7.0000016385923995,
+      5.992949990752858,
+      6.789028581672277
+    ],
+    "param_names": [
+      "Thickness L3",
+      "Thickness L2",
+      "Thickness L1",
+      "Roughness L3",
+      "Roughness L2",
+      "Roughness L1",
+      "Roughness sub",
+      "SLD L3",
+      "SLD L2",
+      "SLD L1",
+      "SLD sub"
+    ],
+    "fit_metrics": {
+      "chi_squared": 28.687657273170032,
+      "r_squared": 0.9962872949126897,
+      "rmse": 0.026949562343874273
+    },
+    "success": true
+  },
+  "xray_c1": {
+    "model_name": "xray_c1",
+    "config_name": "mc25",
+    "description": "Pre-trained X-ray model (mc25)",
+    "predicted_params": [
+      282.47397366872383,
+      1030.1679936201538,
+      10.910412975135237,
+      22.785318940877914,
+      47.593785524368286,
+      10.604730491031411,
+      6.728741615165923,
+      5.32100643971436
+    ],
+    "polished_params": [
+      242.30740141763482,
+      817.0288848103455,
+      9.338458102124166,
+      26.47376136038594,
+      98.14966248368607,
+      8.05411332939827,
+      6.514619134078797,
+      6.655135678175078
+    ],
+    "param_names": [
+      "Thickness L2",
+      "Thickness L1",
+      "Roughness L2",
+      "Roughness L1",
+      "Roughness sub",
+      "SLD L2",
+      "SLD L1",
+      "SLD sub"
+    ],
+    "fit_metrics": {
+      "chi_squared": 625.8665562767255,
+      "r_squared": 0.5572363083443965,
+      "rmse": 0.29430150978945036
+    },
+    "success": true
+  }
+}
