@@ -203,9 +203,9 @@ class InferencePipeline:
             )
             
             print(f"\nFit Quality Metrics:")
-            print(f"Chi-squared: {result['fit_metrics']['chi_squared']:.2f}")
             print(f"R-squared: {result['fit_metrics']['r_squared']:.4f}")
-            print(f"RMSE: {result['fit_metrics']['rmse']:.6f}")
+            print(f"MSE: {result['fit_metrics']['mse']:.6f}")
+            print(f"L1 Loss: {result['fit_metrics']['l1_loss']:.6f}")
             
             return result
             
@@ -218,25 +218,25 @@ class InferencePipeline:
             }
     
     def calculate_fit_metrics(self, y_exp, y_pred, sigma_exp, q_model):
-        """Calculate fit quality metrics."""
+        """Calculate fit quality metrics including MSE, R-squared, and L1 loss."""
         # Interpolate predicted curve to experimental Q points for comparison
         y_pred_interp = np.interp(self.q_exp, q_model, y_pred)
-        
-        # Chi-squared
-        chi_squared = np.sum(((y_exp - y_pred_interp) / sigma_exp) ** 2) / len(y_exp)
         
         # R-squared
         ss_res = np.sum((y_exp - y_pred_interp) ** 2)
         ss_tot = np.sum((y_exp - np.mean(y_exp)) ** 2)
         r_squared = 1 - (ss_res / ss_tot)
         
-        # RMSE
-        rmse = np.sqrt(np.mean((y_exp - y_pred_interp) ** 2))
+        # MSE (Mean Squared Error)
+        mse = np.mean((y_exp - y_pred_interp) ** 2)
+        
+        # L1 Loss (Mean Absolute Error)
+        l1_loss = np.mean(np.abs(y_exp - y_pred_interp))
         
         return {
-            'chi_squared': chi_squared,
             'r_squared': r_squared,
-            'rmse': rmse
+            'mse': mse,
+            'l1_loss': l1_loss
         }
     
     def run_all_models(self):
@@ -366,25 +366,25 @@ class InferencePipeline:
         
         if successful_models:
             print(f"\nFit Quality Comparison:")
-            print("-" * 60)
-            print(f"{'Model':<20} {'Chi²':<10} {'R²':<10} {'RMSE':<12}")
-            print("-" * 60)
+            print("-" * 80)
+            print(f"{'Model':<20} {'R²':<10} {'MSE':<12} {'L1 Loss':<12}")
+            print("-" * 80)
             
-            # Sort by chi-squared (lower is better)
+            # Sort by MSE (lower is better)
             sorted_models = sorted(
                 successful_models.items(), 
-                key=lambda x: x[1]['fit_metrics']['chi_squared']
+                key=lambda x: x[1]['fit_metrics']['mse']
             )
             
             for model_name, result in sorted_models:
                 metrics = result['fit_metrics']
-                print(f"{model_name:<20} {metrics['chi_squared']:<10.2f} "
-                      f"{metrics['r_squared']:<10.4f} {metrics['rmse']:<12.6f}")
+                print(f"{model_name:<20} {metrics['r_squared']:<10.4f} "
+                      f"{metrics['mse']:<12.6f} {metrics['l1_loss']:<12.6f}")
             
-            print("\nBest performing model (lowest Chi²):")
+            print("\nBest performing model (lowest MSE):")
             best_model_name, best_result = sorted_models[0]
             print(f"  {best_model_name}: {best_result['description']}")
-            print(f"  Chi² = {best_result['fit_metrics']['chi_squared']:.2f}")
+            print(f"  MSE = {best_result['fit_metrics']['mse']:.6f}")
 
 
 def main():
