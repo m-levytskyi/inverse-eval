@@ -409,15 +409,17 @@ class InferencePipeline:
         ax1.set_ylabel('R(q)', fontsize=12)
         ax1.set_title('Reflectivity Curves Comparison', fontsize=14)
         
-        # Plot model predictions
-        colors = ['red', 'blue', 'green', 'orange', 'purple']
+        # Plot model predictions with metrics in labels
+        colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
         for i, (model_name, result) in enumerate(successful_models.items()):
             color = colors[i % len(colors)]
+            metrics = result['fit_metrics']
+            label = f"{model_name} (R²={metrics['r_squared']:.3f}, MSE={metrics['mse']:.4f})"
             ax1.plot(result['q_model'], result['polished_curve'], 
-                    color=color, linewidth=2, label=f"{model_name} (polished)", 
+                    color=color, linewidth=2, label=label, 
                     alpha=0.8, zorder=2+i)
         
-        ax1.legend(fontsize=10)
+        ax1.legend(fontsize=9, loc='best')
         ax1.grid(True, alpha=0.3)
         
         # Plot SLD profiles
@@ -429,8 +431,28 @@ class InferencePipeline:
         ax2.set_xlabel('z [Å]', fontsize=12)
         ax2.set_ylabel('SLD [10⁻⁶ Å⁻²]', fontsize=12)
         ax2.set_title('SLD Profiles Comparison', fontsize=14)
-        ax2.legend(fontsize=10)
+        ax2.legend(fontsize=9)
         ax2.grid(True, alpha=0.3)
+        
+        # Add metrics summary text box on the plot
+        if successful_models:
+            # Sort models by MSE for the summary
+            sorted_models = sorted(
+                successful_models.items(), 
+                key=lambda x: x[1]['fit_metrics']['mse']
+            )
+            
+            # Create metrics summary text
+            summary_text = "Best Models (by MSE):\n"
+            for i, (model_name, result) in enumerate(sorted_models[:3]):  # Top 3
+                metrics = result['fit_metrics']
+                summary_text += f"{i+1}. {model_name[:15]}...\n"
+                summary_text += f"   R²={metrics['r_squared']:.3f}, MSE={metrics['mse']:.4f}\n"
+            
+            # Add text box to the reflectivity plot
+            ax1.text(0.02, 0.02, summary_text, transform=ax1.transAxes, 
+                    fontsize=8, verticalalignment='bottom',
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
         
         plt.tight_layout()
         
