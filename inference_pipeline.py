@@ -64,22 +64,13 @@ class InferencePipeline:
         """Define the models and their configurations to test."""
         
         models = {
-            's000000_custom': {
-                'config_name': 's000000_config',
-                'weights_format': 'pt',
-                'prior_bounds': [
-                    # 2-layer model: thicknesses, roughnesses, SLDs
-                    (200.0, 300.0),   # L2 thickness 
-                    (850.0, 1100.0),  # L1 thickness
-                    (1.0, 40.0),      # ambient/L2 roughness
-                    (5.0, 80.0),      # L2/L1 roughness  
-                    (40.0, 120.0),    # L1/substrate roughness
-                    (8.0, 15.0),      # L2 SLD
-                    (7.0, 12.0),      # L1 SLD  
-                    (5.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Custom trained 2-layer model for s000000 data'
-            },
+            # Add new models here following the format:
+            # 'model_name': {
+            #     'config_name': 'config_file_name',
+            #     'weights_format': 'pt' or 'safetensors',
+            #     'prior_bounds': [(min, max), ...],  # parameter bounds
+            #     'description': 'model description'
+            # }
             
             'neutron_L3_comp': {
                 'config_name': 'b_mc_point_neutron_conv_standard_L3_comp',
@@ -116,6 +107,111 @@ class InferencePipeline:
                     (4.0, 8.0)        # substrate SLD (X-ray)
                 ],
                 'description': 'Pre-trained X-ray model (mc25)'
+            },
+            
+            # L3 models with different input configurations
+            'neutron_L3_InputDq': {
+                'config_name': 'b_mc_point_neutron_conv_standard_L3_InputDq',
+                'weights_format': 'safetensors',
+                'prior_bounds': [
+                    # 3-layer model with InputDq
+                    (200.0, 300.0),   # L1 thickness
+                    (850.0, 1100.0),  # L2 thickness  
+                    (50.0, 200.0),    # L3 thickness
+                    (1.0, 30.0),      # ambient/L1 roughness
+                    (5.0, 50.0),      # L1/L2 roughness
+                    (10.0, 80.0),     # L2/L3 roughness
+                    (30.0, 100.0),    # L3/substrate roughness
+                    (8.0, 15.0),      # L1 SLD
+                    (7.0, 12.0),      # L2 SLD
+                    (5.0, 10.0),      # L3 SLD
+                    (4.0, 8.0)        # substrate SLD
+                ],
+                'description': 'Pre-trained 3-layer neutron model with InputDq'
+            },
+            
+            'neutron_L3_InputQDq': {
+                'config_name': 'b_mc_point_neutron_conv_standard_L3_InputQDq',
+                'weights_format': 'safetensors',
+                'prior_bounds': [
+                    # 3-layer model with InputQDq
+                    (200.0, 300.0),   # L1 thickness
+                    (850.0, 1100.0),  # L2 thickness  
+                    (50.0, 200.0),    # L3 thickness
+                    (1.0, 30.0),      # ambient/L1 roughness
+                    (5.0, 50.0),      # L1/L2 roughness
+                    (10.0, 80.0),     # L2/L3 roughness
+                    (30.0, 100.0),    # L3/substrate roughness
+                    (8.0, 15.0),      # L1 SLD
+                    (7.0, 12.0),      # L2 SLD
+                    (5.0, 10.0),      # L3 SLD
+                    (4.0, 8.0)        # substrate SLD
+                ],
+                'description': 'Pre-trained 3-layer neutron model with InputQDq'
+            },
+            
+            # L2 models with different input configurations
+            'neutron_L2_InputDq': {
+                'config_name': 'b_mc_point_neutron_conv_standard_L2_InputDq',
+                'weights_format': 'safetensors',
+                'prior_bounds': [
+                    # 2-layer model with InputDq
+                    (200.0, 400.0),   # L1 thickness
+                    (800.0, 1200.0),  # L2 thickness
+                    (1.0, 30.0),      # ambient/L1 roughness
+                    (5.0, 50.0),      # L1/L2 roughness
+                    (30.0, 100.0),    # L2/substrate roughness
+                    (8.0, 15.0),      # L1 SLD
+                    (7.0, 12.0),      # L2 SLD
+                    (4.0, 8.0)        # substrate SLD
+                ],
+                'description': 'Pre-trained 2-layer neutron model with InputDq'
+            },
+            
+            'neutron_L2_InputQDq': {
+                'config_name': 'b_mc_point_neutron_conv_standard_L2_InputQDq',
+                'weights_format': 'safetensors',
+                'prior_bounds': [
+                    # 2-layer model with InputQDq
+                    (200.0, 400.0),   # L1 thickness
+                    (800.0, 1200.0),  # L2 thickness
+                    (1.0, 30.0),      # ambient/L1 roughness
+                    (5.0, 50.0),      # L1/L2 roughness
+                    (30.0, 100.0),    # L2/substrate roughness
+                    (8.0, 15.0),      # L1 SLD
+                    (7.0, 12.0),      # L2 SLD
+                    (4.0, 8.0)        # substrate SLD
+                ],
+                'description': 'Pre-trained 2-layer neutron model with InputQDq'
+            },
+            
+            # L1 models with different input configurations
+            'neutron_L1_InputDq': {
+                'config_name': 'b_mc_point_neutron_conv_standard_L1_InputDq',
+                'weights_format': 'safetensors',
+                'prior_bounds': [
+                    # 1-layer model with InputDq
+                    (200.0, 1200.0),  # L1 thickness
+                    (1.0, 30.0),      # ambient/L1 roughness
+                    (30.0, 100.0),    # L1/substrate roughness
+                    (8.0, 15.0),      # L1 SLD
+                    (4.0, 8.0)        # substrate SLD
+                ],
+                'description': 'Pre-trained 1-layer neutron model with InputDq'
+            },
+            
+            'neutron_L1_InputQDq': {
+                'config_name': 'b_mc_point_neutron_conv_standard_L1_InputQDq',
+                'weights_format': 'safetensors',
+                'prior_bounds': [
+                    # 1-layer model with InputQDq
+                    (200.0, 1200.0),  # L1 thickness
+                    (1.0, 30.0),      # ambient/L1 roughness
+                    (30.0, 100.0),    # L1/substrate roughness
+                    (8.0, 15.0),      # L1 SLD
+                    (4.0, 8.0)        # substrate SLD
+                ],
+                'description': 'Pre-trained 1-layer neutron model with InputQDq'
             }
         }
         
