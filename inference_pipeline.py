@@ -2,8 +2,19 @@
 """
 Inference Pipeline for Testing Multiple ReflecTorch Models
 
-This script tests different trained models on the s000000 experimental data
-and compares their performance and parameter predictions.
+This script tests different trained models on experimental neutron reflectometry data
+and compares their performance and parameter predictions. The pipeline is configurable
+through JSON configuration files that specify data paths, formats, and model parameters.
+
+Usage:
+    python inference_pipeline.py [config_file]
+
+Configuration files:
+    - configs/membrane_config.json: For membrane analysis with dQ/Q = 0.1
+    - configs/s000000_config.json: For s000000 data analysis
+    
+The pipeline handles both 3-column (Q, R, dR) and 4-column (Q, R, dR, dQ) data formats
+automatically based on the configuration.
 """
 
 import numpy as np
@@ -13,6 +24,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 import warnings
+import sys
 warnings.filterwarnings('ignore')
 
 from reflectorch import EasyInferenceModel
@@ -24,17 +36,20 @@ np.random.seed(42)
 class InferencePipeline:
     """Pipeline for testing multiple models on experimental data."""
     
-    def __init__(self, data_path, output_dir="inference_results"):
+    def __init__(self, config_file, output_dir="inference_results"):
         """
         Initialize the inference pipeline.
         
         Args:
-            data_path: Path to experimental data file
+            config_file: Path to JSON configuration file
             output_dir: Directory to save results
         """
-        self.data_path = Path(data_path)
+        self.config_file = Path(config_file)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        
+        # Load configuration
+        self.load_configuration()
         
         # Load experimental data
         self.load_experimental_data()
@@ -42,181 +57,70 @@ class InferencePipeline:
         # Initialize results storage
         self.results = {}
         
+    def load_configuration(self):
+        """Load configuration from JSON file."""
+        print(f"Loading configuration from: {self.config_file}")
+        
+        if not self.config_file.exists():
+            raise FileNotFoundError(f"Configuration file not found: {self.config_file}")
+        
+        with open(self.config_file, 'r') as f:
+            self.config = json.load(f)
+        
+        # Extract data and model configurations
+        self.data_config = self.config['data_config']
+        self.model_configs = self.config['model_configurations']
+        
+        print(f"Loaded configuration for: {self.data_config['description']}")
+        print(f"Data format: {self.data_config['data_format']}")
+        print(f"Available models: {len(self.model_configs)}")
+        
     def load_experimental_data(self):
-        """Load experimental data from file."""
-        print(f"Loading experimental data from: {self.data_path}")
+        """Load experimental data from file based on configuration."""
+        data_path = Path(self.data_config['data_path'])
+        print(f"Loading experimental data from: {data_path}")
         
-        # Load data (assuming 4-column format: q, R, dR, dQ)
-        data = np.loadtxt(self.data_path, skiprows=1)
+        # Load data
+        data = np.loadtxt(data_path, skiprows=1)
         
-        # Trim data to remove high error regions
-        max_points = min(2050, len(data))
-        
-        self.q_exp = data[:max_points, 0]
-        self.curve_exp = data[:max_points, 1]
-        self.sigmas_exp = data[:max_points, 2]
-        self.q_res_exp = data[:max_points, 3]
+        # Handle data format based on configuration
+        if self.data_config['data_format'] == '3_column':
+            # 3-column format: Q, R, dR
+            print("Processing 3-column format (Q, R, dR)")
+            self.q_exp = data[:, 0]
+            self.curve_exp = data[:, 1]
+            self.sigmas_exp = data[:, 2]
+            
+            # Calculate Q-resolution using configured dQ/Q ratio
+            dq_over_q = self.data_config['dq_over_q']
+            if dq_over_q is None:
+                raise ValueError("dq_over_q must be specified for 3-column data format")
+            
+            self.q_res_exp = self.q_exp * dq_over_q
+            print(f"Calculated Q-resolution using dQ/Q = {dq_over_q}")
+            
+        elif self.data_config['data_format'] == '4_column':
+            # 4-column format: Q, R, dR, dQ
+            print("Processing 4-column format (Q, R, dR, dQ)")
+            
+            # Apply max_points limit if specified
+            max_points = self.data_config.get('max_points')
+            if max_points is not None:
+                max_points = min(max_points, len(data))
+                data = data[:max_points]
+                print(f"Trimmed data to {max_points} points")
+            
+            self.q_exp = data[:, 0]
+            self.curve_exp = data[:, 1]
+            self.sigmas_exp = data[:, 2]
+            self.q_res_exp = data[:, 3]
+        else:
+            raise ValueError(f"Unsupported data format: {self.data_config['data_format']}")
         
         print(f"Loaded {len(self.q_exp)} data points")
         print(f"Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹")
+        print(f"dQ range: {self.q_res_exp.min():.6f} - {self.q_res_exp.max():.6f} Å⁻¹")
         
-    def define_model_configurations(self):
-        """Define the models and their configurations to test."""
-        
-        models = {
-            # Add new models here following the format:
-            # 'model_name': {
-            #     'config_name': 'config_file_name',
-            #     'weights_format': 'pt' or 'safetensors',
-            #     'prior_bounds': [(min, max), ...],  # parameter bounds
-            #     'description': 'model description'
-            # }
-            
-            'neutron_L3_comp': {
-                'config_name': 'b_mc_point_neutron_conv_standard_L3_comp',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 3-layer model: broader bounds
-                    (200.0, 300.0),   # L1 thickness
-                    (850.0, 1100.0),  # L2 thickness  
-                    (50.0, 200.0),    # L3 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (5.0, 50.0),      # L1/L2 roughness
-                    (10.0, 80.0),     # L2/L3 roughness
-                    (30.0, 100.0),    # L3/substrate roughness
-                    (8.0, 15.0),      # L1 SLD
-                    (7.0, 12.0),      # L2 SLD
-                    (5.0, 10.0),      # L3 SLD
-                    (4.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Pre-trained 3-layer neutron model'
-            },
-            
-            'xray_mc25': {
-                'config_name': 'mc25',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 2-layer X-ray model: adapted for s000000 data structure
-                    (200.0, 400.0),   # L1 thickness
-                    (800.0, 1200.0),  # L2 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (5.0, 50.0),      # L1/L2 roughness
-                    (30.0, 100.0),    # L2/substrate roughness
-                    (6.0, 15.0),      # L1 SLD (X-ray)
-                    (6.0, 12.0),      # L2 SLD (X-ray)
-                    (4.0, 8.0)        # substrate SLD (X-ray)
-                ],
-                'description': 'Pre-trained X-ray model (mc25)'
-            },
-            
-            # L3 models with different input configurations
-            'neutron_L3_InputDq': {
-                'config_name': 'b_mc_point_neutron_conv_standard_L3_InputDq',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 3-layer model with InputDq
-                    (200.0, 300.0),   # L1 thickness
-                    (850.0, 1100.0),  # L2 thickness  
-                    (50.0, 200.0),    # L3 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (5.0, 50.0),      # L1/L2 roughness
-                    (10.0, 80.0),     # L2/L3 roughness
-                    (30.0, 100.0),    # L3/substrate roughness
-                    (8.0, 15.0),      # L1 SLD
-                    (7.0, 12.0),      # L2 SLD
-                    (5.0, 10.0),      # L3 SLD
-                    (4.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Pre-trained 3-layer neutron model with InputDq'
-            },
-            
-            'neutron_L3_InputQDq': {
-                'config_name': 'b_mc_point_neutron_conv_standard_L3_InputQDq',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 3-layer model with InputQDq
-                    (200.0, 300.0),   # L1 thickness
-                    (850.0, 1100.0),  # L2 thickness  
-                    (50.0, 200.0),    # L3 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (5.0, 50.0),      # L1/L2 roughness
-                    (10.0, 80.0),     # L2/L3 roughness
-                    (30.0, 100.0),    # L3/substrate roughness
-                    (8.0, 15.0),      # L1 SLD
-                    (7.0, 12.0),      # L2 SLD
-                    (5.0, 10.0),      # L3 SLD
-                    (4.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Pre-trained 3-layer neutron model with InputQDq'
-            },
-            
-            # L2 models with different input configurations
-            'neutron_L2_InputDq': {
-                'config_name': 'b_mc_point_neutron_conv_standard_L2_InputDq',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 2-layer model with InputDq
-                    (200.0, 400.0),   # L1 thickness
-                    (800.0, 1200.0),  # L2 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (5.0, 50.0),      # L1/L2 roughness
-                    (30.0, 100.0),    # L2/substrate roughness
-                    (8.0, 15.0),      # L1 SLD
-                    (7.0, 12.0),      # L2 SLD
-                    (4.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Pre-trained 2-layer neutron model with InputDq'
-            },
-            
-            'neutron_L2_InputQDq': {
-                'config_name': 'b_mc_point_neutron_conv_standard_L2_InputQDq',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 2-layer model with InputQDq
-                    (200.0, 400.0),   # L1 thickness
-                    (800.0, 1200.0),  # L2 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (5.0, 50.0),      # L1/L2 roughness
-                    (30.0, 100.0),    # L2/substrate roughness
-                    (8.0, 15.0),      # L1 SLD
-                    (7.0, 12.0),      # L2 SLD
-                    (4.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Pre-trained 2-layer neutron model with InputQDq'
-            },
-            
-            # L1 models with different input configurations
-            'neutron_L1_InputDq': {
-                'config_name': 'b_mc_point_neutron_conv_standard_L1_InputDq',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 1-layer model with InputDq
-                    (200.0, 1200.0),  # L1 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (30.0, 100.0),    # L1/substrate roughness
-                    (8.0, 15.0),      # L1 SLD
-                    (4.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Pre-trained 1-layer neutron model with InputDq'
-            },
-            
-            'neutron_L1_InputQDq': {
-                'config_name': 'b_mc_point_neutron_conv_standard_L1_InputQDq',
-                'weights_format': 'safetensors',
-                'prior_bounds': [
-                    # 1-layer model with InputQDq
-                    (200.0, 1200.0),  # L1 thickness
-                    (1.0, 30.0),      # ambient/L1 roughness
-                    (30.0, 100.0),    # L1/substrate roughness
-                    (8.0, 15.0),      # L1 SLD
-                    (4.0, 8.0)        # substrate SLD
-                ],
-                'description': 'Pre-trained 1-layer neutron model with InputQDq'
-            }
-        }
-        
-        return models
-    
     def run_inference(self, model_config, model_name):
         """
         Run inference with a specific model configuration.
@@ -251,10 +155,13 @@ class InferencePipeline:
             
             print(f"Model Q grid: {len(q_model)} points, range: {q_model.min():.4f} - {q_model.max():.4f}")
             
+            # Convert prior bounds from list format to tuple format
+            prior_bounds = [tuple(bound) for bound in model_config['prior_bounds']]
+            
             # Run prediction
             prediction_dict = inference_model.predict(
                 reflectivity_curve=exp_curve_interp,
-                prior_bounds=model_config['prior_bounds'],
+                prior_bounds=prior_bounds,
                 q_values=q_model,
                 q_resolution=q_res_interp,
                 clip_prediction=True,
@@ -282,15 +189,16 @@ class InferencePipeline:
                 'error': None
             }
             
-            # Print parameter results
+            # Print parameter results using parameter names from config
             print(f"\nParameter Results for {model_name}:")
             print("-" * 50)
+            param_names = model_config.get('parameter_names', prediction_dict["param_names"])
             for param_name, pred_val, polish_val in zip(
-                prediction_dict["param_names"], 
+                param_names, 
                 prediction_dict['predicted_params_array'],
                 prediction_dict["polished_params_array"]
             ):
-                print(f'{param_name.ljust(16)} -> Predicted: {pred_val:8.2f}   Polished: {polish_val:8.2f}')
+                print(f'{param_name.ljust(25)} -> Predicted: {pred_val:8.2f}   Polished: {polish_val:8.2f}')
             
             # Calculate fit quality metrics
             result['fit_metrics'] = self.calculate_fit_metrics(
@@ -336,13 +244,11 @@ class InferencePipeline:
         }
     
     def run_all_models(self):
-        """Run inference on all defined models."""
-        models = self.define_model_configurations()
-        
-        print(f"Starting inference pipeline with {len(models)} models...")
+        """Run inference on all models defined in the configuration."""
+        print(f"Starting inference pipeline with {len(self.model_configs)} models...")
         print(f"Results will be saved to: {self.output_dir}")
         
-        for model_name, model_config in models.items():
+        for model_name, model_config in self.model_configs.items():
             result = self.run_inference(model_config, model_name)
             self.results[model_name] = result
         
@@ -507,15 +413,31 @@ class InferencePipeline:
 
 def main():
     """Main execution function."""
-    # Define paths
-    data_path = "data/s000000_experimental_curve.dat"
+    # Parse command line arguments
+    if len(sys.argv) > 1:
+        config_file = sys.argv[1]
+    else:
+        # Default to membrane configuration
+        config_file = "configs/membrane_config.json"
     
     print("ReflecTorch Multi-Model Inference Pipeline")
+    print(f"Using configuration: {config_file}")
     print("=" * 50)
     
-    # Initialize and run pipeline
-    pipeline = InferencePipeline(data_path)
-    pipeline.run_all_models()
+    try:
+        # Initialize and run pipeline
+        pipeline = InferencePipeline(config_file)
+        pipeline.run_all_models()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        print("\nAvailable configurations:")
+        print("  - configs/membrane_config.json (membrane analysis with dQ/Q=0.1)")
+        print("  - configs/s000000_config.json (s000000 data analysis)")
+        print("\nUsage: python inference_pipeline.py [config_file]")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error running pipeline: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
