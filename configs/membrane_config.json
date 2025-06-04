@@ -1,0 +1,225 @@
+{
+  "data_config": {
+    "data_path": "data/Experimental/membrane.dat",
+    "data_format": "3_column",
+    "dq_over_q": 0.1,
+    "max_points": null,
+    "description": "Mixed phospholipid supported membrane at Si/D2O interface (MARIA reflectometer)"
+  },
+  
+  "model_configurations": {
+    "neutron_L3_comp": {
+      "config_name": "b_mc_point_neutron_conv_standard_L3_comp",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [10.0, 50.0],
+        [20.0, 80.0],
+        [10.0, 40.0],
+        [1.0, 10.0],
+        [1.0, 15.0],
+        [1.0, 15.0],
+        [1.0, 20.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [6.0, 6.4]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "L2 thickness (Å)",
+        "L3 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/L2 roughness (Å)",
+        "L2/L3 roughness (Å)",
+        "L3/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "L2 SLD (×10⁻⁶ Å⁻²)",
+        "L3 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained 3-layer neutron model for membrane analysis"
+    },
+    
+    "xray_mc25": {
+      "config_name": "mc25",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [15.0, 60.0],
+        [25.0, 100.0],
+        [1.0, 10.0],
+        [1.0, 15.0],
+        [1.0, 20.0],
+        [8.0, 15.0],
+        [8.0, 12.0],
+        [19.0, 21.0]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "L2 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/L2 roughness (Å)",
+        "L2/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "L2 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained X-ray model (mc25) for membrane analysis"
+    },
+    
+    "neutron_L3_InputDq": {
+      "config_name": "b_mc_point_neutron_conv_standard_L3_InputDq",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [10.0, 50.0],
+        [20.0, 80.0],
+        [10.0, 40.0],
+        [1.0, 10.0],
+        [1.0, 15.0],
+        [1.0, 15.0],
+        [1.0, 20.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [6.0, 6.4]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "L2 thickness (Å)",
+        "L3 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/L2 roughness (Å)",
+        "L2/L3 roughness (Å)",
+        "L3/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "L2 SLD (×10⁻⁶ Å⁻²)",
+        "L3 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained 3-layer neutron model with InputDq for membranes"
+    },
+    
+    "neutron_L3_InputQDq": {
+      "config_name": "b_mc_point_neutron_conv_standard_L3_InputQDq",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [10.0, 50.0],
+        [20.0, 80.0],
+        [10.0, 40.0],
+        [1.0, 10.0],
+        [1.0, 15.0],
+        [1.0, 15.0],
+        [1.0, 20.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [6.0, 6.4]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "L2 thickness (Å)",
+        "L3 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/L2 roughness (Å)",
+        "L2/L3 roughness (Å)",
+        "L3/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "L2 SLD (×10⁻⁶ Å⁻²)",
+        "L3 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained 3-layer neutron model with InputQDq for membranes"
+    },
+    
+    "neutron_L2_InputDq": {
+      "config_name": "b_mc_point_neutron_conv_standard_L2_InputDq",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [15.0, 60.0],
+        [25.0, 100.0],
+        [1.0, 10.0],
+        [1.0, 15.0],
+        [1.0, 20.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [6.0, 6.4]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "L2 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/L2 roughness (Å)",
+        "L2/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "L2 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained 2-layer neutron model with InputDq for membranes"
+    },
+    
+    "neutron_L2_InputQDq": {
+      "config_name": "b_mc_point_neutron_conv_standard_L2_InputQDq",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [15.0, 60.0],
+        [25.0, 100.0],
+        [1.0, 10.0],
+        [1.0, 15.0],
+        [1.0, 20.0],
+        [-1.0, 6.0],
+        [-1.0, 6.0],
+        [6.0, 6.4]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "L2 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/L2 roughness (Å)",
+        "L2/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "L2 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained 2-layer neutron model with InputQDq for membranes"
+    },
+    
+    "neutron_L1_InputDq": {
+      "config_name": "b_mc_point_neutron_conv_standard_L1_InputDq",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [20.0, 120.0],
+        [1.0, 10.0],
+        [1.0, 20.0],
+        [-1.0, 6.0],
+        [6.0, 6.4]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained 1-layer neutron model with InputDq for membranes"
+    },
+    
+    "neutron_L1_InputQDq": {
+      "config_name": "b_mc_point_neutron_conv_standard_L1_InputQDq",
+      "weights_format": "safetensors",
+      "prior_bounds": [
+        [20.0, 120.0],
+        [1.0, 10.0],
+        [1.0, 20.0],
+        [-1.0, 6.0],
+        [6.0, 6.4]
+      ],
+      "parameter_names": [
+        "L1 thickness (Å)",
+        "ambient/L1 roughness (Å)",
+        "L1/substrate roughness (Å)",
+        "L1 SLD (×10⁻⁶ Å⁻²)",
+        "Si substrate SLD (×10⁻⁶ Å⁻²)"
+      ],
+      "description": "Pre-trained 1-layer neutron model with InputQDq for membranes"
+    }
+  }
+}
