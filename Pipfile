@@ -4,12 +4,12 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-reflectorch = "*"
 ipykernel = "*"
 pandas = "*"
 scipy = "*"
 numpy = "*"
 seaborn = "*"
+reflectorch = "*"
 
 [dev-packages]
 
