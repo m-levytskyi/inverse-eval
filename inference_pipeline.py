@@ -433,6 +433,7 @@ def main():
         print("\nAvailable configurations:")
         print("  - configs/membrane_config.json (membrane analysis with dQ/Q=0.1)")
         print("  - configs/s000000_config.json (s000000 data analysis)")
+        print("  - configs/s000004_config.json (s000004 data analysis - single layer)")
         print("\nUsage: python inference_pipeline.py [config_file]")
         sys.exit(1)
     except Exception as e:
