@@ -54,6 +54,13 @@ class InferencePipeline:
         # Load experimental data
         self.load_experimental_data()
         
+        # Load true parameters if available
+        self.true_params_dict = None
+        if 'true_parameters_file' in self.data_config:
+            self.true_params_dict = self.parse_true_parameters_from_model_file(
+                self.data_config['true_parameters_file']
+            )
+        
         # Initialize results storage
         self.results = {}
         
@@ -206,31 +213,42 @@ class InferencePipeline:
                 self.sigmas_exp, q_model
             )
             
-            # Calculate parameter metrics (true parameters are not available in this context,
-            # so this is just a structural addition; true parameters would need to be loaded
-            # or defined for meaningful output)
-            true_params = model_config.get('true_parameters')
+            # Calculate parameter metrics - get true parameters for this model
+            true_params, true_param_names = self.get_true_params_for_model(model_config, self.true_params_dict)
             if true_params is not None:
                 try:
                     result['parameter_metrics'] = self.calculate_parameter_metrics(
                         prediction_dict['polished_params_array'], 
-                        np.array(true_params), 
+                        true_params, 
                         param_names
                     )
                     
-                    print(f"\nParameter Quality Metrics:")
-                    print(f"Parameter MSE: {result['parameter_metrics']['overall']['mse']:.6f}")
-                    print(f"Parameter MAE: {result['parameter_metrics']['overall']['mae']:.6f}")
-                    print(f"Parameter MAPE: {result['parameter_metrics']['overall']['mape']:.2f}%")
+                    # Print parameter comparison
+                    print(f"\nParameter Comparison (Predicted vs True):")
+                    print("-" * 60)
+                    print(f"{'Parameter':<25} {'Predicted':<12} {'True':<12} {'MSE':<12}")
+                    print("-" * 60)
                     
-                    # Print breakdown by parameter type
+                    param_metrics = result['parameter_metrics']['by_parameter']
+                    for param_name, metrics in param_metrics.items():
+                        pred_val = metrics['predicted']
+                        true_val = metrics['true']
+                        sq_error = metrics['squared_error']
+                        
+                        print(f"{param_name:<25} {pred_val:<12.2f} {true_val:<12.2f} "
+                              f"{sq_error:<12.4f}")
+                    
+                    # Print aggregate metrics
+                    overall_metrics = result['parameter_metrics']['overall']
                     by_type = result['parameter_metrics']['by_type']
-                    if by_type['thickness_mape'] > 0:
-                        print(f"Thickness MAPE: {by_type['thickness_mape']:.2f}%")
-                    if by_type['roughness_mape'] > 0:
-                        print(f"Roughness MAPE: {by_type['roughness_mape']:.2f}%")
-                    if by_type['sld_mape'] > 0:
-                        print(f"SLD MAPE: {by_type['sld_mape']:.2f}%")
+                    print(f"\nParameter MSE Summary:")
+                    print(f"Overall MSE: {overall_metrics['mse']:.6f}")
+                    if by_type['thickness_mse'] > 0:
+                        print(f"Thickness MSE: {by_type['thickness_mse']:.6f}")
+                    if by_type['roughness_mse'] > 0:
+                        print(f"Roughness MSE: {by_type['roughness_mse']:.6f}")
+                    if by_type['sld_mse'] > 0:
+                        print(f"SLD MSE: {by_type['sld_mse']:.6f}")
                         
                 except Exception as e:
                     print(f"Warning: Could not calculate parameter metrics: {e}")
@@ -277,7 +295,7 @@ class InferencePipeline:
     
     def calculate_parameter_metrics(self, predicted_params, true_params, param_names):
         """
-        Calculate parameter loss metrics comparing predicted vs true parameters.
+        Calculate parameter MSE comparing predicted vs true parameters.
         
         Args:
             predicted_params: Array of predicted parameter values
@@ -285,21 +303,13 @@ class InferencePipeline:
             param_names: List of parameter names for detailed breakdown
             
         Returns:
-            Dictionary containing parameter loss metrics
+            Dictionary containing parameter MSE metrics
         """
         if len(predicted_params) != len(true_params):
             raise ValueError(f"Parameter arrays must have same length: {len(predicted_params)} vs {len(true_params)}")
         
-        # Overall parameter metrics
+        # Overall parameter MSE
         param_mse = np.mean((predicted_params - true_params) ** 2)
-        param_mae = np.mean(np.abs(predicted_params - true_params))
-        
-        # Calculate relative errors (avoid division by zero)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            relative_errors = np.abs((predicted_params - true_params) / true_params)
-            relative_errors = np.where(np.isfinite(relative_errors), relative_errors, 0)
-        
-        param_mape = np.mean(relative_errors) * 100  # Mean Absolute Percentage Error
         
         # Per-parameter breakdown
         param_breakdown = {}
@@ -307,41 +317,37 @@ class InferencePipeline:
             if i < len(predicted_params):
                 pred_val = predicted_params[i]
                 true_val = true_params[i]
-                abs_error = abs(pred_val - true_val)
-                rel_error = abs_error / abs(true_val) * 100 if abs(true_val) > 1e-10 else 0
+                squared_error = (pred_val - true_val) ** 2
                 
                 param_breakdown[name] = {
                     'predicted': float(pred_val),
                     'true': float(true_val),
-                    'absolute_error': float(abs_error),
-                    'relative_error_percent': float(rel_error)
+                    'squared_error': float(squared_error)
                 }
         
-        # Group parameters by type for aggregate statistics
+        # Group parameters by type for MSE statistics
         thickness_errors = []
         roughness_errors = []
         sld_errors = []
         
         for name, metrics in param_breakdown.items():
-            rel_err = metrics['relative_error_percent']
+            sq_err = metrics['squared_error']
             if 'thickness' in name.lower() or 'd_' in name.lower():
-                thickness_errors.append(rel_err)
+                thickness_errors.append(sq_err)
             elif 'roughness' in name.lower() or 'sigma' in name.lower():
-                roughness_errors.append(rel_err)
+                roughness_errors.append(sq_err)
             elif 'sld' in name.lower() or 'rho' in name.lower():
-                sld_errors.append(rel_err)
+                sld_errors.append(sq_err)
         
         return {
             'overall': {
-                'mse': float(param_mse),
-                'mae': float(param_mae), 
-                'mape': float(param_mape)
+                'mse': float(param_mse)
             },
             'by_parameter': param_breakdown,
             'by_type': {
-                'thickness_mape': float(np.mean(thickness_errors)) if thickness_errors else 0.0,
-                'roughness_mape': float(np.mean(roughness_errors)) if roughness_errors else 0.0,
-                'sld_mape': float(np.mean(sld_errors)) if sld_errors else 0.0
+                'thickness_mse': float(np.mean(thickness_errors)) if thickness_errors else 0.0,
+                'roughness_mse': float(np.mean(roughness_errors)) if roughness_errors else 0.0,
+                'sld_mse': float(np.mean(sld_errors)) if sld_errors else 0.0
             }
         }
     
@@ -410,8 +416,17 @@ class InferencePipeline:
             print("No successful models to plot")
             return
         
-        # Create reflectivity comparison plot
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        # Check if we have parameter metrics for plotting
+        models_with_param_metrics = {
+            k: v for k, v in successful_models.items() 
+            if 'parameter_metrics' in v and v['parameter_metrics'] is not None
+        }
+        
+        # Create plots with or without parameter loss subplot
+        if models_with_param_metrics:
+            fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 6))
+        else:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
         
         # Plot experimental data
         ax1.errorbar(self.q_exp, self.curve_exp, yerr=self.sigmas_exp, 
@@ -447,6 +462,45 @@ class InferencePipeline:
         ax2.set_title('SLD Profiles Comparison', fontsize=14)
         ax2.legend(fontsize=9)
         ax2.grid(True, alpha=0.3)
+        
+        # Plot parameter loss comparison if available
+        if models_with_param_metrics:
+            # Create parameter MSE bar chart
+            model_names = list(models_with_param_metrics.keys())
+            param_mses = []
+            thickness_mses = []
+            roughness_mses = []
+            sld_mses = []
+            
+            for model_name in model_names:
+                result = models_with_param_metrics[model_name]
+                param_metrics = result['parameter_metrics']
+                param_mses.append(param_metrics['overall']['mse'])
+                thickness_mses.append(param_metrics['by_type']['thickness_mse'])
+                roughness_mses.append(param_metrics['by_type']['roughness_mse'])
+                sld_mses.append(param_metrics['by_type']['sld_mse'])
+            
+            x = np.arange(len(model_names))
+            width = 0.2
+            
+            ax3.bar(x - 1.5*width, param_mses, width, label='Overall MSE', alpha=0.8, color='gray')
+            ax3.bar(x - 0.5*width, thickness_mses, width, label='Thickness MSE', alpha=0.8, color='blue')
+            ax3.bar(x + 0.5*width, roughness_mses, width, label='Roughness MSE', alpha=0.8, color='green')
+            ax3.bar(x + 1.5*width, sld_mses, width, label='SLD MSE', alpha=0.8, color='red')
+            
+            ax3.set_xlabel('Model', fontsize=12)
+            ax3.set_ylabel('MSE', fontsize=12)
+            ax3.set_title('Parameter Prediction MSE', fontsize=14)
+            ax3.set_xticks(x)
+            ax3.set_xticklabels([name[:15] + '...' if len(name) > 15 else name for name in model_names], 
+                              rotation=45, ha='right')
+            ax3.legend(fontsize=9)
+            ax3.grid(True, alpha=0.3, axis='y')
+            
+            # Add values on top of bars for the overall MSE
+            for i, v in enumerate(param_mses):
+                ax3.text(i - 1.5*width, v + max(param_mses) * 0.01, f'{v:.2e}', 
+                        ha='center', va='bottom', fontsize=8, fontweight='bold')
         
         # Add metrics summary text box on the plot
         if successful_models:
@@ -526,9 +580,9 @@ class InferencePipeline:
             
             if models_with_param_metrics:
                 print(f"\nParameter Quality Comparison:")
-                print("-" * 90)
-                print(f"{'Model':<20} {'Param MSE':<12} {'Param MAE':<12} {'Param MAPE (%)':<15}")
-                print("-" * 90)
+                print("-" * 70)
+                print(f"{'Model':<20} {'Param MSE':<12} {'Thick MSE':<12} {'Rough MSE':<12} {'SLD MSE':<12}")
+                print("-" * 70)
                 
                 # Sort by parameter MSE
                 sorted_param_models = sorted(
@@ -538,16 +592,202 @@ class InferencePipeline:
                 
                 for model_name, result in sorted_param_models:
                     param_metrics = result['parameter_metrics']['overall']
+                    by_type = result['parameter_metrics']['by_type']
                     print(f"{model_name:<20} {param_metrics['mse']:<12.6f} "
-                          f"{param_metrics['mae']:<12.6f} {param_metrics['mape']:<15.2f}")
+                          f"{by_type['thickness_mse']:<12.6f} {by_type['roughness_mse']:<12.6f} "
+                          f"{by_type['sld_mse']:<12.6f}")
                 
                 print("\nBest parameter prediction (lowest Parameter MSE):")
                 best_param_model_name, best_param_result = sorted_param_models[0]
                 print(f"  {best_param_model_name}: {best_param_result['description']}")
                 print(f"  Parameter MSE = {best_param_result['parameter_metrics']['overall']['mse']:.6f}")
-                print(f"  Parameter MAPE = {best_param_result['parameter_metrics']['overall']['mape']:.2f}%")
+        
+    def parse_true_parameters_from_model_file(self, model_file_path):
+        """
+        Parse true parameters from s000000_model.txt file format.
+        
+        Args:
+            model_file_path: Path to the model.txt file
+            
+        Returns:
+            Dictionary containing true parameters organized by layer count and parameter names
+        """
+        print(f"Parsing true parameters from: {model_file_path}")
+        
+        if not Path(model_file_path).exists():
+            print(f"Warning: Model file not found: {model_file_path}")
+            return None
+            
+        # Read the model file
+        with open(model_file_path, 'r') as f:
+            lines = f.readlines()
+        
+        # Parse the data
+        layers = []
+        for line in lines:
+            line = line.strip()
+            if line.startswith('#') or not line:
+                continue
+                
+            parts = line.split()
+            if len(parts) >= 4:
+                layer_name = parts[0]
+                sld = float(parts[1])  # Already in 10^-6 Å^-2 units
+                thickness = float(parts[2]) if parts[2] != 'inf' else None
+                roughness = float(parts[3]) if parts[3] != 'none' else None
+                
+                layers.append({
+                    'name': layer_name,
+                    'sld': sld,
+                    'thickness': thickness,
+                    'roughness': roughness
+                })
+        
+        print(f"Parsed {len(layers)} layers from model file:")
+        for layer in layers:
+            print(f"  {layer['name']}: SLD={layer['sld']:.2e}, thickness={layer['thickness']}, roughness={layer['roughness']}")
+        
+        # Convert to parameter arrays for different layer configurations
+        # Based on the model file structure:
+        # fronting (ambient): SLD=3.50000e-06, roughness=8.72
+        # layer1: SLD=1.14195e-05, thickness=242.09, roughness=24.16  
+        # layer2: SLD=9.79919e-06, thickness=959.62, roughness=75.06
+        # backing (substrate): SLD=6.45461e-06
+        
+        true_params_dict = {}
+        
+        # For 2-layer models (L1, L2): layers[1] and layers[2] are the physical layers
+        if len(layers) >= 4:  # fronting + layer1 + layer2 + backing
+            # 2-layer configuration
+            true_params_2layer = [
+                layers[1]['thickness'],  # L1 thickness
+                layers[2]['thickness'],  # L2 thickness
+                layers[0]['roughness'],  # ambient/L1 roughness (fronting roughness)
+                layers[1]['roughness'],  # L1/L2 roughness 
+                layers[2]['roughness'],  # L2/substrate roughness
+                layers[1]['sld'] * 1e6,  # L1 SLD (convert to 10^-6 units for display)
+                layers[2]['sld'] * 1e6,  # L2 SLD
+                layers[3]['sld'] * 1e6   # substrate SLD
+            ]
+            
+            param_names_2layer = [
+                "L1 thickness (Å)",
+                "L2 thickness (Å)", 
+                "ambient/L1 roughness (Å)",
+                "L1/L2 roughness (Å)",
+                "L2/substrate roughness (Å)",
+                "L1 SLD (×10⁻⁶ Å⁻²)",
+                "L2 SLD (×10⁻⁶ Å⁻²)",
+                "substrate SLD (×10⁻⁶ Å⁻²)"
+            ]
+            
+            true_params_dict['2_layer'] = {
+                'params': true_params_2layer,
+                'param_names': param_names_2layer
+            }
+            
+            # 3-layer configuration - for models that expect a third layer, 
+            # we can split one of the existing layers or add a thin intermediate layer
+            # For now, let's create a thin third layer by splitting layer2
+            l3_thickness = 100.0  # Assume 100 Å for L3
+            l2_thickness_reduced = layers[2]['thickness'] - l3_thickness
+            
+            true_params_3layer = [
+                layers[1]['thickness'],    # L1 thickness
+                l2_thickness_reduced,      # L2 thickness (reduced)
+                l3_thickness,              # L3 thickness
+                layers[0]['roughness'],    # ambient/L1 roughness
+                layers[1]['roughness'],    # L1/L2 roughness
+                layers[1]['roughness'] * 1.5,  # L2/L3 roughness (interpolated)
+                layers[2]['roughness'],    # L3/substrate roughness
+                layers[1]['sld'] * 1e6,    # L1 SLD
+                layers[2]['sld'] * 1e6,    # L2 SLD
+                layers[2]['sld'] * 1e6,    # L3 SLD (same as L2)
+                layers[3]['sld'] * 1e6     # substrate SLD
+            ]
+            
+            param_names_3layer = [
+                "L1 thickness (Å)",
+                "L2 thickness (Å)",
+                "L3 thickness (Å)",
+                "ambient/L1 roughness (Å)",
+                "L1/L2 roughness (Å)",
+                "L2/L3 roughness (Å)",
+                "L3/substrate roughness (Å)",
+                "L1 SLD (×10⁻⁶ Å⁻²)",
+                "L2 SLD (×10⁻⁶ Å⁻²)",
+                "L3 SLD (×10⁻⁶ Å⁻²)",
+                "substrate SLD (×10⁻⁶ Å⁻²)"
+            ]
+            
+            true_params_dict['3_layer'] = {
+                'params': true_params_3layer,
+                'param_names': param_names_3layer
+            }
+            
+            # 1-layer configuration - combine both physical layers
+            combined_thickness = layers[1]['thickness'] + layers[2]['thickness']
+            # Weighted average SLD
+            total_volume = layers[1]['thickness'] + layers[2]['thickness']
+            weighted_sld = (layers[1]['sld'] * layers[1]['thickness'] + 
+                          layers[2]['sld'] * layers[2]['thickness']) / total_volume
+            
+            true_params_1layer = [
+                combined_thickness,        # L1 thickness (combined)
+                layers[0]['roughness'],    # ambient/L1 roughness
+                layers[2]['roughness'],    # L1/substrate roughness
+                weighted_sld * 1e6,        # L1 SLD (weighted average)
+                layers[3]['sld'] * 1e6     # substrate SLD
+            ]
+            
+            param_names_1layer = [
+                "L1 thickness (Å)",
+                "ambient/L1 roughness (Å)",
+                "L1/substrate roughness (Å)",
+                "L1 SLD (×10⁻⁶ Å⁻²)",
+                "substrate SLD (×10⁻⁶ Å⁻²)"
+            ]
+            
+            true_params_dict['1_layer'] = {
+                'params': true_params_1layer,
+                'param_names': param_names_1layer
+            }
+        
+        return true_params_dict
 
+    def get_true_params_for_model(self, model_config, true_params_dict):
+        """
+        Get the appropriate true parameters for a specific model configuration.
+        
+        Args:
+            model_config: Model configuration dictionary
+            true_params_dict: Dictionary of true parameters by layer count
+            
+        Returns:
+            Tuple of (true_params_array, param_names) or (None, None) if not found
+        """
+        if true_params_dict is None:
+            return None, None
+        
+        # Determine layer count from parameter names
+        param_names = model_config.get('parameter_names', [])
+        layer_count = None
+        
+        # Count layers based on parameter names
+        if any('L3' in name for name in param_names):
+            layer_count = '3_layer'
+        elif any('L2' in name for name in param_names):
+            layer_count = '2_layer'
+        elif any('L1' in name for name in param_names):
+            layer_count = '1_layer'
+        
+        if layer_count and layer_count in true_params_dict:
+            true_data = true_params_dict[layer_count]
+            return np.array(true_data['params']), true_data['param_names']
+        
+        return None, None
 
+    # ...existing code...
 def main():
     """Main execution function."""
     # Parse command line arguments
