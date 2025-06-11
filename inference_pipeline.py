@@ -241,14 +241,14 @@ class InferencePipeline:
                     # Print aggregate metrics
                     overall_metrics = result['parameter_metrics']['overall']
                     by_type = result['parameter_metrics']['by_type']
-                    print(f"\nParameter MAPE Summary:")
-                    print(f"Overall MAPE: {overall_metrics['mape']:.2f}%")
+                    print(f"\nParameter Metrics Summary:")
+                    print(f"Overall MAPE: {overall_metrics['mape']:.2f}%, Overall MSE: {overall_metrics['mse']:.6f}")
                     if by_type['thickness_mape'] > 0:
-                        print(f"Thickness MAPE: {by_type['thickness_mape']:.2f}%")
+                        print(f"Thickness - MAPE: {by_type['thickness_mape']:.2f}%, MSE: {by_type['thickness_mse']:.6f}")
                     if by_type['roughness_mape'] > 0:
-                        print(f"Roughness MAPE: {by_type['roughness_mape']:.2f}%")
+                        print(f"Roughness - MAPE: {by_type['roughness_mape']:.2f}%, MSE: {by_type['roughness_mse']:.6f}")
                     if by_type['sld_mape'] > 0:
-                        print(f"SLD MAPE: {by_type['sld_mape']:.2f}%")
+                        print(f"SLD - MAPE: {by_type['sld_mape']:.2f}%, MSE: {by_type['sld_mse']:.6f}")
                         
                 except Exception as e:
                     print(f"Warning: Could not calculate parameter metrics: {e}")
@@ -333,29 +333,44 @@ class InferencePipeline:
                     'relative_error_percent': float(rel_error)
                 }
         
-        # Group parameters by type for aggregate statistics
+        # Group parameters by type for aggregate statistics (both MAPE and MSE)
         thickness_mapes = []
+        thickness_mses = []
         roughness_mapes = []
+        roughness_mses = []
         sld_mapes = []
+        sld_mses = []
+        
+        # Calculate overall MSE
+        overall_mse = np.mean([metrics['squared_error'] for metrics in param_breakdown.values()])
         
         for name, metrics in param_breakdown.items():
             rel_err = metrics['relative_error_percent']
+            sq_err = metrics['squared_error']
+            
             if 'thickness' in name.lower() or 'd_' in name.lower():
                 thickness_mapes.append(rel_err)
+                thickness_mses.append(sq_err)
             elif 'roughness' in name.lower() or 'sigma' in name.lower():
                 roughness_mapes.append(rel_err)
+                roughness_mses.append(sq_err)
             elif 'sld' in name.lower() or 'rho' in name.lower():
                 sld_mapes.append(rel_err)
+                sld_mses.append(sq_err)
         
         return {
             'overall': {
-                'mape': float(param_mape)
+                'mape': float(param_mape),
+                'mse': float(overall_mse)
             },
             'by_parameter': param_breakdown,
             'by_type': {
                 'thickness_mape': float(np.mean(thickness_mapes)) if thickness_mapes else 0.0,
+                'thickness_mse': float(np.mean(thickness_mses)) if thickness_mses else 0.0,
                 'roughness_mape': float(np.mean(roughness_mapes)) if roughness_mapes else 0.0,
-                'sld_mape': float(np.mean(sld_mapes)) if sld_mapes else 0.0
+                'roughness_mse': float(np.mean(roughness_mses)) if roughness_mses else 0.0,
+                'sld_mape': float(np.mean(sld_mapes)) if sld_mapes else 0.0,
+                'sld_mse': float(np.mean(sld_mses)) if sld_mses else 0.0
             }
         }
     
@@ -476,17 +491,25 @@ class InferencePipeline:
             # Create parameter MAPE bar chart
             model_names = list(models_with_param_metrics.keys())
             param_mapes = []
+            param_mses = []
             thickness_mapes = []
+            thickness_mses = []
             roughness_mapes = []
+            roughness_mses = []
             sld_mapes = []
+            sld_mses = []
             
             for model_name in model_names:
                 result = models_with_param_metrics[model_name]
                 param_metrics = result['parameter_metrics']
                 param_mapes.append(param_metrics['overall']['mape'])
+                param_mses.append(param_metrics['overall']['mse'])
                 thickness_mapes.append(param_metrics['by_type']['thickness_mape'])
+                thickness_mses.append(param_metrics['by_type']['thickness_mse'])
                 roughness_mapes.append(param_metrics['by_type']['roughness_mape'])
+                roughness_mses.append(param_metrics['by_type']['roughness_mse'])
                 sld_mapes.append(param_metrics['by_type']['sld_mape'])
+                sld_mses.append(param_metrics['by_type']['sld_mse'])
             
             x = np.arange(len(model_names))
             width = 0.2
@@ -498,7 +521,7 @@ class InferencePipeline:
             
             ax3.set_xlabel('Model', fontsize=12)
             ax3.set_ylabel('MAPE (%)', fontsize=12)
-            ax3.set_title('Parameter Prediction Errors', fontsize=14)
+            ax3.set_title('Parameter Prediction Errors (MAPE)', fontsize=14)
             ax3.set_xticks(x)
             ax3.set_xticklabels([name[:15] + '...' if len(name) > 15 else name for name in model_names], 
                               rotation=45, ha='right')
@@ -509,6 +532,26 @@ class InferencePipeline:
             for i, v in enumerate(param_mapes):
                 ax3.text(i - 1.5*width, v + max(param_mapes) * 0.01, f'{v:.1f}%', 
                         ha='center', va='bottom', fontsize=8, fontweight='bold')
+            
+            # Create MSE text box
+            mse_text = "Parameter MSE Values:\n"
+            mse_text += "-" * 25 + "\n"
+            for i, model_name in enumerate(model_names):
+                short_name = model_name[:12] + "..." if len(model_name) > 12 else model_name
+                mse_text += f"{short_name}:\n"
+                mse_text += f"  Overall: {param_mses[i]:.4f}\n"
+                if thickness_mses[i] > 0:
+                    mse_text += f"  Thick: {thickness_mses[i]:.4f}\n"
+                if roughness_mses[i] > 0:
+                    mse_text += f"  Rough: {roughness_mses[i]:.4f}\n"
+                if sld_mses[i] > 0:
+                    mse_text += f"  SLD: {sld_mses[i]:.4f}\n"
+                mse_text += "\n"
+            
+            # Add MSE text box to the parameter plot
+            ax3.text(0.02, 0.98, mse_text, transform=ax3.transAxes, 
+                    fontsize=7, verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
         
         # Add metrics summary text box on the plot
         if successful_models:
@@ -588,9 +631,9 @@ class InferencePipeline:
             
             if models_with_param_metrics:
                 print(f"\nParameter Quality Comparison:")
-                print("-" * 90)
-                print(f"{'Model':<20} {'Param MAPE (%)':<15} {'Thick MAPE (%)':<15} {'Rough MAPE (%)':<15} {'SLD MAPE (%)':<15}")
-                print("-" * 90)
+                print("-" * 110)
+                print(f"{'Model':<20} {'MAPE (%)':<12} {'MSE':<12} {'Thick MAPE':<12} {'Rough MAPE':<12} {'SLD MAPE':<12}")
+                print("-" * 110)
                 
                 # Sort by parameter MAPE
                 sorted_param_models = sorted(
@@ -601,14 +644,15 @@ class InferencePipeline:
                 for model_name, result in sorted_param_models:
                     param_metrics = result['parameter_metrics']['overall']
                     by_type = result['parameter_metrics']['by_type']
-                    print(f"{model_name:<20} {param_metrics['mape']:<15.2f} "
-                          f"{by_type['thickness_mape']:<15.2f} {by_type['roughness_mape']:<15.2f} "
-                          f"{by_type['sld_mape']:<15.2f}")
+                    print(f"{model_name:<20} {param_metrics['mape']:<12.2f} "
+                          f"{param_metrics['mse']:<12.6f} {by_type['thickness_mape']:<12.2f} "
+                          f"{by_type['roughness_mape']:<12.2f} {by_type['sld_mape']:<12.2f}")
                 
                 print("\nBest parameter prediction (lowest Parameter MAPE):")
                 best_param_model_name, best_param_result = sorted_param_models[0]
                 print(f"  {best_param_model_name}: {best_param_result['description']}")
                 print(f"  Parameter MAPE = {best_param_result['parameter_metrics']['overall']['mape']:.2f}%")
+                print(f"  Parameter MSE = {best_param_result['parameter_metrics']['overall']['mse']:.6f}")
         
     def parse_true_parameters_from_model_file(self, model_file_path):
         """
