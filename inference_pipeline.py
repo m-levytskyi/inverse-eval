@@ -206,6 +206,38 @@ class InferencePipeline:
                 self.sigmas_exp, q_model
             )
             
+            # Calculate parameter metrics (true parameters are not available in this context,
+            # so this is just a structural addition; true parameters would need to be loaded
+            # or defined for meaningful output)
+            true_params = model_config.get('true_parameters')
+            if true_params is not None:
+                try:
+                    result['parameter_metrics'] = self.calculate_parameter_metrics(
+                        prediction_dict['polished_params_array'], 
+                        np.array(true_params), 
+                        param_names
+                    )
+                    
+                    print(f"\nParameter Quality Metrics:")
+                    print(f"Parameter MSE: {result['parameter_metrics']['overall']['mse']:.6f}")
+                    print(f"Parameter MAE: {result['parameter_metrics']['overall']['mae']:.6f}")
+                    print(f"Parameter MAPE: {result['parameter_metrics']['overall']['mape']:.2f}%")
+                    
+                    # Print breakdown by parameter type
+                    by_type = result['parameter_metrics']['by_type']
+                    if by_type['thickness_mape'] > 0:
+                        print(f"Thickness MAPE: {by_type['thickness_mape']:.2f}%")
+                    if by_type['roughness_mape'] > 0:
+                        print(f"Roughness MAPE: {by_type['roughness_mape']:.2f}%")
+                    if by_type['sld_mape'] > 0:
+                        print(f"SLD MAPE: {by_type['sld_mape']:.2f}%")
+                        
+                except Exception as e:
+                    print(f"Warning: Could not calculate parameter metrics: {e}")
+                    result['parameter_metrics'] = None
+            else:
+                result['parameter_metrics'] = None
+            
             print(f"\nFit Quality Metrics:")
             print(f"R-squared: {result['fit_metrics']['r_squared']:.4f}")
             print(f"MSE: {result['fit_metrics']['mse']:.6f}")
@@ -243,6 +275,76 @@ class InferencePipeline:
             'l1_loss': l1_loss
         }
     
+    def calculate_parameter_metrics(self, predicted_params, true_params, param_names):
+        """
+        Calculate parameter loss metrics comparing predicted vs true parameters.
+        
+        Args:
+            predicted_params: Array of predicted parameter values
+            true_params: Array of true parameter values  
+            param_names: List of parameter names for detailed breakdown
+            
+        Returns:
+            Dictionary containing parameter loss metrics
+        """
+        if len(predicted_params) != len(true_params):
+            raise ValueError(f"Parameter arrays must have same length: {len(predicted_params)} vs {len(true_params)}")
+        
+        # Overall parameter metrics
+        param_mse = np.mean((predicted_params - true_params) ** 2)
+        param_mae = np.mean(np.abs(predicted_params - true_params))
+        
+        # Calculate relative errors (avoid division by zero)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            relative_errors = np.abs((predicted_params - true_params) / true_params)
+            relative_errors = np.where(np.isfinite(relative_errors), relative_errors, 0)
+        
+        param_mape = np.mean(relative_errors) * 100  # Mean Absolute Percentage Error
+        
+        # Per-parameter breakdown
+        param_breakdown = {}
+        for i, name in enumerate(param_names):
+            if i < len(predicted_params):
+                pred_val = predicted_params[i]
+                true_val = true_params[i]
+                abs_error = abs(pred_val - true_val)
+                rel_error = abs_error / abs(true_val) * 100 if abs(true_val) > 1e-10 else 0
+                
+                param_breakdown[name] = {
+                    'predicted': float(pred_val),
+                    'true': float(true_val),
+                    'absolute_error': float(abs_error),
+                    'relative_error_percent': float(rel_error)
+                }
+        
+        # Group parameters by type for aggregate statistics
+        thickness_errors = []
+        roughness_errors = []
+        sld_errors = []
+        
+        for name, metrics in param_breakdown.items():
+            rel_err = metrics['relative_error_percent']
+            if 'thickness' in name.lower() or 'd_' in name.lower():
+                thickness_errors.append(rel_err)
+            elif 'roughness' in name.lower() or 'sigma' in name.lower():
+                roughness_errors.append(rel_err)
+            elif 'sld' in name.lower() or 'rho' in name.lower():
+                sld_errors.append(rel_err)
+        
+        return {
+            'overall': {
+                'mse': float(param_mse),
+                'mae': float(param_mae), 
+                'mape': float(param_mape)
+            },
+            'by_parameter': param_breakdown,
+            'by_type': {
+                'thickness_mape': float(np.mean(thickness_errors)) if thickness_errors else 0.0,
+                'roughness_mape': float(np.mean(roughness_errors)) if roughness_errors else 0.0,
+                'sld_mape': float(np.mean(sld_errors)) if sld_errors else 0.0
+            }
+        }
+    
     def run_all_models(self):
         """Run inference on all models defined in the configuration."""
         print(f"Starting inference pipeline with {len(self.model_configs)} models...")
@@ -268,7 +370,7 @@ class InferencePipeline:
         
         for model_name, result in self.results.items():
             if result['success']:
-                serializable_results[model_name] = {
+                serializable_result = {
                     'model_name': result['model_name'],
                     'config_name': result['config_name'],
                     'description': result['description'],
@@ -278,6 +380,12 @@ class InferencePipeline:
                     'fit_metrics': result['fit_metrics'],
                     'success': result['success']
                 }
+                
+                # Add parameter metrics if available
+                if 'parameter_metrics' in result and result['parameter_metrics'] is not None:
+                    serializable_result['parameter_metrics'] = result['parameter_metrics']
+                
+                serializable_results[model_name] = serializable_result
             else:
                 serializable_results[model_name] = {
                     'model_name': result['model_name'],
@@ -409,6 +517,35 @@ class InferencePipeline:
             best_model_name, best_result = sorted_models[0]
             print(f"  {best_model_name}: {best_result['description']}")
             print(f"  MSE = {best_result['fit_metrics']['mse']:.6f}")
+            
+            # Print parameter metrics summary if available
+            models_with_param_metrics = [
+                (name, result) for name, result in successful_models.items() 
+                if 'parameter_metrics' in result and result['parameter_metrics'] is not None
+            ]
+            
+            if models_with_param_metrics:
+                print(f"\nParameter Quality Comparison:")
+                print("-" * 90)
+                print(f"{'Model':<20} {'Param MSE':<12} {'Param MAE':<12} {'Param MAPE (%)':<15}")
+                print("-" * 90)
+                
+                # Sort by parameter MSE
+                sorted_param_models = sorted(
+                    models_with_param_metrics,
+                    key=lambda x: x[1]['parameter_metrics']['overall']['mse']
+                )
+                
+                for model_name, result in sorted_param_models:
+                    param_metrics = result['parameter_metrics']['overall']
+                    print(f"{model_name:<20} {param_metrics['mse']:<12.6f} "
+                          f"{param_metrics['mae']:<12.6f} {param_metrics['mape']:<15.2f}")
+                
+                print("\nBest parameter prediction (lowest Parameter MSE):")
+                best_param_model_name, best_param_result = sorted_param_models[0]
+                print(f"  {best_param_model_name}: {best_param_result['description']}")
+                print(f"  Parameter MSE = {best_param_result['parameter_metrics']['overall']['mse']:.6f}")
+                print(f"  Parameter MAPE = {best_param_result['parameter_metrics']['overall']['mape']:.2f}%")
 
 
 def main():
