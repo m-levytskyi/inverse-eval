@@ -74,7 +74,7 @@ def load_reflectivity_curve(filepath):
 def analyze_dataset(dataset_path):
     """Comprehensive analysis of the MARIA_VIPR_dataset"""
     
-    print("🔍 Analyzing MARIA_VIPR_dataset...")
+    print("Analyzing MARIA_VIPR_dataset...")
     print("=" * 60)
     
     # Initialize storage for analysis
@@ -92,7 +92,7 @@ def analyze_dataset(dataset_path):
     model_files = sorted([f for f in os.listdir(dataset_path) if f.endswith('_model.txt')])
     results['total_experiments'] = len(model_files)
     
-    print(f"📊 Total experiments found: {results['total_experiments']}")
+    print(f"Total experiments found: {results['total_experiments']}")
     
     # Analyze each experiment
     layer_details = []
@@ -235,17 +235,17 @@ def print_summary_report(results, layer_details, q_ranges):
     """Print a comprehensive summary report"""
     
     print("\n" + "="*80)
-    print("📋 MARIA_VIPR_DATASET ANALYSIS REPORT")
+    print("MARIA_VIPR_DATASET ANALYSIS REPORT")
     print("="*80)
     
-    print(f"\n🔢 DATASET OVERVIEW:")
+    print(f"\nDATASET OVERVIEW:")
     print(f"   • Total experiments: {results['total_experiments']:,}")
     print(f"   • Layer distribution:")
     for layers, count in sorted(results['layer_distribution'].items()):
         percentage = count / results['total_experiments'] * 100
         print(f"     - {layers} layer(s): {count:,} experiments ({percentage:.1f}%)")
     
-    print(f"\n📏 PARAMETER RANGES:")
+    print(f"\nPARAMETER RANGES:")
     
     # SLD ranges
     print(f"   • SLD ranges (Å⁻²):")
@@ -268,7 +268,7 @@ def print_summary_report(results, layer_details, q_ranges):
             print(f"     - {layer_pos}: {np.min(roughnesses):.1f} to {np.max(roughnesses):.1f} "
                   f"(mean: {np.mean(roughnesses):.1f})")
     
-    print(f"\n📈 Q-SPACE INFORMATION:")
+    print(f"\nQ-SPACE INFORMATION:")
     if results['q_range_info']:
         qi = results['q_range_info']
         print(f"   • Q_min range: {qi['q_min_range'][0]:.4f} to {qi['q_min_range'][1]:.4f}")
@@ -277,13 +277,13 @@ def print_summary_report(results, layer_details, q_ranges):
               f"(avg: {qi['avg_n_points']:.1f})")
     
     if results['errors']:
-        print(f"\n⚠️  ERRORS ENCOUNTERED:")
+        print(f"\nERRORS ENCOUNTERED:")
         for error in results['errors'][:5]:  # Show first 5 errors
             print(f"   • {error}")
         if len(results['errors']) > 5:
             print(f"   ... and {len(results['errors']) - 5} more errors")
     
-    print(f"\n✅ Analysis completed successfully!")
+    print(f"\nAnalysis completed successfully!")
     print("="*80)
 
 def save_analysis_results(results, layer_details, output_path):
@@ -349,27 +349,276 @@ def save_analysis_results(results, layer_details, output_path):
     if layer_df:
         pd.DataFrame(layer_df).to_csv(f"{output_path}/maria_dataset_layers.csv", index=False)
     
-    print(f"\n💾 Analysis results saved to:")
+    print(f"\nAnalysis results saved to:")
     print(f"   • {output_path}/maria_dataset_summary.json")
     print(f"   • {output_path}/maria_dataset_layers.csv")
     print(f"   • {output_path}/maria_dataset_analysis.png")
+
+def load_existing_analysis():
+    """Load existing analysis from CSV data"""
+    csv_file = Path("maria_dataset_layers.csv")
+    if not csv_file.exists():
+        return None
+    
+    df = pd.read_csv(csv_file)
+    return df
+
+def calculate_layer_specific_statistics(df):
+    """Calculate layer-specific statistics from the CSV data"""
+    
+    layer_statistics = {}
+    
+    # Group by number of layers
+    for layer_count in [0, 1, 2]:
+        layer_key = f'{layer_count}_layers'
+        layer_data = df[df['num_layers'] == layer_count]
+        
+        if len(layer_data) == 0:
+            continue
+            
+        stats = {
+            'total_experiments': len(layer_data['experiment_id'].unique()),
+            'layer_count': layer_count
+        }
+        
+        if layer_count == 0:
+            # 0-layer experiments (substrate interface only)
+            stats.update({
+                'fronting_sld': {
+                    'min': float(layer_data['fronting_sld'].min()),
+                    'max': float(layer_data['fronting_sld'].max()),
+                    'mean': float(layer_data['fronting_sld'].mean()),
+                    'std': float(layer_data['fronting_sld'].std())
+                },
+                'fronting_roughness': {
+                    'min': float(layer_data['fronting_roughness'].min()),
+                    'max': float(layer_data['fronting_roughness'].max()),
+                    'mean': float(layer_data['fronting_roughness'].mean()),
+                    'std': float(layer_data['fronting_roughness'].std())
+                },
+                'backing_sld': {
+                    'min': float(layer_data['backing_sld'].min()),
+                    'max': float(layer_data['backing_sld'].max()),
+                    'mean': float(layer_data['backing_sld'].mean()),
+                    'std': float(layer_data['backing_sld'].std())
+                },
+                'backing_roughness': {
+                    'min': float(layer_data['backing_roughness'].min()),
+                    'max': float(layer_data['backing_roughness'].max()),
+                    'mean': float(layer_data['backing_roughness'].mean()),
+                    'std': float(layer_data['backing_roughness'].std())
+                }
+            })
+        else:
+            # Experiments with deposited layers
+            deposited_layers = layer_data[layer_data['layer_type'] == 'deposited_layer']
+            
+            # Overall statistics for all deposited layers
+            stats.update({
+                'sld': {
+                    'min': float(deposited_layers['sld'].min()),
+                    'max': float(deposited_layers['sld'].max()),
+                    'mean': float(deposited_layers['sld'].mean()),
+                    'std': float(deposited_layers['sld'].std())
+                },
+                'thickness': {
+                    'min': float(deposited_layers['thickness'].min()),
+                    'max': float(deposited_layers['thickness'].max()),
+                    'mean': float(deposited_layers['thickness'].mean()),
+                    'std': float(deposited_layers['thickness'].std())
+                },
+                'roughness': {
+                    'min': float(deposited_layers['roughness'].min()),
+                    'max': float(deposited_layers['roughness'].max()),
+                    'mean': float(deposited_layers['roughness'].mean()),
+                    'std': float(deposited_layers['roughness'].std())
+                }
+            })
+            
+            # Layer position-specific statistics
+            layer_positions = {}
+            for pos in range(1, layer_count + 1):
+                pos_data = deposited_layers[deposited_layers['layer_position'] == pos]
+                if len(pos_data) > 0:
+                    layer_positions[f'layer_{pos}'] = {
+                        'sld': {
+                            'min': float(pos_data['sld'].min()),
+                            'max': float(pos_data['sld'].max()),
+                            'mean': float(pos_data['sld'].mean()),
+                            'std': float(pos_data['sld'].std())
+                        },
+                        'thickness': {
+                            'min': float(pos_data['thickness'].min()),
+                            'max': float(pos_data['thickness'].max()),
+                            'mean': float(pos_data['thickness'].mean()),
+                            'std': float(pos_data['thickness'].std())
+                        },
+                        'roughness': {
+                            'min': float(pos_data['roughness'].min()),
+                            'max': float(pos_data['roughness'].max()),
+                            'mean': float(pos_data['roughness'].mean()),
+                            'std': float(pos_data['roughness'].std())
+                        }
+                    }
+            
+            if layer_positions:
+                stats['layer_positions'] = layer_positions
+            
+            # Interface parameters for experiments with layers
+            stats.update({
+                'fronting_sld': {
+                    'min': float(layer_data['fronting_sld'].min()),
+                    'max': float(layer_data['fronting_sld'].max()),
+                    'mean': float(layer_data['fronting_sld'].mean()),
+                    'std': float(layer_data['fronting_sld'].std())
+                },
+                'fronting_roughness': {
+                    'min': float(layer_data['fronting_roughness'].min()),
+                    'max': float(layer_data['fronting_roughness'].max()),
+                    'mean': float(layer_data['fronting_roughness'].mean()),
+                    'std': float(layer_data['fronting_roughness'].std())
+                },
+                'backing_sld': {
+                    'min': float(layer_data['backing_sld'].min()),
+                    'max': float(layer_data['backing_sld'].max()),
+                    'mean': float(layer_data['backing_sld'].mean()),
+                    'std': float(layer_data['backing_sld'].std())
+                },
+                'backing_roughness': {
+                    'min': float(layer_data['backing_roughness'].min()),
+                    'max': float(layer_data['backing_roughness'].max()),
+                    'mean': float(layer_data['backing_roughness'].mean()),
+                    'std': float(layer_data['backing_roughness'].std())
+                }
+            })
+        
+        layer_statistics[layer_key] = stats
+    
+    return layer_statistics
+
+def print_layer_summary_report(layer_stats):
+    """Print a summary report for layer-specific statistics"""
+    
+    print("\n" + "="*80)
+    print("LAYER-SPECIFIC ANALYSIS REPORT")
+    print("="*80)
+    
+    for layer_key, data in layer_stats.items():
+        layer_count = data['layer_count']
+        total_exp = data['total_experiments']
+        
+        print(f"\n{layer_count}-LAYER EXPERIMENTS ({total_exp:,} experiments)")
+        print(f"{'='*60}")
+        
+        if layer_count == 0:
+            print("Interface parameters:")
+            front_sld = data['fronting_sld']
+            front_rough = data['fronting_roughness']
+            back_sld = data['backing_sld']
+            back_rough = data['backing_roughness']
+            
+            print(f"  Fronting SLD:       [{front_sld['min']:.2e}, {front_sld['max']:.2e}] (mean: {front_sld['mean']:.2e})")
+            print(f"  Fronting Roughness: [{front_rough['min']:.1f}, {front_rough['max']:.1f}] (mean: {front_rough['mean']:.1f})")
+            print(f"  Backing SLD:        [{back_sld['min']:.2e}, {back_sld['max']:.2e}] (mean: {back_sld['mean']:.2e})")
+            print(f"  Backing Roughness:  [{back_rough['min']:.1f}, {back_rough['max']:.1f}] (mean: {back_rough['mean']:.1f})")
+            
+        else:
+            print("Deposited layer parameters:")
+            
+            if 'sld' in data:
+                sld = data['sld']
+                thickness = data['thickness']
+                roughness = data['roughness']
+                
+                print(f"  Overall SLD:        [{sld['min']:.2e}, {sld['max']:.2e}] (mean: {sld['mean']:.2e})")
+                print(f"  Overall Thickness:  [{thickness['min']:.1f}, {thickness['max']:.1f}] (mean: {thickness['mean']:.1f})")
+                print(f"  Overall Roughness:  [{roughness['min']:.1f}, {roughness['max']:.1f}] (mean: {roughness['mean']:.1f})")
+            
+            if 'layer_positions' in data:
+                print(f"\nLayer-specific parameters:")
+                for pos_key, pos_data in sorted(data['layer_positions'].items()):
+                    layer_num = pos_key.split('_')[1]
+                    
+                    sld = pos_data['sld']
+                    thickness = pos_data['thickness']
+                    roughness = pos_data['roughness']
+                    
+                    print(f"  Layer {layer_num} SLD:        [{sld['min']:.2e}, {sld['max']:.2e}] (mean: {sld['mean']:.2e})")
+                    print(f"  Layer {layer_num} Thickness:  [{thickness['min']:.1f}, {thickness['max']:.1f}] (mean: {thickness['mean']:.1f})")
+                    print(f"  Layer {layer_num} Roughness:  [{roughness['min']:.1f}, {roughness['max']:.1f}] (mean: {roughness['mean']:.1f})")
+            
+            if 'fronting_sld' in data:
+                print(f"\nInterface parameters:")
+                front_sld = data['fronting_sld']
+                front_rough = data['fronting_roughness']
+                back_sld = data['backing_sld']
+                back_rough = data['backing_roughness']
+                
+                print(f"  Fronting SLD:       [{front_sld['min']:.2e}, {front_sld['max']:.2e}] (mean: {front_sld['mean']:.2e})")
+                print(f"  Fronting Roughness: [{front_rough['min']:.1f}, {front_rough['max']:.1f}] (mean: {front_rough['mean']:.1f})")
+                print(f"  Backing SLD:        [{back_sld['min']:.2e}, {back_sld['max']:.2e}] (mean: {back_sld['mean']:.2e})")
+                print(f"  Backing Roughness:  [{back_rough['min']:.1f}, {back_rough['max']:.1f}] (mean: {back_rough['mean']:.1f})")
+
+# ...existing code...
 
 def main():
     """Main analysis function"""
     dataset_path = "/home/levytskyi/Documents/reflectorch api playground/data/MARIA_VIPR_dataset"
     output_path = "/home/levytskyi/Documents/reflectorch api playground"
     
-    # Run comprehensive analysis
-    results, layer_details, q_ranges = analyze_dataset(dataset_path)
+    # Check if we have existing analysis data
+    existing_df = load_existing_analysis()
     
-    # Generate visualizations
-    create_visualizations(results, layer_details, q_ranges)
+    if existing_df is not None:
+        print("Found existing analysis data, calculating layer-specific statistics...")
+        
+        # Calculate layer-specific statistics
+        layer_stats = calculate_layer_specific_statistics(existing_df)
+        
+        # Save layer-specific statistics
+        with open(f"{output_path}/maria_dataset_layer_statistics.json", 'w') as f:
+            json.dump(layer_stats, f, indent=2)
+        
+        print(f"Layer-specific statistics saved to: {output_path}/maria_dataset_layer_statistics.json")
+        
+        # Print layer-specific summary
+        print_layer_summary_report(layer_stats)
+        
+    else:
+        print("No existing analysis data found, running full analysis...")
+        
+        # Run comprehensive analysis
+        results, layer_details, q_ranges = analyze_dataset(dataset_path)
+        
+        # Generate visualizations
+        create_visualizations(results, layer_details, q_ranges)
+        
+        # Print summary report
+        print_summary_report(results, layer_details, q_ranges)
+        
+        # Save results
+        save_analysis_results(results, layer_details, output_path)
+        
+        # Also calculate and save layer-specific statistics
+        if Path(f"{output_path}/maria_dataset_layers.csv").exists():
+            df = pd.read_csv(f"{output_path}/maria_dataset_layers.csv")
+            layer_stats = calculate_layer_specific_statistics(df)
+            
+            with open(f"{output_path}/maria_dataset_layer_statistics.json", 'w') as f:
+                json.dump(layer_stats, f, indent=2)
+            
+            print(f"Layer-specific statistics saved to: {output_path}/maria_dataset_layer_statistics.json")
     
-    # Print summary report
-    print_summary_report(results, layer_details, q_ranges)
-    
-    # Save results
-    save_analysis_results(results, layer_details, output_path)
+    # Load existing analysis data
+    df = load_existing_analysis()
+    if df is not None:
+        # Calculate layer-specific statistics
+        layer_stats = calculate_layer_specific_statistics(df)
+        print("\nLayer-specific statistics (from existing data):")
+        for layer_key, stats in layer_stats.items():
+            print(f" - {layer_key}: {stats['total_experiments']} experiments")
+    else:
+        print("No existing analysis data found.")
 
 if __name__ == "__main__":
     main()
