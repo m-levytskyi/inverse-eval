@@ -36,34 +36,403 @@ np.random.seed(42)
 class InferencePipeline:
     """Pipeline for testing multiple models on experimental data."""
     
-    def __init__(self, config_file, output_dir="inference_results"):
+    def __init__(self, config_file=None, output_dir="inference_results", experiment_id=None, 
+                 models_list=None, data_directory="data", priors_type="broad"):
         """
         Initialize the inference pipeline.
         
         Args:
-            config_file: Path to JSON configuration file
+            config_file: Path to JSON configuration file (legacy mode)
             output_dir: Directory to save results
+            experiment_id: Experiment ID (e.g., 's000000') for batch mode
+            models_list: List of model names for batch mode
+            data_directory: Base data directory for batch mode
+            priors_type: Type of priors to use ('broad' or 'narrow') for batch mode
         """
-        self.config_file = Path(config_file)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
-        
-        # Load configuration
-        self.load_configuration()
-        
-        # Load experimental data
-        self.load_experimental_data()
-        
-        # Load true parameters if available
-        self.true_params_dict = None
-        if 'true_parameters_file' in self.data_config:
-            self.true_params_dict = self.parse_true_parameters_from_model_file(
-                self.data_config['true_parameters_file']
-            )
         
         # Initialize results storage
         self.results = {}
         
+        if experiment_id is not None:
+            # Batch mode - initialize from experiment ID
+            self.experiment_id = experiment_id
+            self.data_directory = Path(data_directory)
+            self.models_list = models_list or []
+            self.priors_type = priors_type
+            
+            # Auto-discover experiment files
+            self.discover_experiment_files()
+            
+            # Load experimental data
+            self.load_experimental_data_from_files()
+            
+            # Load true parameters
+            self.load_true_parameters_from_files()
+            
+            # Generate model configuration
+            self.generate_model_configurations()
+            
+        else:
+            # Legacy mode - initialize from config file
+            if config_file is None:
+                raise ValueError("Either config_file or experiment_id must be provided")
+            
+            self.config_file = Path(config_file)
+            
+            # Load configuration
+            self.load_configuration()
+            
+            # Load experimental data
+            self.load_experimental_data()
+            
+            # Load true parameters if available
+            self.true_params_dict = None
+            true_params_file = self.find_true_parameters_file()
+            if true_params_file:
+                print(f"Found true parameters file: {true_params_file}")
+                self.true_params_dict = self.parse_true_parameters_from_model_file(true_params_file)
+            elif 'true_parameters_file' in self.data_config:
+                self.true_params_dict = self.parse_true_parameters_from_model_file(
+                    self.data_config['true_parameters_file']
+                )
+    
+    def discover_experiment_files(self):
+        """Auto-discover experiment files based on experiment ID."""
+        self.exp_data_file = None
+        self.exp_model_file = None
+        
+        # Common file patterns
+        exp_curve_pattern = f"{self.experiment_id}_experimental_curve.dat"
+        model_pattern = f"{self.experiment_id}_model.txt"
+        
+        # Search in various locations
+        search_paths = [
+            self.data_directory,
+            self.data_directory / "MARIA_VIPR_dataset" / "1",
+            self.data_directory / "MARIA_VIPR_dataset" / "2",
+            self.data_directory / self.experiment_id,
+        ]
+        
+        for search_path in search_paths:
+            if not search_path.exists():
+                continue
+                
+            # Look for files directly in the path
+            exp_file = search_path / exp_curve_pattern
+            model_file = search_path / model_pattern
+            
+            if exp_file.exists():
+                self.exp_data_file = exp_file
+            if model_file.exists():
+                self.exp_model_file = model_file
+                
+            # If both found, we're done
+            if self.exp_data_file and self.exp_model_file:
+                break
+                
+            # Also search subdirectories
+            for subdir in search_path.iterdir():
+                if subdir.is_dir():
+                    exp_file = subdir / exp_curve_pattern
+                    model_file = subdir / model_pattern
+                    
+                    if exp_file.exists():
+                        self.exp_data_file = exp_file
+                    if model_file.exists():
+                        self.exp_model_file = model_file
+                        
+                    if self.exp_data_file and self.exp_model_file:
+                        break
+            
+            if self.exp_data_file and self.exp_model_file:
+                break
+        
+        if not self.exp_data_file:
+            raise FileNotFoundError(f"Could not find experimental data file for {self.experiment_id}")
+        if not self.exp_model_file:
+            raise FileNotFoundError(f"Could not find model file for {self.experiment_id}")
+            
+        print(f"Found experiment files:")
+        print(f"  Data: {self.exp_data_file}")
+        print(f"  Model: {self.exp_model_file}")
+    
+    def load_experimental_data_from_files(self):
+        """Load experimental data from discovered files."""
+        print(f"Loading experimental data from: {self.exp_data_file}")
+        
+        # Load the experimental data
+        data = np.loadtxt(self.exp_data_file)
+        
+        # Determine format based on number of columns
+        if data.shape[1] == 3:
+            # 3-column format: Q, R, dR
+            self.q_exp = data[:, 0]
+            self.curve_exp = data[:, 1]
+            self.sigmas_exp = data[:, 2]
+            self.q_res_exp = None
+        elif data.shape[1] == 4:
+            # 4-column format: Q, R, dR, dQ
+            self.q_exp = data[:, 0]
+            self.curve_exp = data[:, 1]
+            self.sigmas_exp = data[:, 2]
+            self.q_res_exp = data[:, 3]
+        else:
+            raise ValueError(f"Unsupported data format: {data.shape[1]} columns")
+        
+        print(f"Loaded {len(self.q_exp)} data points")
+        print(f"Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹")
+    
+    def load_true_parameters_from_files(self):
+        """Load true parameters from discovered model file."""
+        if self.exp_model_file:
+            print(f"Loading true parameters from: {self.exp_model_file}")
+            self.true_params_dict = self.parse_true_parameters_from_model_file(str(self.exp_model_file))
+        else:
+            self.true_params_dict = None
+    
+    def generate_model_configurations(self):
+        """Generate model configurations for batch processing."""
+        if not self.models_list:
+            raise ValueError("No models specified for batch processing")
+        
+        # Load MARIA bounds for priors
+        maria_bounds = self.load_maria_bounds()
+        
+        # Determine layer count from true parameters
+        layer_count = self.determine_layer_count()
+        
+        # Get appropriate priors
+        prior_bounds = self.get_priors_for_layer_count(layer_count, maria_bounds)
+        parameter_names = self.get_parameter_names_for_layer_count(layer_count)
+        
+        # Generate model configurations
+        self.model_configs = {}
+        for model_name in self.models_list:
+            self.model_configs[model_name] = {
+                "config_name": model_name,
+                "description": f"{model_name} model for {layer_count}-layer system",
+                "weights_format": "safetensors",
+                "prior_bounds": prior_bounds,
+                "parameter_names": parameter_names
+            }
+        
+        print(f"Generated configurations for {len(self.model_configs)} models")
+        print(f"Layer count: {layer_count}, Priors type: {self.priors_type}")
+    
+    def determine_layer_count(self):
+        """Determine layer count from true parameters file."""
+        if not self.true_params_dict:
+            # Default assumption - could be improved
+            return 2
+            
+        # Count actual material layers from the parsed model file
+        # The true_params_dict might have multiple entries, but we want the natural layer count
+        
+        # Look for the most natural layer count based on available data
+        # Priority: 2_layer (most common), then 1_layer
+        for layer_key in ['2_layer', '1_layer']:
+            if layer_key in self.true_params_dict:
+                return int(layer_key.split('_')[0])
+        
+        return 2  # Default
+    
+    def load_maria_bounds(self):
+        """Load MARIA dataset prior bounds."""
+        bounds_file = Path("maria_dataset_prior_bounds.json")
+        if not bounds_file.exists():
+            print("Warning: MARIA bounds file not found. Using default bounds.")
+            return None
+            
+        with open(bounds_file, 'r') as f:
+            return json.load(f)
+    
+    def get_priors_for_layer_count(self, layer_count, maria_bounds):
+        """Get appropriate priors for the layer count."""
+        if not maria_bounds:
+            return self.get_default_priors(layer_count)
+        
+        layer_key = f"{layer_count}_layers"
+        if layer_key not in maria_bounds:
+            return self.get_default_priors(layer_count)
+        
+        layer_data = maria_bounds[layer_key]
+        parameters = layer_data['parameters']
+        
+        bounds = []
+        
+        if layer_count == 1:
+            # 1-layer: [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
+            bounds = self.extract_bounds_1_layer(parameters)
+        elif layer_count == 2:
+            # 2-layer bounds
+            bounds = self.extract_bounds_2_layer(parameters)
+        
+        # Apply priors type (broad vs narrow)
+        if self.priors_type == "narrow":
+            bounds = self.apply_narrow_priors(bounds, parameters)
+        
+        return bounds
+    
+    def get_default_priors(self, layer_count):
+        """Get default prior bounds when MARIA bounds are not available."""
+        if layer_count == 1:
+            return [
+                [10.0, 500.0],      # thickness
+                [1.0, 10.0],        # amb_rough
+                [1.0, 10.0],        # sub_rough
+                [-5e-06, 5e-06],    # layer_sld
+                [-5e-06, 5e-06]     # sub_sld
+            ]
+        elif layer_count == 2:
+            return [
+                [10.0, 500.0],      # L1 thickness
+                [10.0, 500.0],      # L2 thickness
+                [1.0, 10.0],        # amb_rough
+                [1.0, 10.0],        # L1L2_rough
+                [1.0, 10.0],        # L2sub_rough
+                [-5e-06, 5e-06],    # L1_sld
+                [-5e-06, 5e-06],    # L2_sld
+                [-5e-06, 5e-06]     # sub_sld
+            ]
+    
+    def extract_bounds_1_layer(self, parameters):
+        """Extract bounds for 1-layer system from MARIA structure."""
+        bounds = []
+        
+        # For 1-layer: [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
+        
+        # Layer thickness - use overall thickness if available
+        if 'overall' in parameters and 'thickness' in parameters['overall']:
+            thickness_data = parameters['overall']['thickness']
+            bounds.append([thickness_data['min'], thickness_data['max']])
+        else:
+            bounds.append([10.0, 500.0])
+        
+        # Roughness parameters
+        if 'interface' in parameters and 'fronting_roughness' in parameters['interface']:
+            fronting_data = parameters['interface']['fronting_roughness']
+            bounds.append([fronting_data['min'], fronting_data['max']])
+        else:
+            bounds.append([1.0, 10.0])
+        
+        if 'interface' in parameters and 'backing_roughness' in parameters['interface']:
+            backing_data = parameters['interface']['backing_roughness']
+            bounds.append([backing_data['min'], backing_data['max']])
+        else:
+            bounds.append([0.0, 10.0])  # backing roughness is often 0
+        
+        # SLD parameters
+        if 'overall' in parameters and 'sld' in parameters['overall']:
+            sld_data = parameters['overall']['sld']
+            bounds.append([sld_data['min'] * 1e6, sld_data['max'] * 1e6])  # Convert to 10^-6 units
+        else:
+            bounds.append([-5.0, 15.0])
+            
+        if 'interface' in parameters and 'backing_sld' in parameters['interface']:
+            backing_sld = parameters['interface']['backing_sld']
+            bounds.append([backing_sld['min'] * 1e6, backing_sld['max'] * 1e6])
+        else:
+            bounds.append([-5.0, 15.0])
+        
+        return bounds
+    
+    def extract_bounds_2_layer(self, parameters):
+        """Extract bounds for 2-layer system from MARIA structure."""
+        bounds = []
+        
+        # Extract bounds from the correct MARIA structure
+        # For 2-layer: [L1_thick, L2_thick, amb_rough, L1L2_rough, L2sub_rough, L1_sld, L2_sld, sub_sld]
+        
+        # Layer thicknesses
+        if 'by_position' in parameters and 'layer_1' in parameters['by_position']:
+            layer1_data = parameters['by_position']['layer_1']
+            bounds.append([layer1_data['thickness']['min'], layer1_data['thickness']['max']])
+        else:
+            bounds.append([10.0, 500.0])
+            
+        if 'by_position' in parameters and 'layer_2' in parameters['by_position']:
+            layer2_data = parameters['by_position']['layer_2']
+            bounds.append([layer2_data['thickness']['min'], layer2_data['thickness']['max']])
+        else:
+            bounds.append([10.0, 500.0])
+        
+        # Roughness parameters (fronting, inter-layer, backing)
+        if 'interface' in parameters and 'fronting_roughness' in parameters['interface']:
+            fronting_data = parameters['interface']['fronting_roughness']
+            bounds.append([fronting_data['min'], fronting_data['max']])
+        else:
+            bounds.append([1.0, 10.0])
+        
+        # Inter-layer roughness - use average of layer roughnesses as approximation
+        if 'by_position' in parameters:
+            layer1_rough = parameters['by_position']['layer_1']['roughness']
+            layer2_rough = parameters['by_position']['layer_2']['roughness']
+            # Use the combined range of both layers for inter-layer roughness
+            min_rough = min(layer1_rough['min'], layer2_rough['min'])
+            max_rough = max(layer1_rough['max'], layer2_rough['max'])
+            bounds.append([min_rough, max_rough])
+            bounds.append([min_rough, max_rough])  # L2/substrate roughness
+        else:
+            bounds.append([1.0, 60.0])
+            bounds.append([1.0, 60.0])
+        
+        # SLD parameters
+        if 'by_position' in parameters:
+            layer1_sld = parameters['by_position']['layer_1']['sld']
+            layer2_sld = parameters['by_position']['layer_2']['sld']
+            bounds.append([layer1_sld['min'] * 1e6, layer1_sld['max'] * 1e6])  # Convert to 10^-6 units
+            bounds.append([layer2_sld['min'] * 1e6, layer2_sld['max'] * 1e6])
+        else:
+            bounds.append([-5.0, 15.0])
+            bounds.append([-5.0, 15.0])
+            
+        if 'interface' in parameters and 'backing_sld' in parameters['interface']:
+            backing_sld = parameters['interface']['backing_sld']
+            bounds.append([backing_sld['min'] * 1e6, backing_sld['max'] * 1e6])
+        else:
+            bounds.append([-5.0, 15.0])
+        
+        return bounds
+    
+    def apply_narrow_priors(self, bounds, parameters):
+        """Apply narrow priors (75-125 percentiles) instead of min-max."""
+        # This would require percentile data from MARIA dataset
+        # For now, just narrow the bounds by 25%
+        narrow_bounds = []
+        for bound in bounds:
+            range_size = bound[1] - bound[0]
+            narrow_range = range_size * 0.5  # Use 50% of the range
+            center = (bound[0] + bound[1]) / 2
+            narrow_bounds.append([
+                center - narrow_range / 2,
+                center + narrow_range / 2
+            ])
+        return narrow_bounds
+    
+    def get_parameter_names_for_layer_count(self, layer_count):
+        """Get parameter names for the given layer count."""
+        if layer_count == 1:
+            return [
+                "L1 thickness (Å)",
+                "ambient/L1 roughness (Å)",
+                "L1/substrate roughness (Å)",
+                "L1 SLD (×10⁻⁶ Å⁻²)",
+                "substrate SLD (×10⁻⁶ Å⁻²)"
+            ]
+        else:  # layer_count == 2
+            return [
+                "L1 thickness (Å)",
+                "L2 thickness (Å)",
+                "ambient/L1 roughness (Å)",
+                "L1/L2 roughness (Å)",
+                "L2/substrate roughness (Å)",
+                "L1 SLD (×10⁻⁶ Å⁻²)",
+                "L2 SLD (×10⁻⁶ Å⁻²)",
+                "substrate SLD (×10⁻⁶ Å⁻²)"
+            ]
+
     def load_configuration(self):
         """Load configuration from JSON file."""
         print(f"Loading configuration from: {self.config_file}")
@@ -374,8 +743,13 @@ class InferencePipeline:
             }
         }
     
-    def run_all_models(self):
-        """Run inference on all models defined in the configuration."""
+    def run_all_models(self, show_plots=True):
+        """
+        Run inference on all models defined in the configuration.
+        
+        Args:
+            show_plots: Whether to create and show comparison plots
+        """
         print(f"Starting inference pipeline with {len(self.model_configs)} models...")
         print(f"Results will be saved to: {self.output_dir}")
         
@@ -386,8 +760,9 @@ class InferencePipeline:
         # Save results
         self.save_results()
         
-        # Generate comparison plots
-        self.create_comparison_plots()
+        # Generate comparison plots only if requested
+        if show_plots:
+            self.create_comparison_plots()
         
         # Print summary
         self.print_summary()
@@ -459,7 +834,10 @@ class InferencePipeline:
         ax1.set_yscale('log')
         ax1.set_xlabel('q [Å⁻¹]', fontsize=12)
         ax1.set_ylabel('R(q)', fontsize=12)
-        ax1.set_title('Reflectivity Curves Comparison', fontsize=14)
+        
+        # Extract experiment name from data path or description
+        experiment_name = self.get_experiment_name()
+        ax1.set_title(f'Reflectivity Curves Comparison - {experiment_name}', fontsize=14)
         
         # Plot model predictions with metrics in labels
         colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
@@ -482,7 +860,7 @@ class InferencePipeline:
         
         ax2.set_xlabel('z [Å]', fontsize=12)
         ax2.set_ylabel('SLD [10⁻⁶ Å⁻²]', fontsize=12)
-        ax2.set_title('SLD Profiles Comparison', fontsize=14)
+        ax2.set_title(f'SLD Profiles Comparison - {experiment_name}', fontsize=14)
         ax2.legend(fontsize=9)
         ax2.grid(True, alpha=0.3)
         
@@ -521,7 +899,7 @@ class InferencePipeline:
             
             ax3.set_xlabel('Model', fontsize=12)
             ax3.set_ylabel('MAPE (%)', fontsize=12)
-            ax3.set_title('Parameter Prediction Errors (MAPE)', fontsize=14)
+            ax3.set_title(f'Parameter Prediction Errors (MAPE) - {experiment_name}', fontsize=14)
             ax3.set_xticks(x)
             ax3.set_xticklabels([name[:15] + '...' if len(name) > 15 else name for name in model_names], 
                               rotation=45, ha='right')
@@ -738,45 +1116,6 @@ class InferencePipeline:
                 'param_names': param_names_2layer
             }
             
-            # 3-layer configuration - for models that expect a third layer, 
-            # we can split one of the existing layers or add a thin intermediate layer
-            # For now, let's create a thin third layer by splitting layer2
-            l3_thickness = 100.0  # Assume 100 Å for L3
-            l2_thickness_reduced = layers[2]['thickness'] - l3_thickness
-            
-            true_params_3layer = [
-                layers[1]['thickness'],    # L1 thickness
-                l2_thickness_reduced,      # L2 thickness (reduced)
-                l3_thickness,              # L3 thickness
-                layers[0]['roughness'],    # ambient/L1 roughness
-                layers[1]['roughness'],    # L1/L2 roughness
-                layers[1]['roughness'] * 1.5,  # L2/L3 roughness (interpolated)
-                layers[2]['roughness'],    # L3/substrate roughness
-                layers[1]['sld'] * 1e6,    # L1 SLD
-                layers[2]['sld'] * 1e6,    # L2 SLD
-                layers[2]['sld'] * 1e6,    # L3 SLD (same as L2)
-                layers[3]['sld'] * 1e6     # substrate SLD
-            ]
-            
-            param_names_3layer = [
-                "L1 thickness (Å)",
-                "L2 thickness (Å)",
-                "L3 thickness (Å)",
-                "ambient/L1 roughness (Å)",
-                "L1/L2 roughness (Å)",
-                "L2/L3 roughness (Å)",
-                "L3/substrate roughness (Å)",
-                "L1 SLD (×10⁻⁶ Å⁻²)",
-                "L2 SLD (×10⁻⁶ Å⁻²)",
-                "L3 SLD (×10⁻⁶ Å⁻²)",
-                "substrate SLD (×10⁻⁶ Å⁻²)"
-            ]
-            
-            true_params_dict['3_layer'] = {
-                'params': true_params_3layer,
-                'param_names': param_names_3layer
-            }
-            
             # 1-layer configuration - combine both physical layers
             combined_thickness = layers[1]['thickness'] + layers[2]['thickness']
             # Weighted average SLD
@@ -826,9 +1165,7 @@ class InferencePipeline:
         layer_count = None
         
         # Count layers based on parameter names
-        if any('L3' in name for name in param_names):
-            layer_count = '3_layer'
-        elif any('L2' in name for name in param_names):
+        if any('L2' in name for name in param_names):
             layer_count = '2_layer'
         elif any('L1' in name for name in param_names):
             layer_count = '1_layer'
@@ -839,7 +1176,137 @@ class InferencePipeline:
         
         return None, None
 
-    # ...existing code...
+    def get_experiment_name(self):
+        """Extract experiment name from data path or description."""
+        # Try to extract from data path first
+        data_path = Path(self.data_config['data_path'])
+        
+        # Look for experiment ID patterns (like s123456)
+        if '_experimental_curve.dat' in data_path.name:
+            exp_id = data_path.name.replace('_experimental_curve.dat', '')
+            return exp_id
+        elif '_exp_curve.dat' in data_path.name:
+            exp_id = data_path.name.replace('_exp_curve.dat', '')
+            return exp_id
+        elif data_path.stem.startswith('s') and data_path.stem[1:].isdigit():
+            return data_path.stem
+        
+        # Try to extract from description
+        description = self.data_config.get('description', '')
+        if 'for ' in description:
+            # Extract part after 'for '
+            parts = description.split('for ')
+            if len(parts) > 1:
+                exp_part = parts[1].split(' ')[0]  # Get first word after 'for '
+                if exp_part:
+                    return exp_part
+        
+        # Fallback to filename stem
+        return data_path.stem
+    
+    def find_true_parameters_file(self):
+        """
+        Automatically find the true parameters file based on naming convention.
+        Looks for a file ending with '_model.txt' in the same directory as the data file.
+        
+        Returns:
+            str: Path to the true parameters file if found, None otherwise
+        """
+        data_path = Path(self.data_config['data_path'])
+        data_dir = data_path.parent
+        
+        # Extract the experiment ID (e.g., 's000000' from 's000000_experimental_curve.dat')
+        data_filename = data_path.stem
+        
+        # Extract experiment ID by removing '_experimental_curve' suffix
+        if '_experimental_curve' in data_filename:
+            experiment_id = data_filename.replace('_experimental_curve', '')
+        else:
+            # Fallback: assume the whole filename is the experiment ID
+            experiment_id = data_filename
+        
+        # Look for corresponding model file
+        model_filename = f"{experiment_id}_model.txt"
+        model_path = data_dir / model_filename
+        
+        if model_path.exists():
+            return str(model_path)
+        
+        # Also check if there's a subdirectory with the experiment ID
+        subdir_path = data_dir / experiment_id / model_filename
+        if subdir_path.exists():
+            return str(subdir_path)
+        
+        return None
+
+    @staticmethod
+    def run_experiment_inference(experiment_id, models_list, data_directory="data", priors_type="broad", output_dir="inference_results"):
+        """
+        Static method to run inference on a single experiment for batch processing.
+        
+        Args:
+            experiment_id: Experiment ID (e.g., 's000000')
+            models_list: List of model names to test
+            data_directory: Base data directory
+            priors_type: Type of priors ('broad' or 'narrow')
+            output_dir: Output directory for results
+        
+        Returns:
+            dict: Results dictionary with experiment info and model results
+        """
+        try:
+            # Create pipeline instance in batch mode
+            pipeline = InferencePipeline(
+                experiment_id=experiment_id,
+                models_list=models_list,
+                data_directory=data_directory,
+                priors_type=priors_type,
+                output_dir=output_dir
+            )
+            
+            # Run inference on all models
+            pipeline.run_all_models(show_plots=False)  # Don't show plots in batch mode
+            
+            # Extract and format results
+            results = {
+                'exp_id': experiment_id,
+                'layer_count': pipeline.determine_layer_count(),
+                'priors_type': priors_type,
+                'models_results': {},
+                'success': True,
+                'error': None
+            }
+            
+            # Extract results from each model
+            for model_name, model_result in pipeline.results.items():
+                if model_result['success']:
+                    results['models_results'][model_name] = {
+                        'success': True,
+                        'fit_metrics': model_result['fit_metrics'],
+                        'predicted_params': model_result['predicted_params'].tolist() if hasattr(model_result['predicted_params'], 'tolist') else model_result['predicted_params'],
+                        'polished_params': model_result['polished_params'].tolist() if hasattr(model_result['polished_params'], 'tolist') else model_result['polished_params'],
+                        'param_names': model_result['param_names']
+                    }
+                    
+                    # Add parameter metrics if available
+                    if 'parameter_metrics' in model_result and model_result['parameter_metrics'] is not None:
+                        results['models_results'][model_name]['parameter_metrics'] = model_result['parameter_metrics']
+                else:
+                    results['models_results'][model_name] = {
+                        'success': False,
+                        'error': model_result.get('error', 'Unknown error')
+                    }
+            
+            return results
+            
+        except Exception as e:
+            return {
+                'exp_id': experiment_id,
+                'success': False,
+                'error': str(e),
+                'models_results': {}
+            }
+
 def main():
     """Main execution function."""
     # Parse command line arguments
