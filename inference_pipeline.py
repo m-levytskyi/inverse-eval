@@ -1355,8 +1355,8 @@ class InferencePipeline:
         
         true_params_dict = {}
         
-        # For 2-layer models (L1, L2): layers[1] and layers[2] are the physical layers
-        if len(layers) >= 4:  # fronting + layer1 + layer2 + backing
+        # Handle different layer configurations
+        if len(layers) >= 4:  # fronting + layer1 + layer2 + backing (2-layer system)
             # 2-layer configuration
             true_params_2layer = [
                 layers[1]['thickness'],  # L1 thickness
@@ -1398,6 +1398,29 @@ class InferencePipeline:
                 layers[2]['roughness'],    # L1/substrate roughness
                 weighted_sld * 1e6,        # L1 SLD (weighted average)
                 layers[3]['sld'] * 1e6     # substrate SLD
+            ]
+            
+            param_names_1layer = [
+                "L1 thickness (Å)",
+                "ambient/L1 roughness (Å)",
+                "L1/substrate roughness (Å)",
+                "L1 SLD (×10⁻⁶ Å⁻²)",
+                "substrate SLD (×10⁻⁶ Å⁻²)"
+            ]
+            
+            true_params_dict['1_layer'] = {
+                'params': true_params_1layer,
+                'param_names': param_names_1layer
+            }
+        
+        elif len(layers) == 3:  # fronting + layer1 + backing (1-layer system)
+            # 1-layer configuration with single physical layer
+            true_params_1layer = [
+                layers[1]['thickness'],    # L1 thickness
+                layers[0]['roughness'],    # ambient/L1 roughness
+                layers[1]['roughness'],    # L1/substrate roughness  
+                layers[1]['sld'] * 1e6,    # L1 SLD
+                layers[2]['sld'] * 1e6     # substrate SLD
             ]
             
             param_names_1layer = [
