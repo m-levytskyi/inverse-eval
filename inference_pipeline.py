@@ -37,7 +37,7 @@ class InferencePipeline:
     """Pipeline for testing multiple models on experimental data."""
     
     def __init__(self, config_file=None, output_dir="inference_results", experiment_id=None, 
-                 models_list=None, data_directory="data", priors_type="broad"):
+                 models_list=None, data_directory="data", priors_type="broad", layer_count=None):
         """
         Initialize the inference pipeline.
         
@@ -48,9 +48,11 @@ class InferencePipeline:
             models_list: List of model names for batch mode
             data_directory: Base data directory for batch mode
             priors_type: Type of priors to use ('broad' or 'narrow') for batch mode
+            layer_count: Number of layers (1 or 2). If None, will auto-detect.
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        self.layer_count_override = layer_count  # Store for override
         
         # Initialize results storage
         self.results = {}
@@ -222,7 +224,11 @@ class InferencePipeline:
         print(f"Layer count: {layer_count}, Priors type: {self.priors_type}")
     
     def determine_layer_count(self):
-        """Determine layer count from true parameters file."""
+        """Determine layer count from override or true parameters file."""
+        # If layer count is explicitly provided, use it
+        if hasattr(self, 'layer_count_override') and self.layer_count_override is not None:
+            return self.layer_count_override
+            
         if not self.true_params_dict:
             # Default assumption - could be improved
             return 2
@@ -280,8 +286,8 @@ class InferencePipeline:
         if layer_count == 1:
             return [
                 [10.0, 500.0],      # thickness
-                [1.0, 10.0],        # amb_rough
-                [1.0, 10.0],        # sub_rough
+                [0.1, 10.0],        # amb_rough (min 0.1 to avoid negative)
+                [0.1, 10.0],        # sub_rough (min 0.1 to avoid negative)
                 [-5e-06, 5e-06],    # layer_sld
                 [-5e-06, 5e-06]     # sub_sld
             ]
@@ -289,9 +295,9 @@ class InferencePipeline:
             return [
                 [10.0, 500.0],      # L1 thickness
                 [10.0, 500.0],      # L2 thickness
-                [1.0, 10.0],        # amb_rough
-                [1.0, 10.0],        # L1L2_rough
-                [1.0, 10.0],        # L2sub_rough
+                [0.1, 10.0],        # amb_rough (min 0.1 to avoid negative)
+                [0.1, 10.0],        # L1L2_rough (min 0.1 to avoid negative)
+                [0.1, 10.0],        # L2sub_rough (min 0.1 to avoid negative)
                 [-5e-06, 5e-06],    # L1_sld
                 [-5e-06, 5e-06],    # L2_sld
                 [-5e-06, 5e-06]     # sub_sld
@@ -319,9 +325,9 @@ class InferencePipeline:
         
         if 'interface' in parameters and 'backing_roughness' in parameters['interface']:
             backing_data = parameters['interface']['backing_roughness']
-            bounds.append([backing_data['min'], backing_data['max']])
+            bounds.append([max(0.1, backing_data['min']), backing_data['max']])
         else:
-            bounds.append([0.0, 10.0])  # backing roughness is often 0
+            bounds.append([0.1, 10.0])  # backing roughness minimum 0.1 to avoid negative values
         
         # SLD parameters
         if 'overall' in parameters and 'sld' in parameters['overall']:
@@ -401,14 +407,18 @@ class InferencePipeline:
         # This would require percentile data from MARIA dataset
         # For now, just narrow the bounds by 25%
         narrow_bounds = []
-        for bound in bounds:
+        for i, bound in enumerate(bounds):
             range_size = bound[1] - bound[0]
             narrow_range = range_size * 0.5  # Use 50% of the range
             center = (bound[0] + bound[1]) / 2
-            narrow_bounds.append([
-                center - narrow_range / 2,
-                center + narrow_range / 2
-            ])
+            new_min = center - narrow_range / 2
+            new_max = center + narrow_range / 2
+            
+            # Ensure roughness parameters (indices 1, 2, 4 for 1-layer; 2, 3, 4 for 2-layer) never go below 0
+            if i in [1, 2, 3, 4] and new_min < 0.0:  # Roughness parameter indices
+                new_min = 0.0
+                
+            narrow_bounds.append([new_min, new_max])
         return narrow_bounds
     
     def get_parameter_names_for_layer_count(self, layer_count):
@@ -1240,7 +1250,7 @@ class InferencePipeline:
         return None
 
     @staticmethod
-    def run_experiment_inference(experiment_id, models_list, data_directory="data", priors_type="broad", output_dir="inference_results"):
+    def run_experiment_inference(experiment_id, models_list, data_directory="data", priors_type="broad", output_dir="inference_results", layer_count=None):
         """
         Static method to run inference on a single experiment for batch processing.
         
@@ -1248,6 +1258,7 @@ class InferencePipeline:
             experiment_id: Experiment ID (e.g., 's000000')
             models_list: List of model names to test
             data_directory: Base data directory
+            layer_count: Number of layers (1 or 2). If None, will auto-detect.
             priors_type: Type of priors ('broad' or 'narrow')
             output_dir: Output directory for results
         
@@ -1261,7 +1272,8 @@ class InferencePipeline:
                 models_list=models_list,
                 data_directory=data_directory,
                 priors_type=priors_type,
-                output_dir=output_dir
+                output_dir=output_dir,
+                layer_count=layer_count
             )
             
             # Run inference on all models
