@@ -302,39 +302,94 @@ class InferencePipeline:
         try:
             if self.q_res_exp is not None:
                 # For 4-column data, also filter dQ
-                self.q_exp, self.curve_exp, self.sigmas_exp = filter_and_truncate(
+                q_filtered, curve_filtered, sigmas_filtered = filter_and_truncate(
                     self.q_exp, self.curve_exp, self.sigmas_exp,
                     threshold=threshold,
                     consecutive=consecutive,
                     remove_singles=singles
                 )
+                
+                # Check if filtering was too aggressive
+                original_q_range = self.q_exp.max() - self.q_exp.min()
+                filtered_q_range = q_filtered.max() - q_filtered.min() if len(q_filtered) > 0 else 0
+                points_retained = len(q_filtered) / len(self.q_exp)
+                q_range_retained = filtered_q_range / original_q_range if original_q_range > 0 else 0
+                
+                # If filtering was too aggressive, use less stringent parameters
+                if points_retained < 0.3 or q_range_retained < 0.1:
+                    print(f"    Warning: Aggressive filtering detected (retained {points_retained:.1%} points, {q_range_retained:.1%} Q range)")
+                    print(f"    Retrying with more permissive parameters...")
+                    
+                    # Try with more permissive parameters
+                    q_filtered, curve_filtered, sigmas_filtered = filter_and_truncate(
+                        self.q_exp, self.curve_exp, self.sigmas_exp,
+                        threshold=max(threshold * 2, 1.0),  # Double threshold or use 1.0
+                        consecutive=max(consecutive + 2, 5),  # Increase consecutive requirement
+                        remove_singles=False  # Don't remove singles
+                    )
+                
+                # Apply the filtered data
+                self.q_exp = q_filtered
+                self.curve_exp = curve_filtered
+                self.sigmas_exp = sigmas_filtered
+                
                 # Filter dQ to match the filtered data
                 if len(self.q_exp) < len(self.q_res_exp):
                     self.q_res_exp = self.q_res_exp[:len(self.q_exp)]
             else:
                 # For 3-column data
-                self.q_exp, self.curve_exp, self.sigmas_exp = filter_and_truncate(
+                q_filtered, curve_filtered, sigmas_filtered = filter_and_truncate(
                     self.q_exp, self.curve_exp, self.sigmas_exp,
                     threshold=threshold,
                     consecutive=consecutive,
                     remove_singles=singles
                 )
+                
+                # Check if filtering was too aggressive
+                original_q_range = self.q_exp.max() - self.q_exp.min()
+                filtered_q_range = q_filtered.max() - q_filtered.min() if len(q_filtered) > 0 else 0
+                points_retained = len(q_filtered) / len(self.q_exp)
+                q_range_retained = filtered_q_range / original_q_range if original_q_range > 0 else 0
+                
+                # If filtering was too aggressive, use less stringent parameters
+                if points_retained < 0.3 or q_range_retained < 0.1:
+                    print(f"    Warning: Aggressive filtering detected (retained {points_retained:.1%} points, {q_range_retained:.1%} Q range)")
+                    print(f"    Retrying with more permissive parameters...")
+                    
+                    # Try with more permissive parameters
+                    q_filtered, curve_filtered, sigmas_filtered = filter_and_truncate(
+                        self.q_exp, self.curve_exp, self.sigmas_exp,
+                        threshold=max(threshold * 2, 1.0),  # Double threshold or use 1.0
+                        consecutive=max(consecutive + 2, 5),  # Increase consecutive requirement
+                        remove_singles=False  # Don't remove singles
+                    )
+                
+                # Apply the filtered data
+                self.q_exp = q_filtered
+                self.curve_exp = curve_filtered
+                self.sigmas_exp = sigmas_filtered
         except Exception as e:
             print(f"  Warning: Error bar filtering failed ({e}), continuing with current data")
             # Continue with the data we have
         
         final_points = len(self.q_exp)
         removed_points = original_points - final_points
+        final_q_range = self.q_exp.max() - self.q_exp.min()
         
         # Check if we have enough data points left
-        if final_points < 3:
-            raise ValueError(f"Insufficient data points after preprocessing: {final_points} points remaining (minimum 3 required)")
+        if final_points < 10:  # Increased minimum from 3 to 10
+            raise ValueError(f"Insufficient data points after preprocessing: {final_points} points remaining (minimum 10 required)")
+        
+        # Check if we have a reasonable Q range for model inference
+        if final_q_range < 0.05:  # Minimum Q range of 0.05 Å⁻¹
+            print(f"  Warning: Very narrow Q range after preprocessing: {final_q_range:.4f} Å⁻¹")
+            # This might cause model inference issues, but we'll continue
         
         print(f"  Preprocessing complete:")
         print(f"    Original points: {original_points}")
         print(f"    Final points: {final_points}")
         print(f"    Removed points: {removed_points} ({100*removed_points/original_points:.1f}%)")
-        print(f"    Final Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹")
+        print(f"    Final Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹ (span: {final_q_range:.4f})")
 
     def generate_model_configurations(self):
         """Generate model configurations for batch processing."""
@@ -421,7 +476,15 @@ class InferencePipeline:
         if self.priors_type == "narrow":
             bounds = self.apply_narrow_priors(bounds, parameters)
         
-        return bounds
+        # Validate all bounds
+        validated_bounds = []
+        for i, bound in enumerate(bounds):
+            min_val, max_val = bound
+            if min_val >= max_val:
+                max_val = min_val + 0.1
+            validated_bounds.append([min_val, max_val])
+        
+        return validated_bounds
     
     def get_default_priors(self, layer_count):
         """Get default prior bounds when MARIA bounds are not available."""
@@ -461,26 +524,40 @@ class InferencePipeline:
         # Roughness parameters
         if 'interface' in parameters and 'fronting_roughness' in parameters['interface']:
             fronting_data = parameters['interface']['fronting_roughness']
-            bounds.append([fronting_data['min'], fronting_data['max']])
+            min_val = max(0.1, fronting_data['min'])  # Ensure minimum of 0.1
+            max_val = max(min_val + 0.1, fronting_data['max'])  # Ensure max > min
+            bounds.append([min_val, max_val])
         else:
             bounds.append([1.0, 10.0])
         
         if 'interface' in parameters and 'backing_roughness' in parameters['interface']:
             backing_data = parameters['interface']['backing_roughness']
-            bounds.append([max(0.1, backing_data['min']), backing_data['max']])
+            min_val = max(0.1, backing_data['min'])  # Ensure minimum of 0.1
+            max_val = max(min_val + 0.1, backing_data['max'])  # Ensure max > min
+            bounds.append([min_val, max_val])
         else:
             bounds.append([0.1, 10.0])  # backing roughness minimum 0.1 to avoid negative values
         
         # SLD parameters
         if 'overall' in parameters and 'sld' in parameters['overall']:
             sld_data = parameters['overall']['sld']
-            bounds.append([sld_data['min'] * 1e6, sld_data['max'] * 1e6])  # Convert to 10^-6 units
+            min_val = sld_data['min'] * 1e6  # Convert to 10^-6 units
+            max_val = sld_data['max'] * 1e6  
+            # Ensure valid range
+            if min_val >= max_val:
+                max_val = min_val + 0.1
+            bounds.append([min_val, max_val])
         else:
             bounds.append([-5.0, 15.0])
             
         if 'interface' in parameters and 'backing_sld' in parameters['interface']:
             backing_sld = parameters['interface']['backing_sld']
-            bounds.append([backing_sld['min'] * 1e6, backing_sld['max'] * 1e6])
+            min_val = backing_sld['min'] * 1e6
+            max_val = backing_sld['max'] * 1e6
+            # Ensure valid range
+            if min_val >= max_val:
+                max_val = min_val + 0.1
+            bounds.append([min_val, max_val])
         else:
             bounds.append([-5.0, 15.0])
         
@@ -681,10 +758,47 @@ class InferencePipeline:
                 self.q_exp, self.curve_exp
             )
             
+            # Debug information for tensor concatenation issues
+            print(f"Original data: {len(self.q_exp)} points, Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f}")
+            if self.q_res_exp is not None:
+                print(f"Resolution data available")
+            print(f"Interpolated data: {len(q_model)} points, Q range: {q_model.min():.4f} - {q_model.max():.4f}")
+            
+            # Check for potential issues that could cause tensor concatenation errors
+            if len(q_model) == 0:
+                raise ValueError("Model interpolation resulted in empty Q grid")
+            if len(exp_curve_interp) == 0:
+                raise ValueError("Model interpolation resulted in empty reflectivity curve")
+            if len(q_model) != len(exp_curve_interp):
+                raise ValueError(f"Q grid ({len(q_model)}) and curve ({len(exp_curve_interp)}) length mismatch")
+            if np.any(~np.isfinite(exp_curve_interp)):
+                print(f"  Warning: Non-finite values in interpolated curve")
+            if np.any(exp_curve_interp <= 0):
+                print(f"  Warning: Non-positive values in interpolated curve")
+            
+            # Ensure arrays have proper dimensions (1D) and correct data types
+            q_model = np.asarray(q_model, dtype=np.float32).flatten()
+            exp_curve_interp = np.asarray(exp_curve_interp, dtype=np.float32).flatten()
+            
+            if len(q_model) != len(exp_curve_interp):
+                raise ValueError(f"After processing: Q grid ({len(q_model)}) and curve ({len(exp_curve_interp)}) length mismatch")
+            
             # Interpolate resolution data
-            q_res_interp = np.interp(q_model, self.q_exp, self.q_res_exp)
+            if self.q_res_exp is not None:
+                q_res_interp = np.interp(q_model, self.q_exp, self.q_res_exp)
+            else:
+                # For 3-column data, assume a constant dQ/Q = 0.05 (5%)
+                q_res_interp = q_model * 0.05
+                print(f"  No resolution data provided, using dQ/Q = 5%")
+            
+            # Ensure resolution array has proper dimensions and data type
+            q_res_interp = np.asarray(q_res_interp, dtype=np.float32).flatten()
             
             print(f"Model Q grid: {len(q_model)} points, range: {q_model.min():.4f} - {q_model.max():.4f}")
+            
+            # Verify all arrays have the same length
+            if not (len(q_model) == len(exp_curve_interp) == len(q_res_interp)):
+                raise ValueError(f"Array length mismatch: Q={len(q_model)}, R={len(exp_curve_interp)}, dQ={len(q_res_interp)}")
             
             # Convert prior bounds from list format to tuple format
             prior_bounds = [tuple(bound) for bound in model_config['prior_bounds']]
