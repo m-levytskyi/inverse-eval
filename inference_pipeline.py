@@ -28,6 +28,7 @@ import sys
 warnings.filterwarnings('ignore')
 
 from reflectorch import EasyInferenceModel
+from filter_error_bars import filter_and_truncate
 
 # Set random seed for reproducibility
 torch.manual_seed(42)
@@ -37,7 +38,8 @@ class InferencePipeline:
     """Pipeline for testing multiple models on experimental data."""
     
     def __init__(self, config_file=None, output_dir="inference_results", experiment_id=None, 
-                 models_list=None, data_directory="data", priors_type="broad", layer_count=None):
+                 models_list=None, data_directory="data", priors_type="broad", layer_count=None,
+                 error_bar_threshold=0.5, consecutive_threshold=3, remove_singles=False):
         """
         Initialize the inference pipeline.
         
@@ -49,10 +51,18 @@ class InferencePipeline:
             data_directory: Base data directory for batch mode
             priors_type: Type of priors to use ('broad' or 'narrow') for batch mode
             layer_count: Number of layers (1 or 2). If None, will auto-detect.
+            error_bar_threshold: Relative error threshold for filtering (default: 0.5)
+            consecutive_threshold: Number of consecutive high-error points to trigger truncation (default: 3)
+            remove_singles: Whether to remove isolated high-error points (default: False)
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.layer_count_override = layer_count  # Store for override
+        
+        # Store preprocessing parameters (always enabled)
+        self.error_bar_threshold = error_bar_threshold
+        self.consecutive_threshold = consecutive_threshold
+        self.remove_singles = remove_singles
         
         # Initialize results storage
         self.results = {}
@@ -185,6 +195,9 @@ class InferencePipeline:
         
         print(f"Loaded {len(self.q_exp)} data points")
         print(f"Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹")
+        
+        # Apply preprocessing steps
+        self.preprocess_experimental_data()
     
     def load_true_parameters_from_files(self):
         """Load true parameters from discovered model file."""
@@ -194,6 +207,135 @@ class InferencePipeline:
         else:
             self.true_params_dict = None
     
+    def preprocess_experimental_data(self, error_bar_threshold=None, 
+                                   consecutive_threshold=None, 
+                                   remove_singles=None):
+        """
+        Apply preprocessing steps to experimental neutron reflectometry data.
+        
+        This method implements the preprocessing steps described in preprocessing.md:
+        1. Remove data points with negative intensity values
+        2. Filter/truncate data points with high error bars
+        
+        Args:
+            error_bar_threshold: float, relative error threshold for filtering (default: 0.5)
+            consecutive_threshold: int, number of consecutive high-error points to trigger truncation (default: 3)
+            remove_singles: bool, whether to remove isolated high-error points (default: False)
+        """
+        # Use provided parameters or sensible defaults
+        threshold = 0.5 if error_bar_threshold is None else error_bar_threshold
+        consecutive = 3 if consecutive_threshold is None else consecutive_threshold  
+        singles = False if remove_singles is None else remove_singles
+        
+        print(f"Applying preprocessing to experimental data...")
+        original_points = len(self.q_exp)
+        
+        # Step 1: Remove negative intensity values
+        positive_mask = self.curve_exp > 0
+        if not np.all(positive_mask):
+            negative_count = np.sum(~positive_mask)
+            print(f"  Removing {negative_count} data points with negative intensity values")
+            
+            self.q_exp = self.q_exp[positive_mask]
+            self.curve_exp = self.curve_exp[positive_mask]
+            self.sigmas_exp = self.sigmas_exp[positive_mask]
+            if self.q_res_exp is not None:
+                self.q_res_exp = self.q_res_exp[positive_mask]
+        
+        # Step 1.5: Remove any invalid data (NaN, inf, or zero values that could cause issues)
+        # Check for valid finite values in all arrays
+        finite_mask = (np.isfinite(self.q_exp) & 
+                      np.isfinite(self.curve_exp) & 
+                      np.isfinite(self.sigmas_exp) &
+                      (self.curve_exp > 0) &  # Ensure positive intensities
+                      (self.sigmas_exp > 0))  # Ensure positive error bars
+        
+        if self.q_res_exp is not None:
+            finite_mask = finite_mask & np.isfinite(self.q_res_exp) & (self.q_res_exp > 0)
+        
+        if not np.all(finite_mask):
+            invalid_count = np.sum(~finite_mask)
+            print(f"  Removing {invalid_count} data points with invalid values (NaN, inf, or zero)")
+            
+            self.q_exp = self.q_exp[finite_mask]
+            self.curve_exp = self.curve_exp[finite_mask]
+            self.sigmas_exp = self.sigmas_exp[finite_mask]
+            if self.q_res_exp is not None:
+                self.q_res_exp = self.q_res_exp[finite_mask]
+        
+        # Step 1.5: Clean up invalid data (NaN, inf, or zero values that would cause division issues)
+        finite_mask = np.isfinite(self.curve_exp) & np.isfinite(self.sigmas_exp) & (self.curve_exp > 0) & (self.sigmas_exp >= 0)
+        if not np.all(finite_mask):
+            invalid_count = np.sum(~finite_mask)
+            print(f"  Removing {invalid_count} data points with invalid values (NaN, inf, or zero)")
+            
+            self.q_exp = self.q_exp[finite_mask]
+            self.curve_exp = self.curve_exp[finite_mask]
+            self.sigmas_exp = self.sigmas_exp[finite_mask]
+            if self.q_res_exp is not None:
+                self.q_res_exp = self.q_res_exp[finite_mask]
+        
+        # Step 1.5: Remove invalid data (NaN, inf, very small R values)
+        # Check for NaN or inf values
+        valid_mask = (np.isfinite(self.q_exp) & 
+                     np.isfinite(self.curve_exp) & 
+                     np.isfinite(self.sigmas_exp) &
+                     (self.curve_exp > 1e-12))  # Remove very small R values that cause division issues
+        
+        if self.q_res_exp is not None:
+            valid_mask = valid_mask & np.isfinite(self.q_res_exp)
+        
+        if not np.all(valid_mask):
+            invalid_count = np.sum(~valid_mask)
+            print(f"  Removing {invalid_count} data points with invalid values (NaN, inf, or very small R)")
+            
+            self.q_exp = self.q_exp[valid_mask]
+            self.curve_exp = self.curve_exp[valid_mask]
+            self.sigmas_exp = self.sigmas_exp[valid_mask]
+            if self.q_res_exp is not None:
+                self.q_res_exp = self.q_res_exp[valid_mask]
+        
+        # Step 2: Filter high error bars
+        print(f"  Filtering high error bars (threshold: {threshold}, consecutive: {consecutive})")
+        
+        # Apply the filter_and_truncate function
+        try:
+            if self.q_res_exp is not None:
+                # For 4-column data, also filter dQ
+                self.q_exp, self.curve_exp, self.sigmas_exp = filter_and_truncate(
+                    self.q_exp, self.curve_exp, self.sigmas_exp,
+                    threshold=threshold,
+                    consecutive=consecutive,
+                    remove_singles=singles
+                )
+                # Filter dQ to match the filtered data
+                if len(self.q_exp) < len(self.q_res_exp):
+                    self.q_res_exp = self.q_res_exp[:len(self.q_exp)]
+            else:
+                # For 3-column data
+                self.q_exp, self.curve_exp, self.sigmas_exp = filter_and_truncate(
+                    self.q_exp, self.curve_exp, self.sigmas_exp,
+                    threshold=threshold,
+                    consecutive=consecutive,
+                    remove_singles=singles
+                )
+        except Exception as e:
+            print(f"  Warning: Error bar filtering failed ({e}), continuing with current data")
+            # Continue with the data we have
+        
+        final_points = len(self.q_exp)
+        removed_points = original_points - final_points
+        
+        # Check if we have enough data points left
+        if final_points < 3:
+            raise ValueError(f"Insufficient data points after preprocessing: {final_points} points remaining (minimum 3 required)")
+        
+        print(f"  Preprocessing complete:")
+        print(f"    Original points: {original_points}")
+        print(f"    Final points: {final_points}")
+        print(f"    Removed points: {removed_points} ({100*removed_points/original_points:.1f}%)")
+        print(f"    Final Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹")
+
     def generate_model_configurations(self):
         """Generate model configurations for batch processing."""
         if not self.models_list:
@@ -506,6 +648,9 @@ class InferencePipeline:
         print(f"Loaded {len(self.q_exp)} data points")
         print(f"Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹")
         print(f"dQ range: {self.q_res_exp.min():.6f} - {self.q_res_exp.max():.6f} Å⁻¹")
+        
+        # Apply preprocessing steps
+        self.preprocess_experimental_data()
         
     def run_inference(self, model_config, model_name):
         """
@@ -1285,13 +1430,17 @@ class InferencePipeline:
                 'layer_count': pipeline.determine_layer_count(),
                 'priors_type': priors_type,
                 'models_results': {},
-                'success': True,
+                'success': False,  # Will be set to True if any model succeeds
                 'error': None
             }
+            
+            # Track if any model succeeded
+            any_model_succeeded = False
             
             # Extract results from each model
             for model_name, model_result in pipeline.results.items():
                 if model_result['success']:
+                    any_model_succeeded = True
                     results['models_results'][model_name] = {
                         'success': True,
                         'fit_metrics': model_result['fit_metrics'],
@@ -1308,6 +1457,9 @@ class InferencePipeline:
                         'success': False,
                         'error': model_result.get('error', 'Unknown error')
                     }
+            
+            # Set experiment success based on whether any model succeeded
+            results['success'] = any_model_succeeded
             
             return results
             
