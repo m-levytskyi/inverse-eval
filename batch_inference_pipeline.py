@@ -271,98 +271,165 @@ class BatchInferencePipeline:
         return summary
 
     def create_performance_plots(self, all_results):
-        """Create performance visualization plots according to architecture.md."""
+        """Create comprehensive 2-column performance visualization plots."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Collect data for plotting
         model_mapes = defaultdict(lambda: defaultdict(list))
-        experiment_mapes = defaultdict(list)  # For edge case detection
-        experiment_ids = []
+        model_param_mapes = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))  # model -> priors -> param_type -> values
+        experiment_mapes = defaultdict(lambda: defaultdict(list))  # priors_type -> exp_id -> mape
         
         for exp_id, exp_result in all_results.items():
-            experiment_ids.append(exp_id)
-            exp_avg_mapes = []
-            
             for priors_type in ['broad', 'narrow']:
                 priors_result = exp_result['priors'][priors_type]
                 if priors_result['success']:
+                    exp_mapes_for_priors = []
+                    
                     for model_name, model_result in priors_result['models_results'].items():
                         if model_result['success'] and 'parameter_metrics' in model_result:
                             param_metrics = model_result['parameter_metrics']
                             if param_metrics and 'overall' in param_metrics:
-                                mape = param_metrics['overall']['mape']
-                                model_mapes[model_name][priors_type].append(mape)
-                                exp_avg_mapes.append(mape)
-            
-            # Calculate average MAPE for this experiment (across all models)
-            if exp_avg_mapes:
-                experiment_mapes[exp_id] = np.mean(exp_avg_mapes)
+                                # Overall MAPE
+                                overall_mape = param_metrics['overall']['mape']
+                                model_mapes[model_name][priors_type].append(overall_mape)
+                                exp_mapes_for_priors.append(overall_mape)
+                                
+                                # Parameter-specific MAPEs
+                                by_type = param_metrics.get('by_type', {})
+                                for param_type in ['thickness', 'roughness', 'sld']:
+                                    mape_key = f'{param_type}_mape'
+                                    if mape_key in by_type:
+                                        model_param_mapes[model_name][priors_type][param_type].append(by_type[mape_key])
+                    
+                    # Calculate average MAPE for this experiment with this priors type
+                    if exp_mapes_for_priors:
+                        experiment_mapes[priors_type][exp_id] = np.mean(exp_mapes_for_priors)
         
-        # Create plots
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 12))
+        # Create 2-column, 3-row layout
+        fig, axes = plt.subplots(3, 2, figsize=(20, 18))
+        fig.suptitle(f'Batch Inference Performance Analysis - {self.layer_count}-Layer Experiments', fontsize=16, fontweight='bold')
         
-        # Plot 1: MAPE by model (bar chart as specified in architecture)
+        # Column titles
+        axes[0, 0].text(0.5, 1.15, 'BROAD PRIORS', transform=axes[0, 0].transAxes, 
+                       ha='center', va='center', fontsize=14, fontweight='bold')
+        axes[0, 1].text(0.5, 1.15, 'NARROW PRIORS', transform=axes[0, 1].transAxes, 
+                       ha='center', va='center', fontsize=14, fontweight='bold')
+        
         models = list(model_mapes.keys())
-        x = np.arange(len(models))
-        width = 0.35
+        model_labels = [model.replace('b_mc_point_', '').replace('_conv_standard', '') for model in models]
         
-        broad_means = []
-        narrow_means = []
-        
-        for model in models:
-            broad_vals = model_mapes[model]['broad']
-            narrow_vals = model_mapes[model]['narrow']
+        # Row 1: Average MAPE by Model
+        for col, priors_type in enumerate(['broad', 'narrow']):
+            ax = axes[0, col]
             
-            broad_means.append(np.mean(broad_vals) if broad_vals else 0)
-            narrow_means.append(np.mean(narrow_vals) if narrow_vals else 0)
-        
-        ax1.bar(x - width/2, broad_means, width, label='Broad Priors', alpha=0.8, color='skyblue')
-        ax1.bar(x + width/2, narrow_means, width, label='Narrow Priors', alpha=0.8, color='lightcoral')
-        
-        ax1.set_xlabel('Model')
-        ax1.set_ylabel('Average MAPE (%)')
-        ax1.set_title(f'Parameter Prediction MAPE by Model ({self.layer_count}-layer experiments)')
-        ax1.set_xticks(x)
-        ax1.set_xticklabels([model.replace('b_mc_point_', '').replace('_conv_standard', '') for model in models], rotation=45)
-        ax1.legend()
-        ax1.grid(True, alpha=0.3, axis='y')
-        
-        # Add value labels on bars
-        for i, (broad, narrow) in enumerate(zip(broad_means, narrow_means)):
-            if broad > 0:
-                ax1.text(i - width/2, broad + max(broad_means) * 0.01, f'{broad:.1f}%', 
-                        ha='center', va='bottom', fontsize=8)
-            if narrow > 0:
-                ax1.text(i + width/2, narrow + max(narrow_means) * 0.01, f'{narrow:.1f}%', 
-                        ha='center', va='bottom', fontsize=8)
-        
-        # Plot 2: MAPE by experiment (line plot to identify edge cases)
-        exp_indices = range(len(experiment_ids))
-        exp_mapes = [experiment_mapes.get(exp_id, 0) for exp_id in experiment_ids]
-        
-        ax2.plot(exp_indices, exp_mapes, 'o-', alpha=0.7, linewidth=1, markersize=4)
-        ax2.set_xlabel('Experiment Index')
-        ax2.set_ylabel('Average MAPE (%)')
-        ax2.set_title(f'Average MAPE by Experiment - Edge Case Detection ({self.layer_count}-layer)')
-        ax2.grid(True, alpha=0.3)
-        
-        # Highlight potential edge cases (experiments with high MAPE)
-        if exp_mapes:
-            threshold = np.mean(exp_mapes) + 2 * np.std(exp_mapes)
-            edge_cases = [(i, exp_id, mape) for i, (exp_id, mape) in enumerate(zip(experiment_ids, exp_mapes)) if mape > threshold]
+            means = []
+            stds = []
+            for model in models:
+                vals = model_mapes[model][priors_type]
+                means.append(np.mean(vals) if vals else 0)
+                stds.append(np.std(vals) if vals else 0)
             
-            if edge_cases:
-                edge_indices = [i for i, _, _ in edge_cases]
-                edge_mapes = [mape for _, _, mape in edge_cases]
-                ax2.scatter(edge_indices, edge_mapes, color='red', s=50, alpha=0.8, label='Potential Edge Cases')
-                ax2.legend()
+            x = np.arange(len(models))
+            color = 'skyblue' if priors_type == 'broad' else 'lightcoral'
+            bars = ax.bar(x, means, yerr=stds, capsize=5, alpha=0.8, color=color, 
+                         edgecolor='black', linewidth=0.5)
+            
+            ax.set_xlabel('Model')
+            ax.set_ylabel('Average MAPE (%)')
+            ax.set_title(f'Overall MAPE by Model ({priors_type.title()} Priors)')
+            ax.set_xticks(x)
+            ax.set_xticklabels(model_labels, rotation=45, ha='right')
+            ax.grid(True, alpha=0.3, axis='y')
+            
+            # Add value labels on bars
+            for i, (mean, std) in enumerate(zip(means, stds)):
+                if mean > 0:
+                    ax.text(i, mean + std + max(means) * 0.02, f'{mean:.1f}%', 
+                           ha='center', va='bottom', fontsize=9, fontweight='bold')
+        
+        # Row 2: Parameter-specific MAPE by Model
+        param_types = ['thickness', 'roughness', 'sld']
+        param_colors = {'thickness': '#FF6B6B', 'roughness': '#4ECDC4', 'sld': '#45B7D1'}
+        
+        for col, priors_type in enumerate(['broad', 'narrow']):
+            ax = axes[1, col]
+            
+            x = np.arange(len(models))
+            width = 0.25
+            
+            for i, param_type in enumerate(param_types):
+                means = []
+                for model in models:
+                    vals = model_param_mapes[model][priors_type][param_type]
+                    means.append(np.mean(vals) if vals else 0)
                 
-                # Print edge cases
-                print(f"\nPotential Edge Cases (MAPE > {threshold:.1f}%):")
-                for i, exp_id, mape in edge_cases:
-                    print(f"  {exp_id}: {mape:.1f}% MAPE")
+                ax.bar(x + i*width - width, means, width, 
+                      label=param_type.title(), alpha=0.8, color=param_colors[param_type],
+                      edgecolor='black', linewidth=0.5)
+            
+            ax.set_xlabel('Model')
+            ax.set_ylabel('Average MAPE (%)')
+            ax.set_title(f'Parameter-Specific MAPE ({priors_type.title()} Priors)')
+            ax.set_xticks(x)
+            ax.set_xticklabels(model_labels, rotation=45, ha='right')
+            ax.legend()
+            ax.grid(True, alpha=0.3, axis='y')
+        
+        # Row 3: Edge Case Detection
+        for col, priors_type in enumerate(['broad', 'narrow']):
+            ax = axes[2, col]
+            
+            exp_data = experiment_mapes[priors_type]
+            if exp_data:
+                exp_ids = list(exp_data.keys())
+                exp_vals = list(exp_data.values())
+                exp_indices = range(len(exp_ids))
+                
+                # Plot all experiments
+                ax.plot(exp_indices, exp_vals, 'o-', alpha=0.7, linewidth=1, markersize=4,
+                       color='darkblue', label='Experiments')
+                
+                # Calculate threshold for edge cases
+                mean_mape = np.mean(exp_vals)
+                std_mape = np.std(exp_vals)
+                threshold = mean_mape + 2 * std_mape
+                
+                # Highlight edge cases
+                edge_cases = [(i, exp_id, mape) for i, (exp_id, mape) in enumerate(zip(exp_ids, exp_vals)) if mape > threshold]
+                
+                if edge_cases:
+                    edge_indices = [i for i, _, _ in edge_cases]
+                    edge_mapes = [mape for _, _, mape in edge_cases]
+                    ax.scatter(edge_indices, edge_mapes, color='red', s=80, alpha=0.8, 
+                             label=f'Edge Cases (>{threshold:.1f}%)', zorder=5)
+                    
+                    # Annotate worst edge cases
+                    worst_cases = sorted(edge_cases, key=lambda x: x[2], reverse=True)[:3]
+                    for i, exp_id, mape in worst_cases:
+                        ax.annotate(f'{exp_id}\n{mape:.1f}%', 
+                                  xy=(i, mape), xytext=(10, 10), 
+                                  textcoords='offset points', fontsize=8,
+                                  bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7),
+                                  arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+                
+                # Add threshold line
+                ax.axhline(y=threshold, color='red', linestyle='--', alpha=0.7, 
+                          label=f'Threshold (μ+2σ)')
+                
+                ax.set_xlabel('Experiment Index')
+                ax.set_ylabel('Average MAPE (%)')
+                ax.set_title(f'Edge Case Detection ({priors_type.title()} Priors)')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                
+                # Print edge cases for this priors type
+                if edge_cases:
+                    print(f"\nEdge Cases for {priors_type.title()} Priors (MAPE > {threshold:.1f}%):")
+                    for i, exp_id, mape in sorted(edge_cases, key=lambda x: x[2], reverse=True):
+                        print(f"  {exp_id}: {mape:.1f}% MAPE")
         
         plt.tight_layout()
+        plt.subplots_adjust(top=0.93)  # Make room for main title
         
         # Save plot
         plot_file = self.output_dir / f"batch_inference_results_{self.layer_count}layer_{timestamp}.png"
