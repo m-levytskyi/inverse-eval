@@ -474,7 +474,7 @@ class InferencePipeline:
         
         # Apply priors type (broad vs narrow)
         if self.priors_type == "narrow":
-            bounds = self.apply_narrow_priors(bounds, parameters)
+            bounds = self.apply_narrow_priors(bounds, parameters, layer_count)
         
         # Validate all bounds
         validated_bounds = []
@@ -621,23 +621,57 @@ class InferencePipeline:
         
         return bounds
     
-    def apply_narrow_priors(self, bounds, parameters):
-        """Apply narrow priors (75-125 percentiles) instead of min-max."""
-        # This would require percentile data from MARIA dataset
-        # For now, just narrow the bounds by 25%
+    def apply_narrow_priors(self, bounds, parameters, layer_count):
+        """Apply narrow priors (75-125% of true values) instead of min-max."""
+        # Use true parameters to create narrow priors around them
+        if not self.true_params_dict:
+            print("Warning: No true parameters available, using default narrow bounds")
+            # Fallback to the old method if no true parameters
+            narrow_bounds = []
+            for i, bound in enumerate(bounds):
+                range_size = bound[1] - bound[0]
+                narrow_range = range_size * 0.5  # Use 50% of the range
+                center = (bound[0] + bound[1]) / 2
+                new_min = center - narrow_range / 2
+                new_max = center + narrow_range / 2
+                
+                # Ensure roughness parameters never go below 0
+                if i in [1, 2, 3, 4] and new_min < 0.0:
+                    new_min = 0.0
+                    
+                narrow_bounds.append([new_min, new_max])
+            return narrow_bounds
+        
+        # Get true parameters for this layer configuration
+        layer_key = f"{layer_count}_layer"
+        if layer_key not in self.true_params_dict:
+            print(f"Warning: No true parameters for {layer_key}, using default narrow bounds")
+            return bounds
+        
+        true_params = self.true_params_dict[layer_key]['params']
+        
+        # Create narrow bounds: 75-125% of true values
         narrow_bounds = []
-        for i, bound in enumerate(bounds):
-            range_size = bound[1] - bound[0]
-            narrow_range = range_size * 0.5  # Use 50% of the range
-            center = (bound[0] + bound[1]) / 2
-            new_min = center - narrow_range / 2
-            new_max = center + narrow_range / 2
+        for i, (bound, true_val) in enumerate(zip(bounds, true_params)):
+            if true_val is None or true_val == 0:
+                # Fallback for problematic true values
+                narrow_bounds.append(bound)
+                continue
+                
+            # 75-125% of true value
+            new_min = true_val * 0.75
+            new_max = true_val * 1.25
             
-            # Ensure roughness parameters (indices 1, 2, 4 for 1-layer; 2, 3, 4 for 2-layer) never go below 0
-            if i in [1, 2, 3, 4] and new_min < 0.0:  # Roughness parameter indices
+            # Ensure bounds are within the original model bounds
+            new_min = max(new_min, bound[0])
+            new_max = min(new_max, bound[1])
+            
+            # Ensure roughness parameters never go below 0
+            if i in [1, 2, 3, 4] and new_min < 0.0:
                 new_min = 0.0
                 
             narrow_bounds.append([new_min, new_max])
+            
         return narrow_bounds
     
     def get_parameter_names_for_layer_count(self, layer_count):
