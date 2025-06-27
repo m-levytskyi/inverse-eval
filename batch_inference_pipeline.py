@@ -307,7 +307,7 @@ class BatchInferencePipeline:
         
         # Create 2-column, 3-row layout
         fig, axes = plt.subplots(3, 2, figsize=(20, 18))
-        fig.suptitle(f'Batch Inference Performance Analysis - {self.layer_count}-Layer Experiments', fontsize=16, fontweight='bold')
+        fig.suptitle(f'Batch Inference Performance Analysis - {len(all_results)} {self.layer_count}-Layer Experiments', fontsize=16, fontweight='bold')
         
         # Column titles
         axes[0, 0].text(0.5, 1.15, 'BROAD PRIORS', transform=axes[0, 0].transAxes, 
