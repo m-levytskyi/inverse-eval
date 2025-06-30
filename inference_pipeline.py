@@ -622,7 +622,12 @@ class InferencePipeline:
         return bounds
     
     def apply_narrow_priors(self, bounds, parameters, layer_count):
-        """Apply narrow priors (75-125% of true values) instead of min-max."""
+        """
+        Apply narrow priors (75-125% of true values) without MARIA bounds constraints.
+        
+        This fixes the issue where narrow priors could exceed 25% MAPE due to 
+        inappropriate constraining to MARIA dataset bounds.
+        """
         # Use true parameters to create narrow priors around them
         if not self.true_params_dict:
             print("Warning: No true parameters available, using default narrow bounds")
@@ -649,27 +654,41 @@ class InferencePipeline:
             return bounds
         
         true_params = self.true_params_dict[layer_key]['params']
+        param_names = self.true_params_dict[layer_key]['param_names']
         
-        # Create narrow bounds: 75-125% of true values
+        # Create narrow bounds: 75-125% of true values (FIXED VERSION)
         narrow_bounds = []
-        for i, (bound, true_val) in enumerate(zip(bounds, true_params)):
-            if true_val is None or true_val == 0:
+        for i, (param_name, true_val) in enumerate(zip(param_names, true_params)):
+            if true_val is None:
                 # Fallback for problematic true values
-                narrow_bounds.append(bound)
+                narrow_bounds.append(bounds[i] if i < len(bounds) else [-5.0, 15.0])
+                continue
+            
+            if abs(true_val) < 1e-10:  # Essentially zero
+                # For near-zero values, use a small symmetric range
+                narrow_bounds.append([-0.01, 0.01])
                 continue
                 
-            # 75-125% of true value
-            new_min = true_val * 0.75
-            new_max = true_val * 1.25
+            # Calculate proper 75-125% bounds based on true value sign
+            if true_val >= 0:
+                # Positive values: straightforward 75-125%
+                new_min = true_val * 0.75
+                new_max = true_val * 1.25
+            else:
+                # Negative values: 75% is less negative, 125% is more negative
+                new_min = true_val * 1.25  # More negative (larger absolute value)
+                new_max = true_val * 0.75  # Less negative (smaller absolute value)
             
-            # Ensure bounds are within the original model bounds
-            new_min = max(new_min, bound[0])
-            new_max = min(new_max, bound[1])
-            
-            # Ensure roughness parameters never go below 0
-            if i in [1, 2, 3, 4] and new_min < 0.0:
-                new_min = 0.0
+            # Apply ONLY essential physical constraints (not MARIA bounds!)
+            if 'roughness' in param_name.lower() and new_min < 0:
+                new_min = 0.0  # Roughness can't be negative
                 
+            if 'thickness' in param_name.lower() and new_min < 0:
+                new_min = 0.01  # Thickness can't be negative or zero
+            
+            # Note: We do NOT constrain to original MARIA bounds anymore!
+            # This was the root cause of the >25% MAPE issue.
+            
             narrow_bounds.append([new_min, new_max])
             
         return narrow_bounds
@@ -983,7 +1002,7 @@ class InferencePipeline:
         
         # Calculate overall MAPE for comparison
         with np.errstate(divide='ignore', invalid='ignore'):
-            relative_errors = np.abs((predicted_params - true_params) / true_params)
+            relative_errors = np.abs((predicted_params - true_params) / (true_params + 1e-8))
             relative_errors = np.where(np.isfinite(relative_errors), relative_errors, 0)
         param_mape = np.mean(relative_errors) * 100
         
