@@ -17,6 +17,9 @@ The pipeline handles both 3-column (Q, R, dR) and 4-column (Q, R, dR, dQ) data f
 automatically based on the configuration.
 """
 
+# Configuration Constants
+NARROW_PRIORS_DEVIATION = 0.75  # e.g 0.25 for 25% deviation from true values (0.75-1.25 range)
+
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -623,7 +626,13 @@ class InferencePipeline:
     
     def apply_narrow_priors(self, bounds, parameters, layer_count):
         """
-        Apply narrow priors (75-125% of true values) without MARIA bounds constraints.
+        Apply narrow priors based on configurable deviation from true values.
+        
+        Uses NARROW_PRIORS_DEVIATION constant to determine the range around true values.
+        Default 25% deviation creates 75-125% range around true values.
+        
+        Note: NARROW_PRIORS_DEVIATION ≥ 1.0 will set minimum bounds to 0 for positive 
+        parameters, which may not be physically meaningful for thickness/roughness.
         
         This fixes the issue where narrow priors could exceed 25% MAPE due to 
         inappropriate constraining to MARIA dataset bounds.
@@ -656,7 +665,7 @@ class InferencePipeline:
         true_params = self.true_params_dict[layer_key]['params']
         param_names = self.true_params_dict[layer_key]['param_names']
         
-        # Create narrow bounds: 75-125% of true values (FIXED VERSION)
+        # Create narrow bounds using configurable deviation
         narrow_bounds = []
         for i, (param_name, true_val) in enumerate(zip(param_names, true_params)):
             if true_val is None:
@@ -669,15 +678,18 @@ class InferencePipeline:
                 narrow_bounds.append([-0.01, 0.01])
                 continue
                 
-            # Calculate proper 75-125% bounds based on true value sign
+            # Calculate bounds using configurable deviation
+            min_factor = 1.0 - NARROW_PRIORS_DEVIATION  # e.g., 0.75 for 25% deviation
+            max_factor = 1.0 + NARROW_PRIORS_DEVIATION  # e.g., 1.25 for 25% deviation
+            
             if true_val >= 0:
-                # Positive values: straightforward 75-125%
-                new_min = true_val * 0.75
-                new_max = true_val * 1.25
+                # Positive values: straightforward scaling
+                new_min = true_val * min_factor
+                new_max = true_val * max_factor
             else:
-                # Negative values: 75% is less negative, 125% is more negative
-                new_min = true_val * 1.25  # More negative (larger absolute value)
-                new_max = true_val * 0.75  # Less negative (smaller absolute value)
+                # Negative values: more negative is larger factor, less negative is smaller factor
+                new_min = true_val * max_factor  # More negative (larger absolute value)
+                new_max = true_val * min_factor  # Less negative (smaller absolute value)
             
             # Apply ONLY essential physical constraints (not MARIA bounds!)
             if 'roughness' in param_name.lower() and new_min < 0:
@@ -688,6 +700,7 @@ class InferencePipeline:
             
             # Note: We do NOT constrain to original MARIA bounds anymore!
             # This was the root cause of the >25% MAPE issue.
+            # The deviation range is controlled by NARROW_PRIORS_DEVIATION constant.
             
             narrow_bounds.append([new_min, new_max])
             
@@ -1617,7 +1630,7 @@ class InferencePipeline:
             # Extract and format results
             results = {
                 'exp_id': experiment_id,
-                'layer_count': pipeline.determine_layer_count(),
+                               'layer_count': pipeline.determine_layer_count(),
                 'priors_type': priors_type,
                 'models_results': {},
                 'success': False,  # Will be set to True if any model succeeds
