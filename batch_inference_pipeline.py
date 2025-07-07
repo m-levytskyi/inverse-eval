@@ -37,7 +37,8 @@ class BatchInferencePipeline:
         self.model_sets = {
             1: [
                 "b_mc_point_neutron_conv_standard_L1_comp",
-                "b_mc_point_neutron_conv_standard_L1_InputQDq"
+                "b_mc_point_neutron_conv_standard_L1_InputQDq",
+                "b_mc_point_xray_conv_standard_L2" # this xray model is designed for 2 layers. however, there are no xray models for 1 layer.
             ],
             2: [
                 "b_mc_point_neutron_conv_standard_L2_comp",
@@ -358,17 +359,17 @@ class BatchInferencePipeline:
             width = 0.25
             
             for i, param_type in enumerate(param_types):
-                means = []
+                medians = []
                 for model in models:
                     vals = model_param_mapes[model][priors_type][param_type]
-                    means.append(np.mean(vals) if vals else 0)
+                    medians.append(np.median(vals) if vals else 0)
                 
-                ax.bar(x + i*width - width, means, width, 
+                ax.bar(x + i*width - width, medians, width, 
                       label=param_type.title(), alpha=0.8, color=param_colors[param_type],
                       edgecolor='black', linewidth=0.5)
             
             ax.set_xlabel('Model')
-            ax.set_ylabel('Average MAPE (%)')
+            ax.set_ylabel('Median MAPE (%)')
             ax.set_title(f'Parameter-Specific MAPE ({priors_type.title()} Priors)')
             ax.set_xticks(x)
             ax.set_xticklabels(model_labels, rotation=45, ha='right')
