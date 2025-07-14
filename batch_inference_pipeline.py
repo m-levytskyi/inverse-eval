@@ -18,20 +18,93 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 import subprocess
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
+import os
 
 # Import the existing inference pipeline
 from inference_pipeline import InferencePipeline
 
+def process_experiment_worker(args):
+    """
+    Worker function for parallel processing of experiments.
+    This runs in a separate process to avoid GIL limitations.
+    """
+    (exp_id, models, data_directory, layer_count, output_dir) = args
+    
+    try:
+        exp_results = {
+            'experiment_id': exp_id,
+            'layer_count': layer_count,
+            'priors': {},
+            'model_times': {}  # Track individual model times
+        }
+        
+        # Process both broad and narrow priors for this experiment
+        for priors_type in ['broad', 'narrow']:
+            start_time = time.time()
+            result = InferencePipeline.run_experiment_inference(
+                experiment_id=exp_id,
+                models_list=models,
+                data_directory=str(data_directory),
+                priors_type=priors_type,
+                output_dir=str(output_dir),
+                layer_count=layer_count
+            )
+            end_time = time.time()
+            
+            result['processing_time'] = end_time - start_time
+            exp_results['priors'][priors_type] = result
+            
+            # Extract individual model times if available
+            if result['success'] and 'models_results' in result:
+                if 'model_times' not in exp_results:
+                    exp_results['model_times'] = {}
+                for model_name, model_result in result['models_results'].items():
+                    if 'inference_time' in model_result:
+                        if model_name not in exp_results['model_times']:
+                            exp_results['model_times'][model_name] = {}
+                        if priors_type not in exp_results['model_times'][model_name]:
+                            exp_results['model_times'][model_name][priors_type] = []
+                        exp_results['model_times'][model_name][priors_type].append(model_result['inference_time'])
+            
+            if result['success']:
+                print(f"    ✓ {exp_id} ({priors_type}) completed in {end_time-start_time:.1f}s")
+            else:
+                print(f"    ✗ {exp_id} ({priors_type}) failed: {result.get('error', 'Unknown error')}")
+        
+        return exp_results
+        
+    except Exception as e:
+        print(f"    ✗ {exp_id} worker error: {e}")
+        return {
+            'experiment_id': exp_id,
+            'layer_count': layer_count,
+            'priors': {},
+            'model_times': {},
+            'error': str(e),
+            'success': False
+        }
+
 class BatchInferencePipeline:
     """Batch pipeline using the new parameterized inference pipeline."""
     
-    def __init__(self, num_experiments=25, layer_count=2, data_directory="data"):
+    def __init__(self, num_experiments=25, layer_count=2, data_directory="data", 
+                 enable_parallel=True, max_workers=None):
         self.num_experiments = num_experiments
         self.layer_count = layer_count
         self.data_directory = Path(data_directory)
         self.maria_dataset_path = Path(data_directory) / "MARIA_VIPR_dataset"
         self.output_dir = Path("batch_inference_results")
         self.output_dir.mkdir(exist_ok=True)
+        
+        # Performance optimization parameters
+        self.enable_parallel = enable_parallel
+        self.max_workers = max_workers or min(mp.cpu_count(), 8)  # Limit to 8 workers max
+        
+        # Model timing tracking
+        self.model_timing_stats = {}  # model -> priors_type -> times
         
         # Model sets for different layer counts
         self.model_sets = {
@@ -133,13 +206,16 @@ class BatchInferencePipeline:
             }
 
     def run(self):
-        """Run batch inference on all discovered experiments."""
+        """Run batch inference on all discovered experiments with parallel processing."""
         print(f"Starting Batch Inference Pipeline")
         print("=" * 50)
         print(f"Target experiments: {self.num_experiments}")
         print(f"Layer count: {self.layer_count}")
         print(f"Models: {self.models}")
         print(f"MARIA dataset path: {self.maria_dataset_path}")
+        print(f"Parallel processing: {'Enabled' if self.enable_parallel else 'Disabled'}")
+        if self.enable_parallel:
+            print(f"Max workers: {self.max_workers}")
         
         # Discover experiments
         experiments = self.discover_experiments()
@@ -150,7 +226,83 @@ class BatchInferencePipeline:
         
         print(f"Processing {len(experiments)} experiments...")
         
-        # Process each experiment with both broad and narrow priors
+        start_time = time.time()
+        
+        if self.enable_parallel:
+            all_results = self.run_parallel_processing(experiments)
+        else:
+            all_results = self.run_sequential_processing(experiments)
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        print(f"\nTotal processing time: {total_time:.1f} seconds")
+        print(f"Average time per experiment: {total_time/len(experiments):.1f} seconds")
+        
+        # Create batch summary
+        self.create_batch_summary(all_results)
+        
+        # Create performance plots
+        self.create_performance_plots(all_results)
+
+    def run_parallel_processing(self, experiments):
+        """Run experiments in parallel using multiprocessing."""
+        print(f"Running {len(experiments)} experiments in parallel with {self.max_workers} workers...")
+        
+        # Prepare arguments for worker processes
+        worker_args = []
+        for exp_id in experiments:
+            worker_args.append((
+                exp_id, 
+                self.models, 
+                self.data_directory, 
+                self.layer_count, 
+                self.output_dir
+            ))
+        
+        all_results = {}
+        completed_count = 0
+        
+        # Use ProcessPoolExecutor for better resource management
+        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all jobs
+            future_to_exp = {
+                executor.submit(process_experiment_worker, args): args[0] 
+                for args in worker_args
+            }
+            
+            # Process completed jobs as they finish
+            for future in as_completed(future_to_exp):
+                exp_id = future_to_exp[future]
+                try:
+                    result = future.result()
+                    all_results[exp_id] = result
+                    completed_count += 1
+                    
+                    print(f"[{completed_count}/{len(experiments)}] Completed {exp_id}")
+                    
+                    # Save individual experiment results
+                    exp_file = self.output_dir / f"{exp_id}_results.json"
+                    with open(exp_file, 'w') as f:
+                        json.dump(result, f, indent=2, default=str)
+                        
+                except Exception as e:
+                    print(f"[{completed_count+1}/{len(experiments)}] Failed {exp_id}: {e}")
+                    all_results[exp_id] = {
+                        'experiment_id': exp_id,
+                        'layer_count': self.layer_count,
+                        'priors': {},
+                        'error': str(e),
+                        'success': False
+                    }
+                    completed_count += 1
+        
+        return all_results
+
+    def run_sequential_processing(self, experiments):
+        """Run experiments sequentially (original method)."""
+        print(f"Running {len(experiments)} experiments sequentially...")
+        
         all_results = {}
         
         for i, exp_id in enumerate(experiments, 1):
@@ -165,7 +317,10 @@ class BatchInferencePipeline:
             # Run with both broad and narrow priors
             for priors_type in ['broad', 'narrow']:
                 print(f"  Running with {priors_type} priors...")
+                start_time = time.time()
                 result = self.run_experiment_inference(exp_id, priors_type)
+                end_time = time.time()
+                result['processing_time'] = end_time - start_time
                 exp_results['priors'][priors_type] = result
             
             all_results[exp_id] = exp_results
@@ -175,11 +330,7 @@ class BatchInferencePipeline:
             with open(exp_file, 'w') as f:
                 json.dump(exp_results, f, indent=2, default=str)
         
-        # Create batch summary
-        self.create_batch_summary(all_results)
-        
-        # Create performance plots  
-        self.create_performance_plots(all_results)
+        return all_results
 
     def create_batch_summary(self, all_results):
         """Create summary of batch results."""
@@ -198,17 +349,30 @@ class BatchInferencePipeline:
         model_performance = defaultdict(lambda: defaultdict(list))
         
         for exp_id, exp_result in all_results.items():
+            # Collect model timing data
+            if 'model_times' in exp_result:
+                for model_name, priors_times in exp_result['model_times'].items():
+                    if model_name not in self.model_timing_stats:
+                        self.model_timing_stats[model_name] = {}
+                    for priors_type, times_list in priors_times.items():
+                        if priors_type not in self.model_timing_stats[model_name]:
+                            self.model_timing_stats[model_name][priors_type] = []
+                        self.model_timing_stats[model_name][priors_type].extend(times_list)
+            
             for priors_type in ['broad', 'narrow']:
+                if priors_type not in exp_result.get('priors', {}):
+                    continue  # Skip if this priors type is missing
+                    
                 priors_result = exp_result['priors'][priors_type]
-                if priors_result['success']:
+                if priors_result.get('success', False):
                     if priors_type == 'broad':
                         successful_broad += 1
                     else:
                         successful_narrow += 1
                     
                     # Collect metrics for each model
-                    for model_name, model_result in priors_result['models_results'].items():
-                        if model_result['success']:
+                    for model_name, model_result in priors_result.get('models_results', {}).items():
+                        if model_result.get('success', False):
                             # Fit metrics
                             if 'fit_metrics' in model_result:
                                 fit_metrics = model_result['fit_metrics']
@@ -220,6 +384,14 @@ class BatchInferencePipeline:
                                 param_metrics = model_result['parameter_metrics']
                                 overall_mape = param_metrics['overall']['mape']
                                 model_performance[model_name][f'{priors_type}_param_mape'].append(overall_mape)
+                            
+                            # Timing metrics
+                            if 'inference_time' in model_result:
+                                if model_name not in self.model_timing_stats:
+                                    self.model_timing_stats[model_name] = {}
+                                if priors_type not in self.model_timing_stats[model_name]:
+                                    self.model_timing_stats[model_name][priors_type] = []
+                                self.model_timing_stats[model_name][priors_type].append(model_result['inference_time'])
         
         print(f"Total experiments: {total_experiments}")
         print(f"Successful with broad priors: {successful_broad}")
@@ -252,6 +424,9 @@ class BatchInferencePipeline:
                         if mape_key in perf and perf[mape_key]:
                             print(f"    Param MAPE - Mean: {np.mean(perf[mape_key]):.1f}%, Std: {np.std(perf[mape_key]):.1f}%")
         
+        # Print model timing summary
+        self.print_timing_summary()
+        
         # Save batch summary
         summary = {
             'timestamp': timestamp,
@@ -261,6 +436,7 @@ class BatchInferencePipeline:
             'successful_narrow': successful_narrow,
             'models_tested': self.models,
             'model_performance': dict(model_performance),
+            'model_timing_stats': dict(self.model_timing_stats),
             'all_results': all_results
         }
         
@@ -438,8 +614,84 @@ class BatchInferencePipeline:
         plt.close()
         
         print(f"Performance plots saved to: {plot_file}")
-
-
+    
+    def print_timing_summary(self):
+        """Print detailed timing summary for each model."""
+        print(f"\nMODEL TIMING PERFORMANCE SUMMARY:")
+        print("=" * 80)
+        
+        if not self.model_timing_stats:
+            print("No timing data available.")
+            return
+        
+        # Calculate overall statistics
+        all_times = []
+        for model_stats in self.model_timing_stats.values():
+            for times in model_stats.values():
+                all_times.extend(times)
+        
+        if all_times:
+            print(f"Overall Statistics (all models, all priors):")
+            print(f"  Total inference runs: {len(all_times)}")
+            print(f"  Mean inference time: {np.mean(all_times):.3f}s")
+            print(f"  Std inference time: {np.std(all_times):.3f}s")
+            print(f"  Min inference time: {np.min(all_times):.3f}s")
+            print(f"  Max inference time: {np.max(all_times):.3f}s")
+            print()
+        
+        # Print per-model statistics
+        for model_name in self.models:
+            if model_name in self.model_timing_stats:
+                model_stats = self.model_timing_stats[model_name]
+                print(f"{model_name}:")
+                
+                for priors_type in ['broad', 'narrow']:
+                    if priors_type in model_stats and model_stats[priors_type]:
+                        times = model_stats[priors_type]
+                        print(f"  {priors_type.title()} priors ({len(times)} runs):")
+                        print(f"    Mean time: {np.mean(times):.3f}s ± {np.std(times):.3f}s")
+                        print(f"    Range: {np.min(times):.3f}s - {np.max(times):.3f}s")
+                        
+                        # Calculate percentiles
+                        p25, p50, p75 = np.percentile(times, [25, 50, 75])
+                        print(f"    Percentiles: 25%={p25:.3f}s, 50%={p50:.3f}s, 75%={p75:.3f}s")
+                
+                # Combined statistics for this model
+                all_model_times = []
+                for times in model_stats.values():
+                    all_model_times.extend(times)
+                
+                if all_model_times:
+                    print(f"  Overall model average: {np.mean(all_model_times):.3f}s ± {np.std(all_model_times):.3f}s")
+                print()
+        
+        # Model comparison
+        print("MODEL TIMING COMPARISON (Mean ± Std):")
+        print("-" * 60)
+        model_avg_times = {}
+        for model_name in self.models:
+            if model_name in self.model_timing_stats:
+                all_model_times = []
+                for times in self.model_timing_stats[model_name].values():
+                    all_model_times.extend(times)
+                if all_model_times:
+                    model_avg_times[model_name] = np.mean(all_model_times)
+                    model_label = model_name.replace('b_mc_point_', '').replace('_conv_standard', '')
+                    print(f"{model_label}: {np.mean(all_model_times):.3f}s ± {np.std(all_model_times):.3f}s")
+        
+        # Find fastest and slowest models
+        if model_avg_times:
+            fastest_model = min(model_avg_times, key=model_avg_times.get)
+            slowest_model = max(model_avg_times, key=model_avg_times.get)
+            fastest_label = fastest_model.replace('b_mc_point_', '').replace('_conv_standard', '')
+            slowest_label = slowest_model.replace('b_mc_point_', '').replace('_conv_standard', '')
+            
+            print(f"\nFastest model: {fastest_label} ({model_avg_times[fastest_model]:.3f}s)")
+            print(f"Slowest model: {slowest_label} ({model_avg_times[slowest_model]:.3f}s)")
+            speedup = model_avg_times[slowest_model] / model_avg_times[fastest_model]
+            print(f"Speed difference: {speedup:.2f}x")
+    
+    # ...existing code...
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run batch inference on MARIA experiments")
@@ -449,6 +701,13 @@ def parse_arguments():
                        help='Number of layers to process (1 or 2, default: 2)')
     parser.add_argument('--data-directory', type=str, default='data',
                        help='Data directory path (default: data)')
+    
+    # Parallel processing options
+    parser.add_argument('--disable-parallel', action='store_true',
+                       help='Disable parallel processing (run sequentially)')
+    parser.add_argument('--max-workers', type=int, default=None,
+                       help='Maximum number of parallel workers (default: auto-detect)')
+    
     return parser.parse_args()
 
 
@@ -458,11 +717,13 @@ def main():
     
     print(f"Processing {args.layer_count}-layer experiments from MARIA_VIPR_dataset/{args.layer_count}/")
     
-    # Run batch inference pipeline
+    # Run batch inference pipeline with parallel processing option
     batch_pipeline = BatchInferencePipeline(
         num_experiments=args.num_experiments,
         layer_count=args.layer_count,
-        data_directory=args.data_directory
+        data_directory=args.data_directory,
+        enable_parallel=not args.disable_parallel,
+        max_workers=args.max_workers
     )
     
     batch_pipeline.run()
