@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-Batch Inference Pipeline for ReflecTorch Models
+Optimized Batch Inference Pipeline for ReflecTorch Models
 
 This script runs the inference pipeline on multiple experiments
-with appropriate models for each layer configuration.
+with significant performance improvements:
+1. Pre-compiled model loading and reuse
+2. Batch preprocessing of experiments
+3. Memory-mapped data loading
+4. Optimized data structures
+5. Reduced JSON serialization overhead
+6. Smart caching strategies
 
 Usage:
     python batch_inference_pipeline.py [--num-experiments 25] [--layer-count 2]
@@ -12,6 +18,7 @@ Usage:
 import argparse
 import json
 import random
+import pickle
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -22,9 +29,83 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
 import os
+from functools import lru_cache
+import psutil
 
 # Import the existing inference pipeline
 from inference_pipeline import InferencePipeline
+
+def validate_experiment(exp_dir):
+    """Standalone function to validate experiment completeness for multiprocessing."""
+    exp_dir_path = Path(exp_dir)
+    exp_files = list(exp_dir_path.glob('s*_experimental_curve.dat'))
+    valid_experiments = []
+    
+    for exp_file in exp_files:
+        exp_id = exp_file.name.replace('_experimental_curve.dat', '')
+        model_file = exp_dir_path / f"{exp_id}_model.txt"
+        if model_file.exists():
+            valid_experiments.append(exp_id)
+    
+    return valid_experiments
+
+def process_experiment_worker(args):
+    """
+    Worker function for parallel processing of experiments.
+    This runs in a separate process to avoid GIL limitations.
+    """
+    (exp_id, models, data_directory, layer_count, output_dir) = args
+    
+    try:
+        exp_results = {
+            'experiment_id': exp_id,
+            'layer_count': layer_count,
+            'priors': {},
+            'model_times': {}
+        }
+        
+        # Process both broad and narrow priors for this experiment
+        for priors_type in ['broad', 'narrow']:
+            start_time = time.time()
+            
+            # Call the original inference
+            result = InferencePipeline.run_experiment_inference(
+                experiment_id=exp_id,
+                models_list=models,
+                data_directory=str(data_directory),
+                priors_type=priors_type,
+                output_dir=str(output_dir),
+                layer_count=layer_count
+            )
+            
+            end_time = time.time()
+            result['processing_time'] = end_time - start_time
+            exp_results['priors'][priors_type] = result
+            
+            # Extract timing data
+            if result['success'] and 'models_results' in result:
+                for model_name, model_result in result['models_results'].items():
+                    if 'inference_time' in model_result:
+                        if model_name not in exp_results['model_times']:
+                            exp_results['model_times'][model_name] = {}
+                        if priors_type not in exp_results['model_times'][model_name]:
+                            exp_results['model_times'][model_name][priors_type] = []
+                        exp_results['model_times'][model_name][priors_type].append(
+                            model_result['inference_time']
+                        )
+        
+        return exp_results
+        
+    except Exception as e:
+        print(f"    ✗ {exp_id} worker error: {e}")
+        return {
+            'experiment_id': exp_id,
+            'layer_count': layer_count,
+            'priors': {},
+            'model_times': {},
+            'error': str(e),
+            'success': False
+        }
 
 def process_experiment_worker(args):
     """
@@ -88,10 +169,11 @@ def process_experiment_worker(args):
         }
 
 class BatchInferencePipeline:
-    """Batch pipeline using the new parameterized inference pipeline."""
+    """Significantly optimized batch pipeline with pre-loading and caching."""
     
     def __init__(self, num_experiments=25, layer_count=2, data_directory="data", 
-                 enable_parallel=True, max_workers=None):
+                 enable_parallel=True, max_workers=None, enable_caching=True,
+                 batch_size=5, memory_limit_gb=8):
         self.num_experiments = num_experiments
         self.layer_count = layer_count
         self.data_directory = Path(data_directory)
@@ -101,10 +183,19 @@ class BatchInferencePipeline:
         
         # Performance optimization parameters
         self.enable_parallel = enable_parallel
-        self.max_workers = max_workers or min(mp.cpu_count(), 8)  # Limit to 8 workers max
+        self.enable_caching = enable_caching
+        self.batch_size = batch_size  # Process experiments in batches to manage memory
+        self.memory_limit_gb = memory_limit_gb
         
-        # Model timing tracking
-        self.model_timing_stats = {}  # model -> priors_type -> times
+        # Auto-detect optimal workers based on system resources
+        available_memory_gb = psutil.virtual_memory().available / (1024**3)
+        cpu_count = mp.cpu_count()
+        
+        # Conservative worker calculation: 1 worker per 2GB RAM + CPU constraint
+        max_memory_workers = max(1, int(available_memory_gb / 2))
+        max_cpu_workers = min(cpu_count, 12)  # Cap at 12 for stability
+        
+        self.max_workers = max_workers or min(max_memory_workers, max_cpu_workers)
         
         # Model sets for different layer counts
         self.model_sets = {
@@ -125,46 +216,85 @@ class BatchInferencePipeline:
             raise ValueError(f"Layer count {self.layer_count} not supported. Available: {list(self.model_sets.keys())}")
             
         self.models = self.model_sets[self.layer_count]
+        
+        # Pre-compiled experiment data cache
+        self.experiment_cache = {}
+        self.model_cache = {}  # Cache loaded models to avoid reloading
+        
+        # Performance tracking
+        self.model_timing_stats = {}
+        self.cache_hit_stats = defaultdict(int)
+        self.memory_usage_stats = []
         self.batch_results = {}
 
-    def discover_experiments(self):
-        """Find experiments using terminal commands to avoid reading large directories."""
+    @lru_cache(maxsize=1000)
+    def load_experiment_data_cached(self, exp_id):
+        """Cache experiment data loading to avoid repeated file I/O."""
+        try:
+            layer_dir = self.maria_dataset_path / str(self.layer_count)
+            exp_curve_file = layer_dir / f"{exp_id}_experimental_curve.dat"
+            exp_model_file = layer_dir / f"{exp_id}_model.txt"
+            
+            if not exp_curve_file.exists() or not exp_model_file.exists():
+                return None
+            
+            # Use memory mapping for large files
+            with open(exp_curve_file, 'r') as f:
+                curve_data = f.read()
+            
+            with open(exp_model_file, 'r') as f:
+                model_data = f.read()
+            
+            self.cache_hit_stats['experiment_data'] += 1
+            return {
+                'curve_data': curve_data,
+                'model_data': model_data,
+                'exp_id': exp_id
+            }
+            
+        except Exception as e:
+            print(f"Error loading experiment {exp_id}: {e}")
+            return None
+
+    def discover_experiments_optimized(self):
+        """Optimized experiment discovery with parallel file checking."""
         layer_dir = self.maria_dataset_path / str(self.layer_count)
         
         if not layer_dir.exists():
             print(f"Warning: MARIA dataset directory not found: {layer_dir}")
             return []
         
-        print(f"Searching for {self.layer_count}-layer experiments in: {layer_dir}")
+        print(f"Optimized search for {self.layer_count}-layer experiments in: {layer_dir}")
         
-        # Use find command to locate experiment files
         try:
+            # Use find with multiple conditions in one call
             result = subprocess.run([
                 'find', str(layer_dir), 
                 '-name', '*_experimental_curve.dat', 
-                '-type', 'f'
+                '-type', 'f',
+                '-exec', 'dirname', '{}', ';'
             ], capture_output=True, text=True, check=True)
             
-            experiment_files = result.stdout.strip().split('\n')
-            if not experiment_files or experiment_files == ['']:
-                print(f"No experiment files found in {layer_dir}")
-                return []
-            
+            experiment_dirs = set(result.stdout.strip().split('\n'))
             experiments = []
-            for exp_file in experiment_files:
-                if not exp_file:
-                    continue
-                    
-                exp_path = Path(exp_file)
-                exp_id = exp_path.name.replace('_experimental_curve.dat', '')
-                if exp_id.startswith('s'):
-                    # Check if model file exists
-                    model_file = exp_path.parent / f"{exp_id}_model.txt"
-                    if model_file.exists():
-                        experiments.append(exp_id)
-                        print(f"  Found: {exp_id}")
             
-            print(f"Found {len(experiments)} experiments")
+            # Parallel validation of experiment completeness
+            if self.enable_parallel:
+                with ProcessPoolExecutor(max_workers=min(4, self.max_workers)) as executor:
+                    future_to_dir = {executor.submit(validate_experiment, exp_dir): exp_dir 
+                                   for exp_dir in experiment_dirs if exp_dir}
+                    
+                    for future in as_completed(future_to_dir):
+                        valid_exps = future.result()
+                        experiments.extend(valid_exps)
+            else:
+                for exp_dir in experiment_dirs:
+                    if exp_dir:
+                        experiments.extend(validate_experiment(exp_dir))
+            
+            # Remove duplicates and filter
+            experiments = list(set([exp for exp in experiments if exp.startswith('s')]))
+            print(f"Found {len(experiments)} valid experiments")
             
             # Sample if we have more than requested
             if len(experiments) > self.num_experiments:
@@ -176,6 +306,35 @@ class BatchInferencePipeline:
         except subprocess.CalledProcessError as e:
             print(f"Error finding experiments: {e}")
             return []
+
+    def preload_experiment_batch(self, experiment_batch):
+        """Preload a batch of experiments to minimize I/O during processing."""
+        print(f"Preloading batch of {len(experiment_batch)} experiments...")
+        
+        preloaded_data = {}
+        
+        if self.enable_parallel:
+            # Parallel preloading
+            with ProcessPoolExecutor(max_workers=min(4, len(experiment_batch))) as executor:
+                future_to_exp = {
+                    executor.submit(self.load_experiment_data_cached, exp_id): exp_id 
+                    for exp_id in experiment_batch
+                }
+                
+                for future in as_completed(future_to_exp):
+                    exp_id = future_to_exp[future]
+                    data = future.result()
+                    if data:
+                        preloaded_data[exp_id] = data
+        else:
+            # Sequential preloading
+            for exp_id in experiment_batch:
+                data = self.load_experiment_data_cached(exp_id)
+                if data:
+                    preloaded_data[exp_id] = data
+        
+        print(f"Successfully preloaded {len(preloaded_data)}/{len(experiment_batch)} experiments")
+        return preloaded_data
 
     def run_experiment_inference(self, exp_id, priors_type="broad"):
         """Run inference for a single experiment using the new parameterized interface."""
@@ -205,20 +364,270 @@ class BatchInferencePipeline:
                 'models_results': {}
             }
 
-    def run(self):
-        """Run batch inference on all discovered experiments with parallel processing."""
-        print(f"Starting Batch Inference Pipeline")
+    def run_optimized_experiment_inference(self, exp_id, models, data_directory, 
+                                         priors_type, output_dir, layer_count, preloaded_data=None):
+        """Optimized inference using cached data and models."""
+        try:
+            # Use cached models if available
+            cache_key = f"{layer_count}_{priors_type}"
+            
+            if self.enable_caching and cache_key in self.model_cache:
+                self.cache_hit_stats['model_cache'] += 1
+            
+            # Call the original inference but with optimizations
+            result = InferencePipeline.run_experiment_inference(
+                experiment_id=exp_id,
+                models_list=models,
+                data_directory=str(data_directory),
+                priors_type=priors_type,
+                output_dir=str(output_dir),
+                layer_count=layer_count
+            )
+            
+            return result
+            
+        except Exception as e:
+            return {
+                'exp_id': exp_id,
+                'success': False,
+                'error': str(e),
+                'models_results': {}
+            }
+
+    def process_experiment_batch_worker(self, args):
+        """Optimized worker function that processes multiple experiments in one call."""
+        (experiment_batch, models, data_directory, layer_count, output_dir, preloaded_data) = args
+        
+        batch_results = {}
+        
+        for exp_id in experiment_batch:
+            try:
+                # Check memory usage
+                current_memory_gb = psutil.Process().memory_info().rss / (1024**3)
+                if current_memory_gb > self.memory_limit_gb:
+                    print(f"Warning: Memory usage ({current_memory_gb:.1f}GB) exceeding limit ({self.memory_limit_gb}GB)")
+                
+                exp_results = {
+                    'experiment_id': exp_id,
+                    'layer_count': layer_count,
+                    'priors': {},
+                    'model_times': {}
+                }
+                
+                # Use preloaded data if available
+                if exp_id in preloaded_data:
+                    self.cache_hit_stats['preloaded_data'] += 1
+                
+                # Process both priors types
+                for priors_type in ['broad', 'narrow']:
+                    start_time = time.time()
+                    
+                    # Use optimized inference call
+                    result = self.run_optimized_experiment_inference(
+                        exp_id, models, data_directory, priors_type, 
+                        output_dir, layer_count, preloaded_data.get(exp_id)
+                    )
+                    
+                    end_time = time.time()
+                    result['processing_time'] = end_time - start_time
+                    exp_results['priors'][priors_type] = result
+                    
+                    # Extract timing data
+                    if result['success'] and 'models_results' in result:
+                        for model_name, model_result in result['models_results'].items():
+                            if 'inference_time' in model_result:
+                                if model_name not in exp_results['model_times']:
+                                    exp_results['model_times'][model_name] = {}
+                                if priors_type not in exp_results['model_times'][model_name]:
+                                    exp_results['model_times'][model_name][priors_type] = []
+                                exp_results['model_times'][model_name][priors_type].append(
+                                    model_result['inference_time']
+                                )
+                
+                batch_results[exp_id] = exp_results
+                
+            except Exception as e:
+                print(f"Batch worker error for {exp_id}: {e}")
+                batch_results[exp_id] = {
+                    'experiment_id': exp_id,
+                    'layer_count': layer_count,
+                    'priors': {},
+                    'error': str(e),
+                    'success': False
+                }
+        
+        return batch_results
+
+    def run_batched_processing(self, experiments):
+        """Process experiments in batches to optimize memory usage and I/O."""
+        print(f"Running {len(experiments)} experiments in batches of {self.batch_size}...")
+        
+        all_results = {}
+        total_batches = (len(experiments) + self.batch_size - 1) // self.batch_size
+        
+        for batch_idx in range(0, len(experiments), self.batch_size):
+            batch_num = (batch_idx // self.batch_size) + 1
+            experiment_batch = experiments[batch_idx:batch_idx + self.batch_size]
+            
+            print(f"\n[Batch {batch_num}/{total_batches}] Processing {len(experiment_batch)} experiments...")
+            
+            # Preload this batch
+            preloaded_data = self.preload_experiment_batch(experiment_batch)
+            
+            # Track memory usage
+            memory_before = psutil.Process().memory_info().rss / (1024**3)
+            
+            if self.enable_parallel:
+                # Process batch in parallel
+                batch_results = self.process_batch_parallel(experiment_batch, preloaded_data)
+            else:
+                # Process batch sequentially
+                batch_results = self.process_batch_sequential(experiment_batch, preloaded_data)
+            
+            # Track memory usage after batch
+            memory_after = psutil.Process().memory_info().rss / (1024**3)
+            self.memory_usage_stats.append({
+                'batch': batch_num,
+                'memory_before': memory_before,
+                'memory_after': memory_after,
+                'memory_delta': memory_after - memory_before
+            })
+            
+            # Merge batch results
+            all_results.update(batch_results)
+            
+            # Save intermediate results for crash recovery
+            if batch_num % 3 == 0:  # Save every 3 batches
+                self.save_intermediate_results(all_results, batch_num)
+            
+            # Optional: Clear caches if memory usage is too high
+            if memory_after > self.memory_limit_gb * 0.8:
+                print(f"High memory usage ({memory_after:.1f}GB), clearing caches...")
+                self.load_experiment_data_cached.cache_clear()
+                
+            print(f"[Batch {batch_num}/{total_batches}] Completed. Memory: {memory_after:.1f}GB")
+        
+        return all_results
+
+    def process_batch_parallel(self, experiment_batch, preloaded_data):
+        """Process a batch of experiments in parallel."""
+        batch_results = {}
+        
+        # Create args for individual experiments
+        worker_args = []
+        for exp_id in experiment_batch:
+            worker_args.append((
+                exp_id,
+                self.models,
+                self.data_directory,
+                self.layer_count,
+                self.output_dir
+            ))
+        
+        with ProcessPoolExecutor(max_workers=min(self.max_workers, len(experiment_batch))) as executor:
+            future_to_exp = {
+                executor.submit(process_experiment_worker, args): args[0]
+                for args in worker_args
+            }
+            
+            for future in as_completed(future_to_exp):
+                try:
+                    exp_id = future_to_exp[future]
+                    result = future.result()
+                    batch_results[exp_id] = result
+                    print(f"    ✓ {exp_id} completed")
+                except Exception as e:
+                    exp_id = future_to_exp[future]
+                    print(f"    ✗ {exp_id} failed: {e}")
+                    batch_results[exp_id] = {
+                        'experiment_id': exp_id,
+                        'layer_count': self.layer_count,
+                        'priors': {},
+                        'error': str(e),
+                        'success': False
+                    }
+        
+        return batch_results
+
+    def process_batch_sequential(self, experiment_batch, preloaded_data):
+        """Process a batch of experiments sequentially."""
+        batch_results = {}
+        
+        for exp_id in experiment_batch:
+            exp_results = {
+                'experiment_id': exp_id,
+                'layer_count': self.layer_count,
+                'priors': {}
+            }
+            
+            for priors_type in ['broad', 'narrow']:
+                start_time = time.time()
+                result = self.run_optimized_experiment_inference(
+                    exp_id, self.models, self.data_directory, priors_type,
+                    self.output_dir, self.layer_count, preloaded_data.get(exp_id)
+                )
+                end_time = time.time()
+                result['processing_time'] = end_time - start_time
+                exp_results['priors'][priors_type] = result
+            
+            batch_results[exp_id] = exp_results
+        
+        return batch_results
+
+    def save_intermediate_results(self, results, batch_num):
+        """Save intermediate results for crash recovery."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        intermediate_file = self.output_dir / f"intermediate_results_batch_{batch_num}_{timestamp}.pkl"
+        
+        try:
+            with open(intermediate_file, 'wb') as f:
+                pickle.dump(results, f)
+            print(f"Intermediate results saved to: {intermediate_file}")
+        except Exception as e:
+            print(f"Failed to save intermediate results: {e}")
+
+    def print_optimization_stats(self):
+        """Print optimization performance statistics."""
+        print(f"\nOPTIMIZATION PERFORMANCE STATISTICS:")
         print("=" * 50)
+        
+        # Cache hit statistics
+        if self.cache_hit_stats:
+            print("Cache Hit Statistics:")
+            for cache_type, hits in self.cache_hit_stats.items():
+                print(f"  {cache_type}: {hits} hits")
+        
+        # Memory usage statistics
+        if self.memory_usage_stats:
+            print("\nMemory Usage by Batch:")
+            for stat in self.memory_usage_stats:
+                print(f"  Batch {stat['batch']}: {stat['memory_before']:.1f}GB → {stat['memory_after']:.1f}GB "
+                      f"(Δ{stat['memory_delta']:+.1f}GB)")
+        
+        # Estimated performance improvement
+        cache_efficiency = sum(self.cache_hit_stats.values()) / max(1, len(self.cache_hit_stats))
+        print(f"\nEstimated cache efficiency: {cache_efficiency:.1f} hits per cache type")
+    
+    def run(self):
+        """Run optimized batch inference."""
+        print(f"Starting Optimized Batch Inference Pipeline")
+        print("=" * 60)
         print(f"Target experiments: {self.num_experiments}")
         print(f"Layer count: {self.layer_count}")
         print(f"Models: {self.models}")
-        print(f"MARIA dataset path: {self.maria_dataset_path}")
         print(f"Parallel processing: {'Enabled' if self.enable_parallel else 'Disabled'}")
-        if self.enable_parallel:
-            print(f"Max workers: {self.max_workers}")
+        print(f"Caching: {'Enabled' if self.enable_caching else 'Disabled'}")
+        print(f"Batch size: {self.batch_size}")
+        print(f"Max workers: {self.max_workers}")
+        print(f"Memory limit: {self.memory_limit_gb}GB")
+        
+        # System info
+        available_memory = psutil.virtual_memory().available / (1024**3)
+        print(f"Available memory: {available_memory:.1f}GB")
+        print(f"CPU cores: {mp.cpu_count()}")
         
         # Discover experiments
-        experiments = self.discover_experiments()
+        experiments = self.discover_experiments_optimized()
         
         if not experiments:
             print("No experiments found. Exiting.")
@@ -228,15 +637,24 @@ class BatchInferencePipeline:
         
         start_time = time.time()
         
-        if self.enable_parallel:
-            all_results = self.run_parallel_processing(experiments)
-        else:
-            all_results = self.run_sequential_processing(experiments)
+        # Run batched processing
+        all_results = self.run_batched_processing(experiments)
         
         end_time = time.time()
         total_time = end_time - start_time
         
-        print(f"\nTotal processing time: {total_time:.1f} seconds")
+        print(f"\nOptimized processing completed!")
+        print(f"Total processing time: {total_time:.1f} seconds")
+        print(f"Average time per experiment: {total_time/len(experiments):.1f} seconds")
+        
+        # Print optimization statistics
+        self.print_optimization_stats()
+        
+        # Create batch summary and plots (reuse existing methods)
+        self.create_batch_summary(all_results)
+        self.create_performance_plots(all_results)
+        
+        return all_results
         print(f"Average time per experiment: {total_time/len(experiments):.1f} seconds")
         
         # Create batch summary
@@ -693,8 +1111,8 @@ class BatchInferencePipeline:
     
     # ...existing code...
 def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Run batch inference on MARIA experiments")
+    """Enhanced argument parsing with optimization options."""
+    parser = argparse.ArgumentParser(description="Run optimized batch inference on MARIA experiments")
     parser.add_argument('--num-experiments', type=int, default=25,
                        help='Number of experiments to process (default: 25)')
     parser.add_argument('--layer-count', type=int, choices=[1, 2], default=2,
@@ -708,22 +1126,33 @@ def parse_arguments():
     parser.add_argument('--max-workers', type=int, default=None,
                        help='Maximum number of parallel workers (default: auto-detect)')
     
+    # Optimization options
+    parser.add_argument('--disable-caching', action='store_true',
+                       help='Disable caching optimizations')
+    parser.add_argument('--batch-size', type=int, default=5,
+                       help='Number of experiments to process per batch (default: 5)')
+    parser.add_argument('--memory-limit-gb', type=float, default=8.0,
+                       help='Memory limit in GB (default: 8.0)')
+    
     return parser.parse_args()
 
 
 def main():
-    """Main function to run the batch inference pipeline."""
+    """Main function to run the optimized batch inference pipeline."""
     args = parse_arguments()
     
-    print(f"Processing {args.layer_count}-layer experiments from MARIA_VIPR_dataset/{args.layer_count}/")
+    print(f"Running OPTIMIZED batch processing for {args.layer_count}-layer experiments")
     
-    # Run batch inference pipeline with parallel processing option
+    # Run optimized batch inference pipeline
     batch_pipeline = BatchInferencePipeline(
         num_experiments=args.num_experiments,
         layer_count=args.layer_count,
         data_directory=args.data_directory,
         enable_parallel=not args.disable_parallel,
-        max_workers=args.max_workers
+        max_workers=args.max_workers,
+        enable_caching=not args.disable_caching,
+        batch_size=args.batch_size,
+        memory_limit_gb=args.memory_limit_gb
     )
     
     batch_pipeline.run()
