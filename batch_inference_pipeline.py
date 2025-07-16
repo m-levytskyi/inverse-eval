@@ -173,7 +173,7 @@ class BatchInferencePipeline:
     
     def __init__(self, num_experiments=25, layer_count=2, data_directory="data", 
                  enable_parallel=True, max_workers=None, enable_caching=True,
-                 batch_size=5, memory_limit_gb=8):
+                 batch_size=5, memory_limit_gb=48):
         self.num_experiments = num_experiments
         self.layer_count = layer_count
         self.data_directory = Path(data_directory)
@@ -185,7 +185,8 @@ class BatchInferencePipeline:
         self.enable_parallel = enable_parallel
         self.enable_caching = enable_caching
         self.batch_size = batch_size  # Process experiments in batches to manage memory
-        self.memory_limit_gb = memory_limit_gb
+        avail_gb = psutil.virtual_memory().available / (1024**3)
+        self.memory_limit_gb = memory_limit_gb or (avail_gb * 0.9)
         
         # Auto-detect optimal workers based on system resources
         available_memory_gb = psutil.virtual_memory().available / (1024**3)
@@ -1131,8 +1132,8 @@ def parse_arguments():
                        help='Disable caching optimizations')
     parser.add_argument('--batch-size', type=int, default=5,
                        help='Number of experiments to process per batch (default: 5)')
-    parser.add_argument('--memory-limit-gb', type=float, default=8.0,
-                       help='Memory limit in GB (default: 8.0)')
+    parser.add_argument('--memory-limit-gb', type=float, default=48.0,
+                       help='Memory limit in GB (default: 48.0)')
     
     return parser.parse_args()
 
