@@ -178,8 +178,14 @@ class BatchInferencePipeline:
         self.layer_count = layer_count
         self.data_directory = Path(data_directory)
         self.maria_dataset_path = Path(data_directory) / "MARIA_VIPR_dataset"
-        self.output_dir = Path("batch_inference_results")
-        self.output_dir.mkdir(exist_ok=True)
+        
+        # Create timestamped output directory
+        self.timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
+        folder_name = f"{num_experiments}experiments_{layer_count}_layer_{self.timestamp}"
+        self.output_dir = Path("batch_inference_results") / folder_name
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"Results will be saved to: {self.output_dir}")
         
         # Performance optimization parameters
         self.enable_parallel = enable_parallel
@@ -369,27 +375,70 @@ class BatchInferencePipeline:
                                          priors_type, output_dir, layer_count, preloaded_data=None):
         """Optimized inference using cached data and models."""
         try:
-            # Use cached models if available
-            cache_key = f"{layer_count}_{priors_type}"
-            
-            if self.enable_caching and cache_key in self.model_cache:
-                self.cache_hit_stats['model_cache'] += 1
-            
-            # Call the original inference but with optimizations
-            result = InferencePipeline.run_experiment_inference(
+            # Create inference pipeline instance
+            pipeline = InferencePipeline(
                 experiment_id=exp_id,
                 models_list=models,
-                data_directory=str(data_directory),
+                data_directory=data_directory,
                 priors_type=priors_type,
-                output_dir=str(output_dir),
+                output_dir=output_dir,
                 layer_count=layer_count
             )
             
-            return result
+            # Load experimental data and true parameters
+            pipeline.discover_experiment_files()
+            pipeline.load_experimental_data_from_files()
+            pipeline.load_true_parameters_from_files()
+            pipeline.generate_model_configurations()
+            
+            # Run inference for all models (don't show plots to save time)
+            pipeline.run_all_models(show_plots=False)
+            
+            # Extract results with SLD profiles included BEFORE they get serialized/stripped
+            models_results = {}
+            best_model_name = None
+            best_mape = float('inf')
+            
+            # Access the results from the pipeline's internal results storage
+            # IMPORTANT: Extract data here BEFORE save_results() strips the numpy arrays
+            for model_name, model_result in pipeline.results.items():
+                if model_result['success']:
+                    # Extract essential data including SLD profiles and reflectivity curves
+                    models_results[model_name] = {
+                        'success': True,
+                        'parameter_metrics': model_result['parameter_metrics'],
+                        'fit_metrics': model_result['fit_metrics'],
+                        # Include SLD profiles for plotting - properly convert numpy arrays to lists
+                        'sld_profile_x': model_result.get('sld_profile_x', []).tolist() if isinstance(model_result.get('sld_profile_x'), np.ndarray) else list(model_result.get('sld_profile_x', [])),
+                        'sld_profile_predicted': model_result.get('sld_profile_predicted', []).tolist() if isinstance(model_result.get('sld_profile_predicted'), np.ndarray) else list(model_result.get('sld_profile_predicted', [])),
+                        'sld_profile_polished': model_result.get('sld_profile_polished', []).tolist() if isinstance(model_result.get('sld_profile_polished'), np.ndarray) else list(model_result.get('sld_profile_polished', [])),
+                        # Include reflectivity curve data - properly convert numpy arrays to lists
+                        'q_model': model_result.get('q_model', []).tolist() if isinstance(model_result.get('q_model'), np.ndarray) else list(model_result.get('q_model', [])),
+                        'predicted_curve': model_result.get('predicted_curve', []).tolist() if isinstance(model_result.get('predicted_curve'), np.ndarray) else list(model_result.get('predicted_curve', [])),
+                        'polished_curve': model_result.get('polished_curve', []).tolist() if isinstance(model_result.get('polished_curve'), np.ndarray) else list(model_result.get('polished_curve', [])),
+                        # Include timing if available
+                        'inference_time': model_result.get('inference_time', 0)
+                    }
+                    
+                    # Track best model (lowest overall MAPE)
+                    if model_result['parameter_metrics'] and 'overall' in model_result['parameter_metrics']:
+                        overall_mape = model_result['parameter_metrics']['overall']['mape']
+                        if overall_mape < best_mape:
+                            best_mape = overall_mape
+                            best_model_name = model_name
+                else:
+                    models_results[model_name] = {'success': False}
+            
+            return {
+                'success': len([r for r in models_results.values() if r.get('success', False)]) > 0,
+                'models_results': models_results,
+                'best_model_name': best_model_name,
+                'best_mape': best_mape
+            }
             
         except Exception as e:
+            print(f"    ✗ Error in {exp_id} ({priors_type}): {e}")
             return {
-                'exp_id': exp_id,
                 'success': False,
                 'error': str(e),
                 'models_results': {}
@@ -577,8 +626,7 @@ class BatchInferencePipeline:
 
     def save_intermediate_results(self, results, batch_num):
         """Save intermediate results for crash recovery."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        intermediate_file = self.output_dir / f"intermediate_results_batch_{batch_num}_{timestamp}.pkl"
+        intermediate_file = self.output_dir / f"intermediate_results_batch_{batch_num}_{self.timestamp}.pkl"
         
         try:
             with open(intermediate_file, 'wb') as f:
@@ -655,6 +703,9 @@ class BatchInferencePipeline:
         self.create_batch_summary(all_results)
         self.create_performance_plots(all_results)
         
+        # NEW: Analyze and plot individual best/worst predictions
+        self.analyze_and_plot_outliers(all_results)
+        
         return all_results
         print(f"Average time per experiment: {total_time/len(experiments):.1f} seconds")
         
@@ -703,7 +754,7 @@ class BatchInferencePipeline:
                     # Save individual experiment results
                     exp_file = self.output_dir / f"{exp_id}_results.json"
                     with open(exp_file, 'w') as f:
-                        json.dump(result, f, indent=2, default=str)
+                        json.dump(result, f, indent=2)
                         
                 except Exception as e:
                     print(f"[{completed_count+1}/{len(experiments)}] Failed {exp_id}: {e}")
@@ -747,13 +798,12 @@ class BatchInferencePipeline:
             # Save individual experiment results
             exp_file = self.output_dir / f"{exp_id}_results.json"
             with open(exp_file, 'w') as f:
-                json.dump(exp_results, f, indent=2, default=str)
+                json.dump(exp_results, f, indent=2)
         
         return all_results
 
     def create_batch_summary(self, all_results):
         """Create summary of batch results."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         print(f"\n{'='*80}")
         print(f"BATCH INFERENCE SUMMARY - {self.layer_count}-LAYER EXPERIMENTS")
@@ -848,7 +898,7 @@ class BatchInferencePipeline:
         
         # Save batch summary
         summary = {
-            'timestamp': timestamp,
+            'timestamp': self.timestamp,
             'layer_count': self.layer_count,
             'total_experiments': total_experiments,
             'successful_broad': successful_broad,
@@ -859,16 +909,15 @@ class BatchInferencePipeline:
             'all_results': all_results
         }
         
-        summary_file = self.output_dir / f"batch_summary_{self.layer_count}layer_{timestamp}.json"
+        summary_file = self.output_dir / f"batch_summary_{self.layer_count}layer_{self.timestamp}.json"
         with open(summary_file, 'w') as f:
-            json.dump(summary, f, indent=2, default=str)
+            json.dump(summary, f, indent=2)
         
         print(f"\nBatch summary saved to: {summary_file}")
         return summary
 
     def create_performance_plots(self, all_results):
         """Create comprehensive 2-column performance visualization plots."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Collect data for plotting
         model_mapes = defaultdict(lambda: defaultdict(list))
@@ -1028,7 +1077,7 @@ class BatchInferencePipeline:
         plt.subplots_adjust(top=0.93)  # Make room for main title
         
         # Save plot
-        plot_file = self.output_dir / f"batch_inference_results_{self.layer_count}layer_{timestamp}.png"
+        plot_file = self.output_dir / f"batch_inference_results_{self.layer_count}layer_{self.timestamp}.png"
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -1109,6 +1158,458 @@ class BatchInferencePipeline:
             print(f"Slowest model: {slowest_label} ({model_avg_times[slowest_model]:.3f}s)")
             speedup = model_avg_times[slowest_model] / model_avg_times[fastest_model]
             print(f"Speed difference: {speedup:.2f}x")
+
+    def generate_sld_profile_from_params(self, params, param_names, thickness_range=None):
+        """
+        Generate SLD profile from predicted parameters for 1-layer system.
+        
+        Args:
+            params: List of parameter values
+            param_names: List of parameter names
+            thickness_range: Optional tuple (min_depth, max_depth) for depth axis
+            
+        Returns:
+            tuple: (depths, sld_profile) numpy arrays
+        """
+        try:
+            # Extract parameters by name
+            param_dict = dict(zip(param_names, params))
+            
+            # Find thickness parameter
+            thickness = None
+            for name in param_dict:
+                if 'thickness' in name.lower() and 'l1' in name.lower():
+                    thickness = param_dict[name]
+                    break
+            
+            if thickness is None:
+                print(f"Warning: Could not find thickness parameter in {param_names}")
+                return None, None
+            
+            # Find SLD parameters
+            layer_sld = None
+            substrate_sld = None
+            
+            for name in param_dict:
+                if 'sld' in name.lower() and 'l1' in name.lower():
+                    layer_sld = param_dict[name]
+                elif 'sld' in name.lower() and ('sub' in name.lower() or 'backing' in name.lower()):
+                    substrate_sld = param_dict[name]
+            
+            if layer_sld is None or substrate_sld is None:
+                print(f"Warning: Could not find SLD parameters in {param_names}")
+                return None, None
+            
+            # Set depth range
+            if thickness_range is None:
+                # Extend beyond layer boundaries for visualization
+                padding = max(thickness * 0.5, 50)  # At least 50 Å padding
+                min_depth = -padding
+                max_depth = thickness + padding
+            else:
+                min_depth, max_depth = thickness_range
+            
+            # Create depth axis
+            depths = np.linspace(min_depth, max_depth, 1024)
+            
+            # Create step function SLD profile
+            # Ambient (< 0): set to 0 by default (can be modified if needed)
+            # Layer (0 to thickness): layer_sld
+            # Substrate (> thickness): substrate_sld
+            sld_profile = np.where(
+                depths < 0,
+                0,  # Ambient SLD (could be a parameter if available)
+                np.where(
+                    depths <= thickness,
+                    layer_sld,
+                    substrate_sld
+                )
+            )
+            
+            return depths, sld_profile
+            
+        except Exception as e:
+            print(f"Error generating SLD profile: {e}")
+            return None, None
+
+    def analyze_and_plot_outliers(self, all_results):
+        """
+        Analyze experiments by MAPE and create individual plots for best/worst predictions.
+        Creates SLD profiles and reflectivity curves ensuring no overlap between best and worst categories.
+        """
+        print(f"\n{'='*80}")
+        print(f"ANALYZING BEST AND WORST PREDICTIONS")
+        print(f"{'='*80}")
+        
+        # Extract MAPE data for sorting
+        experiment_mapes = {'broad': {}, 'narrow': {}}
+        experiment_data = {'broad': {}, 'narrow': {}}
+        
+        for exp_id, exp_result in all_results.items():
+            for priors_type in ['broad', 'narrow']:
+                if priors_type not in exp_result.get('priors', {}):
+                    continue
+                    
+                priors_result = exp_result['priors'][priors_type]
+                if not priors_result.get('success', False):
+                    continue
+                
+                # Calculate average MAPE across all models for this experiment
+                model_mapes = []
+                all_models_data = {}
+                
+                for model_name, model_result in priors_result.get('models_results', {}).items():
+                    if model_result.get('success', False) and 'parameter_metrics' in model_result:
+                        param_metrics = model_result['parameter_metrics']
+                        if 'overall' in param_metrics and 'mape' in param_metrics['overall']:
+                            mape = param_metrics['overall']['mape']
+                            model_mapes.append(mape)
+                            
+                            # Store all model data for plotting
+                            all_models_data[model_name] = {
+                                'mape': mape,
+                                'model_result': model_result
+                            }
+                
+                if model_mapes and all_models_data:
+                    avg_mape = np.mean(model_mapes)
+                    experiment_mapes[priors_type][exp_id] = avg_mape
+                    experiment_data[priors_type][exp_id] = {
+                        'mape': avg_mape,
+                        'all_models_data': all_models_data,
+                        'exp_result': exp_result
+                    }
+        
+        # Process each priors type independently ensuring no overlap within each priors type
+        for priors_type in ['broad', 'narrow']:
+            if not experiment_mapes[priors_type]:
+                print(f"No valid results found for {priors_type} priors")
+                continue
+                
+            # Sort by MAPE (ascending - best first)
+            sorted_experiments = sorted(
+                experiment_mapes[priors_type].items(), 
+                key=lambda x: x[1]
+            )
+            
+            # For this priors type, track experiments used within this priors type only
+            priors_used_experiments = set()
+            
+            # Select best experiments (lowest MAPE) 
+            best_experiments = []
+            for exp_id, mape in sorted_experiments:
+                if exp_id not in priors_used_experiments and len(best_experiments) < 3:
+                    best_experiments.append((exp_id, mape))
+                    priors_used_experiments.add(exp_id)
+            
+            # Select worst experiments (highest MAPE) ensuring no overlap with best within this priors type
+            worst_experiments = []
+            for exp_id, mape in reversed(sorted_experiments):
+                if exp_id not in priors_used_experiments and len(worst_experiments) < 3:
+                    worst_experiments.append((exp_id, mape))
+                    priors_used_experiments.add(exp_id)
+            
+            # Reverse worst_experiments to maintain descending order by MAPE
+            worst_experiments = worst_experiments[::-1]
+            
+            print(f"\n{priors_type.upper()} PRIORS RANKING (no overlap within {priors_type} priors):")
+            print(f"Best {len(best_experiments)} experiments (lowest MAPE):")
+            for i, (exp_id, mape) in enumerate(best_experiments):
+                print(f"  {i+1}. {exp_id}: {mape:.2f}% MAPE")
+            
+            print(f"Worst {len(worst_experiments)} experiments (highest MAPE):")
+            for i, (exp_id, mape) in enumerate(worst_experiments):
+                print(f"  {i+1}. {exp_id}: {mape:.2f}% MAPE")
+            
+            # Verify no overlap within this priors type
+            best_exp_ids = [exp_id for exp_id, _ in best_experiments]
+            worst_exp_ids = [exp_id for exp_id, _ in worst_experiments]
+            overlap = set(best_exp_ids) & set(worst_exp_ids)
+            if overlap:
+                print(f"  WARNING: Found overlap within {priors_type} priors: {overlap}")
+            else:
+                print(f"  ✓ No overlap between best and worst in {priors_type} priors")
+            
+            # Create plots for best and worst experiments
+            if best_experiments:
+                self.plot_individual_experiments(
+                    best_experiments, experiment_data[priors_type], 
+                    priors_type, "best", "Best Predictions"
+                )
+            
+            if worst_experiments:
+                self.plot_individual_experiments(
+                    worst_experiments, experiment_data[priors_type], 
+                    priors_type, "worst", "Worst Predictions"
+                )
+    
+    def plot_individual_experiments(self, experiments_list, experiment_data, 
+                                  priors_type, category, title_prefix):
+        """
+        Create individual SLD profile and reflectivity curve plots.
+        
+        Args:
+            experiments_list: List of (exp_id, mape) tuples
+            experiment_data: Dictionary containing model results and data
+            priors_type: 'broad' or 'narrow'
+            category: 'best' or 'worst'
+            title_prefix: Title prefix for plots
+        """
+        print(f"\nCreating plots for {title_prefix.lower()} {priors_type} priors experiments...")
+        
+        # Create subplots: 3 rows x 1 column (only SLD profiles)
+        fig, axes = plt.subplots(3, 1, figsize=(12, 16))
+        fig.suptitle(f'{title_prefix} Predictions - {priors_type.title()} Priors (SLD Profiles)', 
+                     fontsize=16, fontweight='bold')
+        
+        # Ensure axes is always a list for consistent indexing
+        if not isinstance(axes, np.ndarray):
+            axes = [axes]
+        
+        # Define colors for different models - more distinct colors
+        model_colors = {
+            'b_mc_point_neutron_conv_standard_L1_comp': '#2E8B57',  # Sea Green
+            'b_mc_point_neutron_conv_standard_L1_InputQDq': '#FF6347',  # Tomato  
+            'b_mc_point_neutron_conv_standard_L2_comp': '#4169E1',  # Royal Blue
+            'b_mc_point_neutron_conv_standard_L2_InputQDq': '#FF8C00',  # Dark Orange
+            'b_mc_point_xray_conv_standard_L2': '#9932CC'  # Dark Orchid
+        }
+        
+        for idx, (exp_id, mape) in enumerate(experiments_list):
+            if exp_id not in experiment_data:
+                continue
+                
+            exp_data = experiment_data[exp_id]
+            all_models_data = exp_data['all_models_data']
+            
+            # Plot SLD Profile
+            ax_sld = axes[idx]
+            
+            # Load ground truth SLD profile
+            try:
+                # Load true parameters to construct ground truth SLD
+                exp_model_file = self.maria_dataset_path / f"{exp_id}_model.txt"
+                if exp_model_file.exists():
+                    with open(exp_model_file, 'r') as f:
+                        lines = f.readlines()
+                    
+                    # Parse the true parameters for SLD construction
+                    true_thickness = None
+                    true_layer_sld = None
+                    true_sub_sld = None
+                    
+                    for line in lines:
+                        if 'layer1' in line and 'thickness' not in line:
+                            parts = line.strip().split()
+                            if len(parts) >= 4:
+                                try:
+                                    true_layer_sld = float(parts[1]) * 1e6  # Convert to 10^-6 units
+                                    true_thickness = float(parts[2])
+                                except (ValueError, IndexError):
+                                    continue
+                        elif 'backing' in line:
+                            parts = line.strip().split()
+                            if len(parts) >= 2:
+                                try:
+                                    true_sub_sld = float(parts[1]) * 1e6  # Convert to 10^-6 units
+                                except (ValueError, IndexError):
+                                    continue
+                    
+                    print(f"  DEBUG: Parsed true params - thickness: {true_thickness}, layer_sld: {true_layer_sld}, sub_sld: {true_sub_sld}")
+                    
+                    # Generate ground truth SLD profile
+                    if true_thickness and true_layer_sld is not None and true_sub_sld is not None:
+                        depths_true, sld_profile_true = self.generate_sld_profile_from_params(
+                            [true_thickness, 0, 0, true_layer_sld, true_sub_sld],
+                            ['Thickness L1', 'Roughness L1', 'Roughness sub', 'SLD L1', 'SLD sub']
+                        )
+                        
+                        if depths_true is not None and sld_profile_true is not None:
+                            print(f"  DEBUG: Ground truth SLD range: {min(sld_profile_true):.2f} to {max(sld_profile_true):.2f}")
+                            ax_sld.plot(depths_true, sld_profile_true, 'k--', linewidth=4, 
+                                       label='Ground Truth', alpha=0.9, zorder=10)
+                
+            except Exception as e:
+                print(f"  Warning: Could not load ground truth SLD for {exp_id}: {e}")
+            
+            # Plot predicted SLD profiles from all models
+            models_plotted = 0
+            for model_name, model_data in all_models_data.items():
+                model_result = model_data['model_result']
+                model_mape = model_data['mape']
+                
+                print(f"  DEBUG: Processing model {model_name} for {exp_id}")
+                
+                # Try to get SLD data from stored results first (if available)
+                has_stored_sld = ('sld_profile_x' in model_result and 'sld_profile_polished' in model_result and
+                                 len(model_result['sld_profile_x']) > 0 and len(model_result['sld_profile_polished']) > 0)
+                
+                print(f"    Has stored SLD data: {has_stored_sld}")
+                
+                if has_stored_sld:
+                    # Use stored SLD data
+                    sld_x = np.array(model_result['sld_profile_x'])
+                    sld_profile = np.array(model_result['sld_profile_polished'])
+                    
+                    print(f"    Using stored SLD X range: {min(sld_x):.2f} to {max(sld_x):.2f}")
+                    print(f"    Using stored SLD profile range: {min(sld_profile):.6f} to {max(sld_profile):.6f}")
+                    
+                    # Convert to proper units if needed
+                    if np.max(np.abs(sld_profile)) < 1e-4:
+                        sld_profile = sld_profile * 1e6
+                        print(f"    Converted SLD profile range: {min(sld_profile):.6f} to {max(sld_profile):.6f}")
+                    
+                    model_label = model_name.replace('b_mc_point_', '').replace('_conv_standard', '')
+                    color = model_colors.get(model_name, '#333333')
+                    
+                    ax_sld.plot(sld_x, sld_profile, '-', linewidth=3, 
+                               color=color, label=f'{model_label} ({model_mape:.1f}%)', alpha=0.85, zorder=5)
+                    models_plotted += 1
+                    
+                elif 'polished_params' in model_result and 'param_names' in model_result:
+                    # Generate SLD profile from predicted parameters
+                    params = model_result['polished_params']
+                    param_names = model_result['param_names']
+                    
+                    print(f"    Generating SLD from parameters: {params}")
+                    print(f"    Parameter names: {param_names}")
+                    
+                    depths, sld_profile = self.generate_sld_profile_from_params(params, param_names)
+                    
+                    if depths is not None and sld_profile is not None:
+                        print(f"    Generated SLD depth range: {min(depths):.2f} to {max(depths):.2f}")
+                        print(f"    Generated SLD profile range: {min(sld_profile):.6f} to {max(sld_profile):.6f}")
+                        
+                        model_label = model_name.replace('b_mc_point_', '').replace('_conv_standard', '')
+                        color = model_colors.get(model_name, '#333333')
+                        
+                        ax_sld.plot(depths, sld_profile, '-', linewidth=3, 
+                                   color=color, label=f'{model_label} ({model_mape:.1f}%)', alpha=0.85, zorder=5)
+                        models_plotted += 1
+                    else:
+                        print(f"    WARNING: Failed to generate SLD profile for {model_name}")
+                else:
+                    print(f"    WARNING: No SLD data or parameters available for {model_name}")
+            
+            print(f"  DEBUG: Plotted {models_plotted} SLD profiles for {exp_id}")
+            
+            ax_sld.set_xlabel('Depth (Å)', fontsize=11)
+            ax_sld.set_ylabel('SLD (×10⁻⁶ Å⁻²)', fontsize=11)
+            ax_sld.set_title(f'SLD Profile - {exp_id}\nAvg MAPE: {mape:.2f}%', fontsize=12, fontweight='bold')
+            ax_sld.grid(True, alpha=0.3, linestyle=':')
+            ax_sld.legend(fontsize=9, framealpha=0.9)
+        
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.93)
+        
+        # Export plotting data to JSON for debugging
+        debug_data = {
+            'category': category,
+            'priors_type': priors_type,
+            'experiments': {}
+        }
+        
+        for exp_id, mape in experiments_list:
+            if exp_id not in experiment_data:
+                continue
+                
+            exp_data = experiment_data[exp_id]
+            exp_debug = {
+                'mape': mape,
+                'true_params': exp_data.get('true_params', {}),
+                'models': {}
+            }
+            
+            # Add ground truth data
+            # Note: Ground truth data needs to be loaded separately since it's not stored in experiment results
+            try:
+                # Load true parameters for this experiment
+                model_file_path = self.maria_dataset_path / f"{exp_id}_model.txt"
+                if model_file_path.exists():
+                    with open(model_file_path, 'r') as f:
+                        content = f.read()
+                    # Parse parameters from the model file content
+                    exp_debug['ground_truth_params'] = content[:200]  # First 200 chars for debugging
+                else:
+                    exp_debug['ground_truth_params'] = "Model file not found"
+                
+                # Load experimental curve data for ground truth reflectivity
+                exp_file_path = self.maria_dataset_path / f"{exp_id}_experimental_curve.dat"
+                if exp_file_path.exists():
+                    exp_data_raw = np.loadtxt(exp_file_path)
+                    if exp_data_raw.shape[1] >= 3:
+                        q_exp = exp_data_raw[:, 0]
+                        r_exp = exp_data_raw[:, 1]
+                        exp_debug['ground_truth_refl'] = {
+                            'q': q_exp[:10].tolist() if len(q_exp) > 10 else q_exp.tolist(),
+                            'r': r_exp[:10].tolist() if len(r_exp) > 10 else r_exp.tolist(),
+                            'length': len(r_exp),
+                            'range': [float(min(r_exp)), float(max(r_exp))]
+                        }
+                        
+                        # Generate true SLD profile from model parameters for comparison
+                        # This is a placeholder - would need actual SLD generation logic
+                        exp_debug['ground_truth_sld'] = {
+                            'note': 'SLD profile generation needed',
+                            'q_range': [float(min(q_exp)), float(max(q_exp))]
+                        }
+                else:
+                    exp_debug['ground_truth_refl'] = "Experimental curve file not found"
+                    exp_debug['ground_truth_sld'] = "Cannot generate without experimental data"
+                    
+            except Exception as e:
+                exp_debug['ground_truth_error'] = str(e)
+            
+            # Add model data
+            all_models_data = exp_data['all_models_data']
+            for model_name, model_data in all_models_data.items():
+                model_result = model_data['model_result']
+                model_debug = {
+                    'mape': model_data['mape'],
+                    'has_sld_x': 'sld_profile_x' in model_result,
+                    'has_sld_profile': 'sld_profile_polished' in model_result,
+                    'has_q_model': 'q_model' in model_result,
+                    'has_polished_curve': 'polished_curve' in model_result
+                }
+                
+                if 'sld_profile_x' in model_result and len(model_result['sld_profile_x']) > 0:
+                    sld_x = model_result['sld_profile_x']
+                    model_debug['sld_x_length'] = len(sld_x)
+                    model_debug['sld_x_range'] = [float(min(sld_x)), float(max(sld_x))]
+                
+                if 'sld_profile_polished' in model_result and len(model_result['sld_profile_polished']) > 0:
+                    sld_prof = model_result['sld_profile_polished']
+                    model_debug['sld_profile_length'] = len(sld_prof)
+                    model_debug['sld_profile_range'] = [float(min(sld_prof)), float(max(sld_prof))]
+                
+                if 'q_model' in model_result and len(model_result['q_model']) > 0:
+                    q_vals = model_result['q_model']
+                    model_debug['q_model_length'] = len(q_vals)
+                    model_debug['q_model_range'] = [float(min(q_vals)), float(max(q_vals))]
+                
+                if 'polished_curve' in model_result and len(model_result['polished_curve']) > 0:
+                    r_vals = model_result['polished_curve']
+                    model_debug['polished_curve_length'] = len(r_vals)
+                    model_debug['polished_curve_range'] = [float(min(r_vals)), float(max(r_vals))]
+                
+                exp_debug['models'][model_name] = model_debug
+            
+            debug_data['experiments'][exp_id] = exp_debug
+        
+        # Save debug data
+        debug_filename = f"debug_{category}_{priors_type}_plotting_data.json"
+        debug_path = self.output_dir / debug_filename
+        with open(debug_path, 'w') as f:
+            json.dump(debug_data, f, indent=2)
+        print(f"  DEBUG: Exported plotting data to {debug_path}")
+        
+        # Save plot
+        plot_filename = f"individual_{category}_{priors_type}_predictions.png"
+        plot_path = self.output_dir / plot_filename
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"  Saved: {plot_path}")
     
     # ...existing code...
 def parse_arguments():
