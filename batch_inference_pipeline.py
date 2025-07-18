@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
 """
-Optimized Batch Inference Pipeline for ReflecTorch Models
-
-This script runs the inference pipeline on multiple experiments
-with significant performance improvements:
-1. Pre-compiled model loading and reuse
-2. Batch preprocessing of experiments
-3. Memory-mapped data loading
-4. Optimized data structures
-5. Reduced JSON serialization overhead
-6. Smart caching strategies
+Batch Inference Pipeline for ReflecTorch Models
 
 Usage:
     python batch_inference_pipeline.py [--num-experiments 25] [--layer-count 2]
@@ -19,6 +10,7 @@ import argparse
 import json
 import random
 import pickle
+import logging
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -234,6 +226,57 @@ class BatchInferencePipeline:
         self.memory_usage_stats = []
         self.batch_results = {}
 
+    def setup_logging(self):
+        """Setup logging to file instead of stdout."""
+        # Create logs directory if it doesn't exist
+        log_dir = self.output_dir / "logs"
+        log_dir.mkdir(exist_ok=True)
+        
+        # Setup logger
+        self.logger = logging.getLogger(f"BatchInference_{self.timestamp}")
+        self.logger.setLevel(logging.INFO)
+        
+        # Remove existing handlers to avoid duplicates
+        if self.logger.handlers:
+            self.logger.handlers.clear()
+        
+        # File handler
+        log_file = log_dir / f"batch_inference_{self.timestamp}.log"
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        
+        # Console handler (minimal output)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)
+        
+        # Formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+        
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+        
+        # Also print important info to console
+        print(f"Logging to: {log_file}")
+
+    def create_output_directories(self):
+        """Create organized output directory structure."""
+        # Create subdirectories for different types of outputs
+        self.inference_results_dir = self.output_dir / "inference_results"
+        self.debug_dir = self.output_dir / "debug"
+        self.plots_dir = self.output_dir / "plots"
+        
+        # Create directories
+        self.inference_results_dir.mkdir(exist_ok=True)
+        self.debug_dir.mkdir(exist_ok=True)
+        self.plots_dir.mkdir(exist_ok=True)
+        
+        self.logger.info(f"Created output directories:")
+        self.logger.info(f"  Inference results: {self.inference_results_dir}")
+        self.logger.info(f"  Debug files: {self.debug_dir}")
+        self.logger.info(f"  Plots: {self.plots_dir}")
+
     @lru_cache(maxsize=1000)
     def load_experiment_data_cached(self, exp_id):
         """Cache experiment data loading to avoid repeated file I/O."""
@@ -268,10 +311,10 @@ class BatchInferencePipeline:
         layer_dir = self.maria_dataset_path / str(self.layer_count)
         
         if not layer_dir.exists():
-            print(f"Warning: MARIA dataset directory not found: {layer_dir}")
+            self.logger.warning(f"MARIA dataset directory not found: {layer_dir}")
             return []
         
-        print(f"Optimized search for {self.layer_count}-layer experiments in: {layer_dir}")
+        self.logger.info(f"Optimized search for {self.layer_count}-layer experiments in: {layer_dir}")
         
         try:
             # Use find with multiple conditions in one call
@@ -356,14 +399,14 @@ class BatchInferencePipeline:
             )
             
             if result['success']:
-                print(f"  ✓ {exp_id} completed successfully")
+                self.logger.info(f"✓ {exp_id} completed successfully")
                 return result
             else:
-                print(f"  ✗ {exp_id} failed: {result['error']}")
+                self.logger.error(f"✗ {exp_id} failed: {result['error']}")
                 return result
             
         except Exception as e:
-            print(f"  ✗ {exp_id} error: {e}")
+            self.logger.error(f"✗ {exp_id} error: {e}")
             return {
                 'exp_id': exp_id,
                 'success': False,
@@ -631,9 +674,9 @@ class BatchInferencePipeline:
         try:
             with open(intermediate_file, 'wb') as f:
                 pickle.dump(results, f)
-            print(f"Intermediate results saved to: {intermediate_file}")
+            self.logger.info(f"Intermediate results saved to: {intermediate_file}")
         except Exception as e:
-            print(f"Failed to save intermediate results: {e}")
+            self.logger.error(f"Failed to save intermediate results: {e}")
 
     def print_optimization_stats(self):
         """Print optimization performance statistics."""
@@ -657,32 +700,35 @@ class BatchInferencePipeline:
         cache_efficiency = sum(self.cache_hit_stats.values()) / max(1, len(self.cache_hit_stats))
         print(f"\nEstimated cache efficiency: {cache_efficiency:.1f} hits per cache type")
     
-    def run(self):
-        """Run optimized batch inference."""
-        print(f"Starting Optimized Batch Inference Pipeline")
-        print("=" * 60)
-        print(f"Target experiments: {self.num_experiments}")
-        print(f"Layer count: {self.layer_count}")
-        print(f"Models: {self.models}")
-        print(f"Parallel processing: {'Enabled' if self.enable_parallel else 'Disabled'}")
-        print(f"Caching: {'Enabled' if self.enable_caching else 'Disabled'}")
-        print(f"Batch size: {self.batch_size}")
-        print(f"Max workers: {self.max_workers}")
-        print(f"Memory limit: {self.memory_limit_gb}GB")
+    def run_experiments(self):
+        """Run the batch inference experiments and return results."""
+        self.logger.info("Starting Optimized Batch Inference Pipeline")
+        self.logger.info("=" * 60)
+        self.logger.info(f"Target experiments: {self.num_experiments}")
+        self.logger.info(f"Layer count: {self.layer_count}")
+        self.logger.info(f"Models: {self.models}")
+        self.logger.info(f"Parallel processing: {'Enabled' if self.enable_parallel else 'Disabled'}")
+        self.logger.info(f"Caching: {'Enabled' if self.enable_caching else 'Disabled'}")
+        self.logger.info(f"Batch size: {self.batch_size}")
+        self.logger.info(f"Max workers: {self.max_workers}")
+        self.logger.info(f"Memory limit: {self.memory_limit_gb}GB")
         
         # System info
         available_memory = psutil.virtual_memory().available / (1024**3)
-        print(f"Available memory: {available_memory:.1f}GB")
-        print(f"CPU cores: {mp.cpu_count()}")
+        self.logger.info(f"Available memory: {available_memory:.1f}GB")
+        self.logger.info(f"CPU cores: {mp.cpu_count()}")
+        
+        print(f"Starting batch inference for {self.num_experiments} experiments...")
+        print(f"Check logs at: {self.output_dir / 'logs'}")
         
         # Discover experiments
         experiments = self.discover_experiments_optimized()
         
         if not experiments:
-            print("No experiments found. Exiting.")
-            return
+            self.logger.error("No experiments found. Exiting.")
+            return None
         
-        print(f"Processing {len(experiments)} experiments...")
+        self.logger.info(f"Processing {len(experiments)} experiments...")
         
         start_time = time.time()
         
@@ -692,9 +738,9 @@ class BatchInferencePipeline:
         end_time = time.time()
         total_time = end_time - start_time
         
-        print(f"\nOptimized processing completed!")
-        print(f"Total processing time: {total_time:.1f} seconds")
-        print(f"Average time per experiment: {total_time/len(experiments):.1f} seconds")
+        self.logger.info(f"Optimized processing completed!")
+        self.logger.info(f"Total processing time: {total_time:.1f} seconds")
+        self.logger.info(f"Average time per experiment: {total_time/len(experiments):.1f} seconds")
         
         # Print optimization statistics
         self.print_optimization_stats()
@@ -757,7 +803,7 @@ class BatchInferencePipeline:
                         json.dump(result, f, indent=2)
                         
                 except Exception as e:
-                    print(f"[{completed_count+1}/{len(experiments)}] Failed {exp_id}: {e}")
+                    self.logger.error(f"[{completed_count+1}/{len(experiments)}] Failed {exp_id}: {e}")
                     all_results[exp_id] = {
                         'experiment_id': exp_id,
                         'layer_count': self.layer_count,
@@ -769,41 +815,12 @@ class BatchInferencePipeline:
         
         return all_results
 
-    def run_sequential_processing(self, experiments):
-        """Run experiments sequentially (original method)."""
-        print(f"Running {len(experiments)} experiments sequentially...")
-        
-        all_results = {}
-        
-        for i, exp_id in enumerate(experiments, 1):
-            print(f"\n[{i}/{len(experiments)}] Processing {exp_id}...")
-            
-            exp_results = {
-                'experiment_id': exp_id,
-                'layer_count': self.layer_count,
-                'priors': {}
-            }
-            
-            # Run with both broad and narrow priors
-            for priors_type in ['broad', 'narrow']:
-                print(f"  Running with {priors_type} priors...")
-                start_time = time.time()
-                result = self.run_experiment_inference(exp_id, priors_type)
-                end_time = time.time()
-                result['processing_time'] = end_time - start_time
-                exp_results['priors'][priors_type] = result
-            
-            all_results[exp_id] = exp_results
-            
-            # Save individual experiment results
-            exp_file = self.output_dir / f"{exp_id}_results.json"
-            with open(exp_file, 'w') as f:
-                json.dump(exp_results, f, indent=2)
-        
-        return all_results
-
     def create_batch_summary(self, all_results):
         """Create summary of batch results."""
+        
+        self.logger.info(f"\n{'='*80}")
+        self.logger.info(f"BATCH INFERENCE SUMMARY - {self.layer_count}-LAYER EXPERIMENTS")
+        self.logger.info(f"{'='*80}")
         
         print(f"\n{'='*80}")
         print(f"BATCH INFERENCE SUMMARY - {self.layer_count}-LAYER EXPERIMENTS")
@@ -1346,7 +1363,7 @@ class BatchInferencePipeline:
     def plot_individual_experiments(self, experiments_list, experiment_data, 
                                   priors_type, category, title_prefix):
         """
-        Create individual SLD profile and reflectivity curve plots.
+        Create individual SLD profile plots.
         
         Args:
             experiments_list: List of (exp_id, mape) tuples
@@ -1357,14 +1374,10 @@ class BatchInferencePipeline:
         """
         print(f"\nCreating plots for {title_prefix.lower()} {priors_type} priors experiments...")
         
-        # Create subplots: 3 rows x 1 column (only SLD profiles)
-        fig, axes = plt.subplots(3, 1, figsize=(12, 16))
-        fig.suptitle(f'{title_prefix} Predictions - {priors_type.title()} Priors (SLD Profiles)', 
+        # Create subplots: 3 rows (experiments) x 1 column (SLD only)
+        fig, axes = plt.subplots(3, 1, figsize=(12, 12))
+        fig.suptitle(f'{title_prefix} Predictions - {priors_type.title()} Priors', 
                      fontsize=16, fontweight='bold')
-        
-        # Ensure axes is always a list for consistent indexing
-        if not isinstance(axes, np.ndarray):
-            axes = [axes]
         
         # Define colors for different models - more distinct colors
         model_colors = {
@@ -1383,7 +1396,7 @@ class BatchInferencePipeline:
             all_models_data = exp_data['all_models_data']
             
             # Plot SLD Profile
-            ax_sld = axes[idx]
+            ax_sld = axes[idx]  # Single column, so just use the row index
             
             # Load ground truth SLD profile
             try:
@@ -1495,7 +1508,7 @@ class BatchInferencePipeline:
             
             ax_sld.set_xlabel('Depth (Å)', fontsize=11)
             ax_sld.set_ylabel('SLD (×10⁻⁶ Å⁻²)', fontsize=11)
-            ax_sld.set_title(f'SLD Profile - {exp_id}\nAvg MAPE: {mape:.2f}%', fontsize=12, fontweight='bold')
+            ax_sld.set_title(f'SLD Profile\n{exp_id} - Avg MAPE: {mape:.2f}%', fontsize=12, fontweight='bold')
             ax_sld.grid(True, alpha=0.3, linestyle=':')
             ax_sld.legend(fontsize=9, framealpha=0.9)
         
