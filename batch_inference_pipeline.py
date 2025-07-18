@@ -25,7 +25,7 @@ from functools import lru_cache
 import psutil
 
 # Import the existing inference pipeline
-from inference_pipeline import InferencePipeline
+from inference_pipeline import InferencePipeline, NARROW_PRIORS_DEVIATION
 
 def validate_experiment(exp_dir):
     """Standalone function to validate experiment completeness for multiprocessing."""
@@ -971,10 +971,11 @@ class BatchInferencePipeline:
         fig, axes = plt.subplots(3, 2, figsize=(20, 18))
         fig.suptitle(f'Batch Inference Performance Analysis - {len(all_results)} {self.layer_count}-Layer Experiments', fontsize=16, fontweight='bold')
         
-        # Column titles
+        # Column titles with narrow priors info
+        narrow_priors_percent = int(NARROW_PRIORS_DEVIATION * 100)
         axes[0, 0].text(0.5, 1.15, 'BROAD PRIORS', transform=axes[0, 0].transAxes, 
                        ha='center', va='center', fontsize=14, fontweight='bold')
-        axes[0, 1].text(0.5, 1.15, 'NARROW PRIORS', transform=axes[0, 1].transAxes, 
+        axes[0, 1].text(0.5, 1.15, f'NARROW PRIORS (±{narrow_priors_percent}%)', transform=axes[0, 1].transAxes, 
                        ha='center', va='center', fontsize=14, fontweight='bold')
         
         models = list(model_mapes.keys())
