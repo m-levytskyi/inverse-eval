@@ -1155,7 +1155,7 @@ class BatchInferencePipeline:
         
         # Create distribution plot
         fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-        fig.suptitle(f'MAPE Distribution Analysis - {len(all_results)} {self.layer_count}-Layer Experiments', 
+        fig.suptitle(f'MAPE Distribution Analysis - {len(all_results)} {self.layer_count}-Layer Experiments with ±{int(NARROW_PRIORS_DEVIATION * 100)}% narrow priors ', 
                     fontsize=16, fontweight='bold')
         
         # Define MAPE ranges
@@ -1195,7 +1195,7 @@ class BatchInferencePipeline:
             
             ax.set_xlabel('MAPE Range')
             ax.set_ylabel('Number of Experiments')
-            ax.set_title(f'{priors_type.title()} Priors (±{int(NARROW_PRIORS_DEVIATION * 100)}% for narrow)')
+            ax.set_title(f'{priors_type.title()} Priors')
             ax.set_xticks(range(len(range_labels)))
             ax.set_xticklabels(range_labels, rotation=45, ha='right')
             ax.grid(True, alpha=0.3, axis='y')
