@@ -177,7 +177,13 @@ class BatchInferencePipeline:
         self.output_dir = Path("batch_inference_results") / folder_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"Results will be saved to: {self.output_dir}")
+        # Setup logging to file instead of stdout
+        self.setup_logging()
+        
+        # Create organized output directories
+        self.create_output_directories()
+        
+        self.logger.info(f"Results will be saved to: {self.output_dir}")
         
         # Performance optimization parameters
         self.enable_parallel = enable_parallel
@@ -669,7 +675,7 @@ class BatchInferencePipeline:
 
     def save_intermediate_results(self, results, batch_num):
         """Save intermediate results for crash recovery."""
-        intermediate_file = self.output_dir / f"intermediate_results_batch_{batch_num}_{self.timestamp}.pkl"
+        intermediate_file = self.inference_results_dir / f"intermediate_results_batch_{batch_num}_{self.timestamp}.pkl"
         
         try:
             with open(intermediate_file, 'wb') as f:
@@ -745,7 +751,31 @@ class BatchInferencePipeline:
         # Print optimization statistics
         self.print_optimization_stats()
         
-        # Create batch summary and plots (reuse existing methods)
+        # Save results for later analysis
+        results_file = self.output_dir / f"batch_results_{self.timestamp}.pkl"
+        with open(results_file, 'wb') as f:
+            pickle.dump(all_results, f)
+        
+        print(f"Results saved to: {results_file}")
+        return all_results
+    
+    def analyze_results(self, all_results=None, results_file=None):
+        """Analyze the results and create plots/summaries."""
+        if all_results is None:
+            if results_file is None:
+                # Try to find the most recent results file
+                results_files = list(self.output_dir.glob("batch_results_*.pkl"))
+                if not results_files:
+                    raise ValueError("No results found. Please run experiments first.")
+                results_file = max(results_files, key=os.path.getctime)
+            
+            self.logger.info(f"Loading results from: {results_file}")
+            with open(results_file, 'rb') as f:
+                all_results = pickle.load(f)
+        
+        self.logger.info("Starting analysis and plotting...")
+        
+        # Create batch summary and plots
         self.create_batch_summary(all_results)
         self.create_performance_plots(all_results)
         
@@ -798,7 +828,7 @@ class BatchInferencePipeline:
                     print(f"[{completed_count}/{len(experiments)}] Completed {exp_id}")
                     
                     # Save individual experiment results
-                    exp_file = self.output_dir / f"{exp_id}_results.json"
+                    exp_file = self.inference_results_dir / f"{exp_id}_results.json"
                     with open(exp_file, 'w') as f:
                         json.dump(result, f, indent=2)
                         
@@ -1095,7 +1125,7 @@ class BatchInferencePipeline:
         plt.subplots_adjust(top=0.93)  # Make room for main title
         
         # Save plot
-        plot_file = self.output_dir / f"batch_inference_results_{self.layer_count}layer_{self.timestamp}.png"
+        plot_file = self.plots_dir / f"batch_inference_results_{self.layer_count}layer_{self.timestamp}.png"
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -1612,14 +1642,14 @@ class BatchInferencePipeline:
         
         # Save debug data
         debug_filename = f"debug_{category}_{priors_type}_plotting_data.json"
-        debug_path = self.output_dir / debug_filename
+        debug_path = self.debug_dir / debug_filename
         with open(debug_path, 'w') as f:
             json.dump(debug_data, f, indent=2)
         print(f"  DEBUG: Exported plotting data to {debug_path}")
         
         # Save plot
         plot_filename = f"individual_{category}_{priors_type}_predictions.png"
-        plot_path = self.output_dir / plot_filename
+        plot_path = self.plots_dir / plot_filename
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -1650,6 +1680,12 @@ def parse_arguments():
     parser.add_argument('--memory-limit-gb', type=float, default=48.0,
                        help='Memory limit in GB (default: 48.0)')
     
+    # Analysis options
+    parser.add_argument('--analyze-only', action='store_true',
+                       help='Only analyze existing results without running experiments')
+    parser.add_argument('--results-file', type=str, default=None,
+                       help='Path to results file for analysis (used with --analyze-only)')
+    
     return parser.parse_args()
 
 
@@ -1659,7 +1695,7 @@ def main():
     
     print(f"Running OPTIMIZED batch processing for {args.layer_count}-layer experiments")
     
-    # Run optimized batch inference pipeline
+    # Create batch inference pipeline
     batch_pipeline = BatchInferencePipeline(
         num_experiments=args.num_experiments,
         layer_count=args.layer_count,
@@ -1671,7 +1707,12 @@ def main():
         memory_limit_gb=args.memory_limit_gb
     )
     
-    batch_pipeline.run()
+    if args.analyze_only:
+        # Only analyze existing results
+        batch_pipeline.analyze_results(results_file=args.results_file)
+    else:
+        # Run experiments and then analyze
+        batch_pipeline.run()
 
 
 if __name__ == "__main__":
