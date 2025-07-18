@@ -18,7 +18,7 @@ automatically based on the configuration.
 """
 
 # Configuration Constants
-NARROW_PRIORS_DEVIATION = 0.75  # e.g 0.25 for 25% deviation from true values (0.75-1.25 range)
+NARROW_PRIORS_DEVIATION = 0.50  # e.g 0.25 for 25% deviation from true values (0.75-1.25 range)
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -1134,8 +1134,10 @@ class InferencePipeline:
         
         # Save to file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_file = self.output_dir / f"inference_results_{timestamp}.json"
-        
+        inference_results_dir = self.output_dir / 'inference_results'
+        inference_results_dir.mkdir(exist_ok=True)
+        results_file = inference_results_dir / f"inference_results_{timestamp}.json"
+
         with open(results_file, 'w') as f:
             json.dump(serializable_results, f, indent=2)
         
