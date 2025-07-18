@@ -1,3 +1,5 @@
 data/
 inference_results/
 .github/
+batch_inference_results/
+__pycache__/
