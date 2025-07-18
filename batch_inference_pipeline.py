@@ -206,8 +206,7 @@ class BatchInferencePipeline:
         self.model_sets = {
             1: [
                 "b_mc_point_neutron_conv_standard_L1_comp",
-                "b_mc_point_neutron_conv_standard_L1_InputQDq",
-                "b_mc_point_xray_conv_standard_L2" # this xray model is designed for 2 layers. however, there are no xray models for 1 layer.
+                "b_mc_point_neutron_conv_standard_L1_InputQDq"
             ],
             2: [
                 "b_mc_point_neutron_conv_standard_L2_comp",
@@ -778,18 +777,19 @@ class BatchInferencePipeline:
         # Create batch summary and plots
         self.create_batch_summary(all_results)
         self.create_performance_plots(all_results)
+        self.create_mape_distribution_plot(all_results)
         
-        # NEW: Analyze and plot individual best/worst predictions
+        # Analyze and plot individual best/worst predictions
         self.analyze_and_plot_outliers(all_results)
         
         return all_results
-        print(f"Average time per experiment: {total_time/len(experiments):.1f} seconds")
-        
-        # Create batch summary
-        self.create_batch_summary(all_results)
-        
-        # Create performance plots
-        self.create_performance_plots(all_results)
+    
+    def run(self):
+        """Run experiments and analysis (backward compatibility)."""
+        all_results = self.run_experiments()
+        if all_results is not None:
+            self.analyze_results(all_results)
+        return all_results
 
     def run_parallel_processing(self, experiments):
         """Run experiments in parallel using multiprocessing."""
@@ -1130,6 +1130,120 @@ class BatchInferencePipeline:
         plt.close()
         
         print(f"Performance plots saved to: {plot_file}")
+    
+    def create_mape_distribution_plot(self, all_results):
+        """Create MAPE distribution plot showing how experiments are distributed across MAPE ranges."""
+        
+        # Collect MAPE values for each priors type
+        mape_data = {'broad': [], 'narrow': []}
+        
+        for exp_id, exp_result in all_results.items():
+            for priors_type in ['broad', 'narrow']:
+                priors_result = exp_result.get('priors', {}).get(priors_type, {})
+                if priors_result.get('success', False):
+                    exp_mapes = []
+                    for model_name, model_result in priors_result.get('models_results', {}).items():
+                        if model_result.get('success', False) and 'parameter_metrics' in model_result:
+                            param_metrics = model_result['parameter_metrics']
+                            if param_metrics and 'overall' in param_metrics:
+                                exp_mapes.append(param_metrics['overall']['mape'])
+                    
+                    if exp_mapes:
+                        # Use average MAPE across all models for this experiment
+                        avg_mape = np.mean(exp_mapes)
+                        mape_data[priors_type].append(avg_mape)
+        
+        # Create distribution plot
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+        fig.suptitle(f'MAPE Distribution Analysis - {len(all_results)} {self.layer_count}-Layer Experiments', 
+                    fontsize=16, fontweight='bold')
+        
+        # Define MAPE ranges
+        mape_ranges = [0, 5, 10, 15, 20, 25, 30, 40, 50, 100]
+        range_labels = ['0-5%', '5-10%', '10-15%', '15-20%', '20-25%', '25-30%', '30-40%', '40-50%', '50%+']
+        
+        for col, priors_type in enumerate(['broad', 'narrow']):
+            ax = axes[col]
+            mapes = mape_data[priors_type]
+            
+            if not mapes:
+                ax.text(0.5, 0.5, f'No data available\nfor {priors_type} priors', 
+                       ha='center', va='center', transform=ax.transAxes, fontsize=14)
+                ax.set_title(f'{priors_type.title()} Priors')
+                continue
+            
+            # Count experiments in each MAPE range
+            counts = []
+            for i in range(len(mape_ranges) - 1):
+                count = sum(1 for mape in mapes if mape_ranges[i] <= mape < mape_ranges[i+1])
+                counts.append(count)
+            
+            # Add count for 50%+ range
+            counts.append(sum(1 for mape in mapes if mape >= 50))
+            
+            # Create bar chart
+            colors = plt.cm.RdYlGn_r(np.linspace(0.2, 0.8, len(counts)))
+            bars = ax.bar(range(len(counts)), counts, color=colors, alpha=0.8, edgecolor='black')
+            
+            # Add value labels on bars
+            for i, (bar, count) in enumerate(zip(bars, counts)):
+                if count > 0:
+                    percentage = (count / len(mapes)) * 100
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                           f'{count}\n({percentage:.1f}%)', ha='center', va='bottom', 
+                           fontsize=10, fontweight='bold')
+            
+            ax.set_xlabel('MAPE Range')
+            ax.set_ylabel('Number of Experiments')
+            ax.set_title(f'{priors_type.title()} Priors (±{int(NARROW_PRIORS_DEVIATION * 100)}% for narrow)')
+            ax.set_xticks(range(len(range_labels)))
+            ax.set_xticklabels(range_labels, rotation=45, ha='right')
+            ax.grid(True, alpha=0.3, axis='y')
+            
+            # Add statistics text
+            if mapes:
+                stats_text = f'Total: {len(mapes)} experiments\n'
+                stats_text += f'Mean MAPE: {np.mean(mapes):.1f}%\n'
+                stats_text += f'Median MAPE: {np.median(mapes):.1f}%\n'
+                stats_text += f'Std Dev: {np.std(mapes):.1f}%\n'
+                stats_text += f'Min MAPE: {np.min(mapes):.1f}%\n'
+                stats_text += f'Max MAPE: {np.max(mapes):.1f}%'
+                
+                ax.text(0.98, 0.98, stats_text, transform=ax.transAxes, 
+                       ha='right', va='top', fontsize=10, 
+                       bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
+        
+        plt.tight_layout()
+        
+        # Save plot
+        plot_file = self.plots_dir / f"mape_distribution_{self.layer_count}layer_{self.timestamp}.png"
+        plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"MAPE distribution plot saved to: {plot_file}")
+        
+        # Print summary statistics
+        print(f"\nMAPE DISTRIBUTION SUMMARY:")
+        print("-" * 50)
+        for priors_type in ['broad', 'narrow']:
+            mapes = mape_data[priors_type]
+            if mapes:
+                print(f"\n{priors_type.title()} Priors:")
+                print(f"  Total experiments: {len(mapes)}")
+                print(f"  Mean MAPE: {np.mean(mapes):.1f}% ± {np.std(mapes):.1f}%")
+                print(f"  Median MAPE: {np.median(mapes):.1f}%")
+                print(f"  Range: {np.min(mapes):.1f}% - {np.max(mapes):.1f}%")
+                
+                # Count experiments in good/acceptable/poor ranges
+                excellent = sum(1 for mape in mapes if mape < 5)
+                good = sum(1 for mape in mapes if 5 <= mape < 10)
+                acceptable = sum(1 for mape in mapes if 10 <= mape < 20)
+                poor = sum(1 for mape in mapes if mape >= 20)
+                
+                print(f"  Excellent (< 5%): {excellent} ({100*excellent/len(mapes):.1f}%)")
+                print(f"  Good (5-10%): {good} ({100*good/len(mapes):.1f}%)")
+                print(f"  Acceptable (10-20%): {acceptable} ({100*acceptable/len(mapes):.1f}%)")
+                print(f"  Poor (≥ 20%): {poor} ({100*poor/len(mapes):.1f}%)")
     
     def print_timing_summary(self):
         """Print detailed timing summary for each model."""
