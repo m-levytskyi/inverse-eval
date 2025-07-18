@@ -730,7 +730,7 @@ class BatchInferencePipeline:
 
     def save_intermediate_results(self, results, batch_num):
         """Save intermediate results for crash recovery."""
-        intermediate_file = self.inference_results_dir / f"intermediate_results_batch_{batch_num}_{self.timestamp}.pkl"
+        intermediate_file = self.inference_results_dir / f"intermediate_results_batch_{batch_num}.pkl"
         
         try:
             with open(intermediate_file, 'wb') as f:
@@ -806,8 +806,8 @@ class BatchInferencePipeline:
         # Print optimization statistics
         self.print_optimization_stats()
         
-        # Save results for later analysis
-        results_file = self.output_dir / f"batch_results_{self.timestamp}.pkl"
+        # Save results for later analysis (overwrite existing file if present)
+        results_file = self.output_dir / "batch_results.pkl"
         with open(results_file, 'wb') as f:
             pickle.dump(all_results, f)
         
@@ -818,15 +818,53 @@ class BatchInferencePipeline:
         """Analyze the results and create plots/summaries."""
         if all_results is None:
             if results_file is None:
-                # Try to find the most recent results file
-                results_files = list(self.output_dir.glob("batch_results_*.pkl"))
-                if not results_files:
+                # Try to find the most recent results file across all batch_inference_results directories
+                batch_results_dir = Path("batch_inference_results")
+                if not batch_results_dir.exists():
+                    raise ValueError("No batch_inference_results directory found. Please run experiments first.")
+                
+                # Find all .pkl files in all subdirectories
+                all_pkl_files = list(batch_results_dir.glob("*/batch_results.pkl"))
+                if not all_pkl_files:
+                    # Fallback to timestamped files for backward compatibility
+                    all_pkl_files = list(batch_results_dir.glob("*/batch_results_*.pkl"))
+                if not all_pkl_files:
                     raise ValueError("No results found. Please run experiments first.")
-                results_file = max(results_files, key=os.path.getctime)
+                
+                # Get the latest file by modification time
+                results_file = max(all_pkl_files, key=lambda f: f.stat().st_mtime)
+                print(f"Automatically selected latest results: {results_file}")
             
             self.logger.info(f"Loading results from: {results_file}")
             with open(results_file, 'rb') as f:
                 all_results = pickle.load(f)
+            
+            # Extract metadata from loaded results to override defaults
+            if all_results:
+                # Get layer count from first experiment result
+                first_exp = next(iter(all_results.values()))
+                if 'layer_count' in first_exp:
+                    actual_layer_count = first_exp['layer_count']
+                    if actual_layer_count != self.layer_count:
+                        print(f"Updating layer count from {self.layer_count} to {actual_layer_count} based on loaded results")
+                        self.layer_count = actual_layer_count
+                        # Update models list for the correct layer count
+                        if self.layer_count in self.model_sets:
+                            self.models = self.model_sets[self.layer_count]
+                
+                # Update experiment count
+                actual_num_experiments = len(all_results)
+                if actual_num_experiments != self.num_experiments:
+                    print(f"Updating experiment count from {self.num_experiments} to {actual_num_experiments} based on loaded results")
+                    self.num_experiments = actual_num_experiments
+            
+            # Update output directories to save analysis results in the same directory as the results file
+            self.output_dir = results_file.parent
+            self.plots_dir = self.output_dir / "plots"
+            self.plots_dir.mkdir(exist_ok=True)
+            
+            # Update logger to use the same directory
+            self.setup_logging_for_analysis()
         
         self.logger.info("Starting analysis and plotting...")
         
@@ -1012,7 +1050,7 @@ class BatchInferencePipeline:
             'all_results': all_results
         }
         
-        summary_file = self.output_dir / f"batch_summary_{self.layer_count}layer_{self.timestamp}.json"
+        summary_file = self.output_dir / f"batch_summary_{self.layer_count}layer.json"
         with open(summary_file, 'w') as f:
             json.dump(summary, f, indent=2)
         
@@ -1181,7 +1219,7 @@ class BatchInferencePipeline:
         plt.subplots_adjust(top=0.93)  # Make room for main title
         
         # Save plot
-        plot_file = self.plots_dir / f"batch_inference_results_{self.layer_count}layer_{self.timestamp}.png"
+        plot_file = self.plots_dir / f"batch_inference_results_{self.layer_count}layer.png"
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -1272,7 +1310,7 @@ class BatchInferencePipeline:
         plt.tight_layout()
         
         # Save plot
-        plot_file = self.plots_dir / f"mape_distribution_{self.layer_count}layer_{self.timestamp}.png"
+        plot_file = self.plots_dir / f"mape_distribution_{self.layer_count}layer.png"
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -1855,6 +1893,8 @@ def parse_arguments():
                        help='Only analyze existing results without running experiments')
     parser.add_argument('--results-file', type=str, default=None,
                        help='Path to results file for analysis (used with --analyze-only)')
+    parser.add_argument('--results-dir', type=str, default=None,
+                       help='Path to results directory containing .pkl file (used with --analyze-only)')
     
     return parser.parse_args()
 
@@ -1879,7 +1919,26 @@ def main():
     
     if args.analyze_only:
         # Only analyze existing results
-        batch_pipeline.analyze_results(results_file=args.results_file)
+        results_file = args.results_file
+        results_dir = args.results_dir
+        
+        # If results_dir is provided, find the .pkl file in that directory
+        if results_dir and not results_file:
+            results_dir_path = Path(results_dir)
+            if not results_dir_path.exists():
+                print(f"Error: Results directory {results_dir} does not exist")
+                return
+            
+            pkl_files = list(results_dir_path.glob("*.pkl"))
+            if not pkl_files:
+                print(f"Error: No .pkl files found in {results_dir}")
+                return
+            
+            # Pick the latest .pkl file by modification time
+            results_file = max(pkl_files, key=lambda f: f.stat().st_mtime)
+            print(f"Found latest results file: {results_file}")
+        
+        batch_pipeline.analyze_results(results_file=results_file)
     else:
         # Run experiments and then analyze
         batch_pipeline.run()
