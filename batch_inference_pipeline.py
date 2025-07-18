@@ -230,6 +230,9 @@ class BatchInferencePipeline:
         self.cache_hit_stats = defaultdict(int)
         self.memory_usage_stats = []
         self.batch_results = {}
+        
+        # Progress tracking
+        self.last_logged_percentage = -1  # Track last logged percentage to avoid spam
 
     def setup_logging(self):
         """Setup logging to file instead of stdout."""
@@ -264,6 +267,55 @@ class BatchInferencePipeline:
         
         # Also print important info to console
         print(f"Logging to: {log_file}")
+
+    def setup_logging_for_analysis(self):
+        """Setup logging for analysis mode using the results directory."""
+        # Create logs directory if it doesn't exist
+        log_dir = self.output_dir / "logs"
+        log_dir.mkdir(exist_ok=True)
+        
+        # Update logger to use the new directory
+        analysis_timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
+        
+        # Remove existing handlers
+        if hasattr(self, 'logger') and self.logger.handlers:
+            self.logger.handlers.clear()
+        
+        # Setup new logger for analysis
+        self.logger = logging.getLogger(f"BatchAnalysis_{analysis_timestamp}")
+        self.logger.setLevel(logging.INFO)
+        
+        # File handler
+        log_file = log_dir / f"batch_analysis_{analysis_timestamp}.log"
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        
+        # Console handler (minimal output)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)
+        
+        # Formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+        
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+        
+        print(f"Analysis logging to: {log_file}")
+
+    def log_progress(self, current_experiment, total_experiments):
+        """Log progress percentage, but only when it changes by 5% or more."""
+        if total_experiments == 0:
+            return
+        
+        current_percentage = int((current_experiment / total_experiments) * 100)
+        # Round to nearest 5%
+        rounded_percentage = (current_percentage // 5) * 5
+        
+        if rounded_percentage != self.last_logged_percentage and rounded_percentage % 5 == 0:
+            self.logger.info(f"Progress: {rounded_percentage}% ({current_experiment}/{total_experiments} experiments completed)")
+            self.last_logged_percentage = rounded_percentage
 
     def create_output_directories(self):
         """Create organized output directory structure."""
@@ -593,6 +645,10 @@ class BatchInferencePipeline:
             
             # Merge batch results
             all_results.update(batch_results)
+            
+            # Log progress
+            current_experiment = len(all_results)
+            self.log_progress(current_experiment, len(experiments))
             
             # Save intermediate results for crash recovery
             if batch_num % 3 == 0:  # Save every 3 batches
