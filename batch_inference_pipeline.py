@@ -53,64 +53,6 @@ def process_experiment_worker(args):
             'experiment_id': exp_id,
             'layer_count': layer_count,
             'priors': {},
-            'model_times': {}
-        }
-        
-        # Process both broad and narrow priors for this experiment
-        for priors_type in ['broad', 'narrow']:
-            start_time = time.time()
-            
-            # Call the original inference
-            result = InferencePipeline.run_experiment_inference(
-                experiment_id=exp_id,
-                models_list=models,
-                data_directory=str(data_directory),
-                priors_type=priors_type,
-                output_dir=str(output_dir),
-                layer_count=layer_count
-            )
-            
-            end_time = time.time()
-            result['processing_time'] = end_time - start_time
-            exp_results['priors'][priors_type] = result
-            
-            # Extract timing data
-            if result['success'] and 'models_results' in result:
-                for model_name, model_result in result['models_results'].items():
-                    if 'inference_time' in model_result:
-                        if model_name not in exp_results['model_times']:
-                            exp_results['model_times'][model_name] = {}
-                        if priors_type not in exp_results['model_times'][model_name]:
-                            exp_results['model_times'][model_name][priors_type] = []
-                        exp_results['model_times'][model_name][priors_type].append(
-                            model_result['inference_time']
-                        )
-        
-        return exp_results
-        
-    except Exception as e:
-        print(f"    ✗ {exp_id} worker error: {e}")
-        return {
-            'experiment_id': exp_id,
-            'layer_count': layer_count,
-            'priors': {},
-            'model_times': {},
-            'error': str(e),
-            'success': False
-        }
-
-def process_experiment_worker(args):
-    """
-    Worker function for parallel processing of experiments.
-    This runs in a separate process to avoid GIL limitations.
-    """
-    (exp_id, models, data_directory, layer_count, output_dir) = args
-    
-    try:
-        exp_results = {
-            'experiment_id': exp_id,
-            'layer_count': layer_count,
-            'priors': {},
             'model_times': {}  # Track individual model times
         }
         
@@ -165,7 +107,7 @@ class BatchInferencePipeline:
     
     def __init__(self, num_experiments=25, layer_count=2, data_directory="data", 
                  enable_parallel=True, max_workers=None, enable_caching=True,
-                 batch_size=5, memory_limit_gb=48):
+                 batch_size=5, memory_limit_gb=48, preload_workers=None):
         self.num_experiments = num_experiments
         self.layer_count = layer_count
         self.data_directory = Path(data_directory)
@@ -201,7 +143,9 @@ class BatchInferencePipeline:
         max_cpu_workers = min(cpu_count, 12)  # Cap at 12 for stability
         
         self.max_workers = max_workers or min(max_memory_workers, max_cpu_workers)
-        
+        # How many workers to use for preloading data
+        self.preload_workers = preload_workers or self.max_workers
+
         # Model sets for different layer counts
         self.model_sets = {
             1: [
@@ -421,8 +365,8 @@ class BatchInferencePipeline:
         preloaded_data = {}
         
         if self.enable_parallel:
-            # Parallel preloading
-            with ProcessPoolExecutor(max_workers=min(4, len(experiment_batch))) as executor:
+            # Parallel preloading using preload_workers
+            with ProcessPoolExecutor(max_workers=min(self.preload_workers, len(experiment_batch))) as executor:
                 future_to_exp = {
                     executor.submit(self.load_experiment_data_cached, exp_id): exp_id 
                     for exp_id in experiment_batch
@@ -664,43 +608,34 @@ class BatchInferencePipeline:
         return all_results
 
     def process_batch_parallel(self, experiment_batch, preloaded_data):
-        """Process a batch of experiments in parallel."""
+        """Process a batch of experiments in parallel using chunks to increase per-process workload."""
+        # Chunk the experiments so each worker gets a subset
         batch_results = {}
-        
-        # Create args for individual experiments
-        worker_args = []
-        for exp_id in experiment_batch:
-            worker_args.append((
-                exp_id,
-                self.models,
-                self.data_directory,
-                self.layer_count,
-                self.output_dir
-            ))
-        
-        with ProcessPoolExecutor(max_workers=min(self.max_workers, len(experiment_batch))) as executor:
-            future_to_exp = {
-                executor.submit(process_experiment_worker, args): args[0]
-                for args in worker_args
+        from math import ceil
+        chunk_size = ceil(len(experiment_batch) / self.max_workers)
+        chunks = [experiment_batch[i:i+chunk_size] for i in range(0, len(experiment_batch), chunk_size)]
+
+        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_idx = {
+                executor.submit(self.process_experiment_batch_worker, (
+                    chunk,
+                    self.models,
+                    self.data_directory,
+                    self.layer_count,
+                    self.output_dir,
+                    preloaded_data
+                )): idx
+                for idx, chunk in enumerate(chunks)
             }
-            
-            for future in as_completed(future_to_exp):
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future] + 1
                 try:
-                    exp_id = future_to_exp[future]
-                    result = future.result()
-                    batch_results[exp_id] = result
-                    print(f"    ✓ {exp_id} completed")
+                    results = future.result()
+                    batch_results.update(results)
+                    print(f"    ✓ Chunk {idx}/{len(chunks)} done ({len(results)} exps)")
                 except Exception as e:
-                    exp_id = future_to_exp[future]
-                    print(f"    ✗ {exp_id} failed: {e}")
-                    batch_results[exp_id] = {
-                        'experiment_id': exp_id,
-                        'layer_count': self.layer_count,
-                        'priors': {},
-                        'error': str(e),
-                        'success': False
-                    }
-        
+                    print(f"    ✗ Chunk {idx} failed: {e}")
+
         return batch_results
 
     def process_batch_sequential(self, experiment_batch, preloaded_data):
@@ -1517,7 +1452,7 @@ class BatchInferencePipeline:
                 for model_name, model_result in priors_result.get('models_results', {}).items():
                     if model_result.get('success', False) and 'parameter_metrics' in model_result:
                         param_metrics = model_result['parameter_metrics']
-                        if 'overall' in param_metrics and 'mape' in param_metrics['overall']:
+                        if param_metrics and 'overall' in param_metrics and 'mape' in param_metrics['overall']:
                             mape = param_metrics['overall']['mape']
                             model_mapes.append(mape)
                             
@@ -1568,7 +1503,7 @@ class BatchInferencePipeline:
             # Reverse worst_experiments to maintain descending order by MAPE
             worst_experiments = worst_experiments[::-1]
             
-            print(f"\n{priors_type.upper()} PRIORS RANKING (no overlap within {priors_type} priors):")
+            print(f"\nPRIORS RANKING ({priors_type}):")
             print(f"Best {len(best_experiments)} experiments (lowest MAPE):")
             for i, (exp_id, mape) in enumerate(best_experiments):
                 print(f"  {i+1}. {exp_id}: {mape:.2f}% MAPE")
@@ -1863,7 +1798,6 @@ class BatchInferencePipeline:
         
         print(f"  Saved: {plot_path}")
     
-    # ...existing code...
 def parse_arguments():
     """Enhanced argument parsing with optimization options."""
     parser = argparse.ArgumentParser(description="Run optimized batch inference on MARIA experiments")
@@ -1887,6 +1821,8 @@ def parse_arguments():
                        help='Number of experiments to process per batch (default: 5)')
     parser.add_argument('--memory-limit-gb', type=float, default=48.0,
                        help='Memory limit in GB (default: 48.0)')
+    parser.add_argument('--preload-workers', type=int, default=None,
+                       help='Number of workers for preloading data (default: same as --max-workers)')
     
     # Analysis options
     parser.add_argument('--analyze-only', action='store_true',
@@ -1907,15 +1843,16 @@ def main():
     
     # Create batch inference pipeline
     batch_pipeline = BatchInferencePipeline(
-        num_experiments=args.num_experiments,
-        layer_count=args.layer_count,
-        data_directory=args.data_directory,
-        enable_parallel=not args.disable_parallel,
-        max_workers=args.max_workers,
-        enable_caching=not args.disable_caching,
-        batch_size=args.batch_size,
-        memory_limit_gb=args.memory_limit_gb
-    )
+         num_experiments=args.num_experiments,
+         layer_count=args.layer_count,
+         data_directory=args.data_directory,
+         enable_parallel=not args.disable_parallel,
+         max_workers=args.max_workers,
+         enable_caching=not args.disable_caching,
+         batch_size=args.batch_size,
+         memory_limit_gb=args.memory_limit_gb
+         , preload_workers=args.preload_workers
+     )
     
     if args.analyze_only:
         # Only analyze existing results
