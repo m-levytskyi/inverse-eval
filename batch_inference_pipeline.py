@@ -107,11 +107,12 @@ class BatchInferencePipeline:
     
     def __init__(self, num_experiments=25, layer_count=2, data_directory="data", 
                  enable_parallel=True, max_workers=None, enable_caching=True,
-                 batch_size=5, memory_limit_gb=48, preload_workers=None):
+                 batch_size=5, memory_limit_gb=48, preload_workers=None, preprocess=True):
         self.num_experiments = num_experiments
         self.layer_count = layer_count
         self.data_directory = Path(data_directory)
         self.maria_dataset_path = Path(data_directory) / "MARIA_VIPR_dataset"
+        self.preprocess = preprocess
         
         # Create timestamped output directory
         self.timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
@@ -396,7 +397,8 @@ class BatchInferencePipeline:
                 data_directory=str(self.data_directory),
                 priors_type=priors_type,
                 output_dir=str(self.output_dir),
-                layer_count=self.layer_count
+                layer_count=self.layer_count,
+                preprocess=self.preprocess
             )
             
             if result['success']:
@@ -426,7 +428,8 @@ class BatchInferencePipeline:
                 data_directory=data_directory,
                 priors_type=priors_type,
                 output_dir=output_dir,
-                layer_count=layer_count
+                layer_count=layer_count,
+                preprocess=self.preprocess
             )
             
             # Load experimental data and true parameters
@@ -477,7 +480,8 @@ class BatchInferencePipeline:
                 'success': len([r for r in models_results.values() if r.get('success', False)]) > 0,
                 'models_results': models_results,
                 'best_model_name': best_model_name,
-                'best_mape': best_mape
+                'best_mape': best_mape,
+                'true_params': pipeline.true_params_dict  # Add true parameters for MAPE calculation
             }
             
         except Exception as e:
@@ -1824,6 +1828,9 @@ def parse_arguments():
     parser.add_argument('--preload-workers', type=int, default=None,
                        help='Number of workers for preloading data (default: same as --max-workers)')
     
+    parser.add_argument('--disable-preprocessing', action='store_true',
+                       help='Disable preprocessing of the experimental data')
+    
     # Analysis options
     parser.add_argument('--analyze-only', action='store_true',
                        help='Only analyze existing results without running experiments')
@@ -1850,8 +1857,9 @@ def main():
          max_workers=args.max_workers,
          enable_caching=not args.disable_caching,
          batch_size=args.batch_size,
-         memory_limit_gb=args.memory_limit_gb
-         , preload_workers=args.preload_workers
+         memory_limit_gb=args.memory_limit_gb,
+         preload_workers=args.preload_workers,
+         preprocess=not args.disable_preprocessing
      )
     
     if args.analyze_only:
