@@ -42,7 +42,7 @@ class InferencePipeline:
     
     def __init__(self, config_file=None, output_dir="inference_results", experiment_id=None, 
                  models_list=None, data_directory="data", priors_type="broad", layer_count=None,
-                 error_bar_threshold=0.5, consecutive_threshold=3, remove_singles=False):
+                 error_bar_threshold=0.5, consecutive_threshold=3, remove_singles=False, preprocess=True):
         """
         Initialize the inference pipeline.
         
@@ -57,12 +57,14 @@ class InferencePipeline:
             error_bar_threshold: Relative error threshold for filtering (default: 0.5)
             consecutive_threshold: Number of consecutive high-error points to trigger truncation (default: 3)
             remove_singles: Whether to remove isolated high-error points (default: False)
+            preprocess: Whether to apply preprocessing to the experimental data (default: True)
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.layer_count_override = layer_count  # Store for override
         
-        # Store preprocessing parameters (always enabled)
+        # Store preprocessing parameters
+        self.preprocess = preprocess
         self.error_bar_threshold = error_bar_threshold
         self.consecutive_threshold = consecutive_threshold
         self.remove_singles = remove_singles
@@ -200,7 +202,8 @@ class InferencePipeline:
         print(f"Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹")
         
         # Apply preprocessing steps
-        self.preprocess_experimental_data()
+        if self.preprocess:
+            self.preprocess_experimental_data()
     
     def load_true_parameters_from_files(self):
         """Load true parameters from discovered model file."""
@@ -875,7 +878,7 @@ class InferencePipeline:
                 prior_bounds=prior_bounds,
                 q_values=q_model,
                 q_resolution=q_res_interp,
-                clip_prediction=True,
+                clip_prediction=False,  # Changed from True - allows predictions outside prior bounds
                 polish_prediction=True,
                 calc_pred_curve=True,
                 calc_pred_sld_profile=True,
@@ -1600,7 +1603,7 @@ class InferencePipeline:
         return None
 
     @staticmethod
-    def run_experiment_inference(experiment_id, models_list, data_directory="data", priors_type="broad", output_dir="inference_results", layer_count=None):
+    def run_experiment_inference(experiment_id, models_list, data_directory="data", priors_type="broad", output_dir="inference_results", layer_count=None, preprocess=True):
         """
         Static method to run inference on a single experiment for batch processing.
         
@@ -1623,7 +1626,8 @@ class InferencePipeline:
                 data_directory=data_directory,
                 priors_type=priors_type,
                 output_dir=output_dir,
-                layer_count=layer_count
+                layer_count=layer_count,
+                preprocess=preprocess
             )
             
             # Run inference on all models
