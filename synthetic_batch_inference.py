@@ -89,26 +89,30 @@ def generate_synthetic_data(trainer, layer_count, num_experiments, out_dir):
             # Sort parameters by layer (L1, L2, sub)
             thickness_values.sort(key=lambda x: 'L1' in x[0])  # L1 first, then L2
             sld_values.sort(key=lambda x: ('L1' in x[0], 'L2' in x[0], 'sub' in x[0]))
-            
-            # Write fronting (ambient) - always zero SLD
-            ambient_roughness = next((val for name, val in roughness_values if 'L1' in name and len([r for r in roughness_values if 'L' in r[0]]) > 1), 
-                                   roughness_values[0][1] if roughness_values else 10.0)
-            f.write(f"fronting      0.00000e+00      inf      {ambient_roughness:.2f}\n")
+
+            # Get the roughness values correctly by looking for unique keywords
+            ambient_roughness = next((v for n, v in roughness_values if 'ambient' in n.lower()), 10.0)
+            l1_substrate_roughness = next((v for n, v in roughness_values if 'substrate' in n.lower()), 10.0)
+
+            # Write fronting (ambient)
+            fronting_sld = next((v for n, v in sld_values if 'front' in n.lower()), 0.0)
+            fronting_sld_scientific = fronting_sld / 1e6
+            f.write(f"fronting      {fronting_sld_scientific:.5e}      inf      {ambient_roughness:.2f}\n")
             logging.debug(f"Written fronting parameters for experiment {i}: SLD={fronting_sld_scientific}, Roughness={ambient_roughness}")
-            
+
             # Write layers based on number of thickness parameters
             # Single layer system (models are designed for 1 layer only)
-            thick_name, thick_val = thickness_values[0]
-            sld_name, sld_val = next((name, val) for name, val in sld_values if 'L1' in name)
-            rough_val = next((val for name, val in roughness_values if 'sub' in name), 10.0)
-            
-            # Convert SLD from reflectorch units to MARIA format
+            # pull exactly the L1 params instead of sorting
+            thick_name, thick_val = next((n, v) for n, v in thickness_values if 'L1' in n)
+            sld_name,   sld_val   = next((n, v) for n, v in sld_values     if 'L1' in n)
+
+            # convert & write
             sld_scientific = sld_val / 1e6
-            f.write(f"layer1       {sld_scientific:.5e}      {thick_val:.2f}      {rough_val:.2f}\n")
+            f.write(f"layer1       {sld_scientific:.5e}      {thick_val:.2f}      {l1_substrate_roughness:.2f}\n")
             logging.debug(f"Written layer1 parameters for experiment {i}: SLD={sld_scientific}, Thickness={thick_val}, Roughness={l1_substrate_roughness}")
-            
-            # Write backing (substrate)
-            substrate_sld = next((val for name, val in sld_values if 'sub' in name), 0.0)
+
+            # backing (substrate)
+            substrate_sld = next((v for n, v in sld_values if 'sub' in n.lower()), 0.0)
             substrate_sld_scientific = substrate_sld / 1e6
             f.write(f"backing       {substrate_sld_scientific:.5e}      inf       none\n")
             logging.debug(f"Written backing parameters for experiment {i}: SLD={substrate_sld_scientific}, Roughness=none")
