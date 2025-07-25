@@ -137,6 +137,7 @@ if __name__ == "__main__":
             data_directory=str(out_dir),
             enable_parallel=True,
             max_workers=16,
-            enable_caching=False
+            enable_caching=False, 
+            preprocess=False
         )
         pipeline.run()
