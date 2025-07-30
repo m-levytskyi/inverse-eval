@@ -29,8 +29,9 @@ def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3):
                 y_before = y[start]
                 y_after = y[end]
                 prominence = y_peak - max(y_before, y_after)
+                width = end - start
                 if prominence >= min_prominence:
-                    peaks.append((peak_idx, prominence))
+                    peaks.append({'index': peak_idx, 'prominence': prominence, 'width': width})
         else:
             i += 1
 
