@@ -1,6 +1,10 @@
+__pycache__/
+.github/
+
 data/
 inference_results/
-.github/
 batch_inference_results/
-__pycache__/
 synthetic_data/
+
+debug/
+deprecated/
