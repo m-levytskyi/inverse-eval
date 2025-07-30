@@ -30,7 +30,7 @@ def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3):
                 y_before = y[start]
                 y_after = y[end]
                 prominence = y_peak - max(y_before, y_after)
-                width = end - start
+                width = (peak_idx - start) * 2
                 if prominence >= min_prominence:
                     peaks.append({'index': peak_idx, 'prominence': prominence, 'width': width})
         else:
@@ -65,7 +65,7 @@ def plot_and_save_peaks(q, r, peaks, exp_id, output_dir):
             f"Peak {i+1}:\n"
             f"  Q = {peak_q:.4f}\n"
             f"  Prominence = {peak['prominence']:.2f}\n"
-            f"  Width = {peak['width']}"
+            f"  Width (interp.) = {peak['width']}"
         )
         
         ax.text(peak_q, peak_r, text_label, fontsize=8, verticalalignment='bottom', horizontalalignment='left', bbox=dict(facecolor='white', alpha=0.5))
