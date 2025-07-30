@@ -42,7 +42,8 @@ class InferencePipeline:
     
     def __init__(self, config_file=None, output_dir="inference_results", experiment_id=None, 
                  models_list=None, data_directory="data", priors_type="broad", layer_count=None,
-                 error_bar_threshold=0.5, consecutive_threshold=3, remove_singles=False, preprocess=True):
+                 error_bar_threshold=0.5, consecutive_threshold=3, remove_singles=False, preprocess=True,
+                 custom_priors=None):
         """
         Initialize the inference pipeline.
         
@@ -62,13 +63,14 @@ class InferencePipeline:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.layer_count_override = layer_count  # Store for override
-        
+        self.custom_priors = custom_priors
+
         # Store preprocessing parameters
         self.preprocess = preprocess
         self.error_bar_threshold = error_bar_threshold
         self.consecutive_threshold = consecutive_threshold
         self.remove_singles = remove_singles
-        
+
         # Initialize results storage
         self.results = {}
         
@@ -398,20 +400,26 @@ class InferencePipeline:
         print(f"    Final Q range: {self.q_exp.min():.4f} - {self.q_exp.max():.4f} Å⁻¹ (span: {final_q_range:.4f})")
 
     def generate_model_configurations(self):
-        """Generate model configurations for batch processing."""
+        """Generate model configurations for batch processing, with optional custom priors."""
         if not self.models_list:
             raise ValueError("No models specified for batch processing")
-        
+
         # Load MARIA bounds for priors
         maria_bounds = self.load_maria_bounds()
-        
+
         # Determine layer count from true parameters
         layer_count = self.determine_layer_count()
-        
-        # Get appropriate priors
-        prior_bounds = self.get_priors_for_layer_count(layer_count, maria_bounds)
+
+        # Get parameter names for this layer count
         parameter_names = self.get_parameter_names_for_layer_count(layer_count)
-        
+
+        # Use custom priors if provided, else use MARIA or default
+        if self.custom_priors is not None:
+            prior_bounds = self.custom_priors
+            print("Using custom priors for all models.")
+        else:
+            prior_bounds = self.get_priors_for_layer_count(layer_count, maria_bounds)
+
         # Generate model configurations
         self.model_configs = {}
         for model_name in self.models_list:
@@ -422,7 +430,7 @@ class InferencePipeline:
                 "prior_bounds": prior_bounds,
                 "parameter_names": parameter_names
             }
-        
+
         print(f"Generated configurations for {len(self.model_configs)} models")
         print(f"Layer count: {layer_count}, Priors type: {self.priors_type}")
     
@@ -878,7 +886,7 @@ class InferencePipeline:
                 prior_bounds=prior_bounds,
                 q_values=q_model,
                 q_resolution=q_res_interp,
-                clip_prediction=False,  # Changed from True - allows predictions outside prior bounds
+                clip_prediction=True,  # False - allows predictions outside prior bounds
                 polish_prediction=True,
                 calc_pred_curve=True,
                 calc_pred_sld_profile=True,
@@ -1603,7 +1611,7 @@ class InferencePipeline:
         return None
 
     @staticmethod
-    def run_experiment_inference(experiment_id, models_list, data_directory="data", priors_type="broad", output_dir="inference_results", layer_count=None, preprocess=True):
+    def run_experiment_inference(experiment_id, models_list, data_directory="data", priors_type="broad", output_dir="inference_results", layer_count=None, preprocess=True, custom_priors=None):
         """
         Static method to run inference on a single experiment for batch processing.
         
@@ -1627,25 +1635,26 @@ class InferencePipeline:
                 priors_type=priors_type,
                 output_dir=output_dir,
                 layer_count=layer_count,
-                preprocess=preprocess
+                preprocess=preprocess,
+                custom_priors=custom_priors
             )
-            
+
             # Run inference on all models
             pipeline.run_all_models(show_plots=False)  # Don't show plots in batch mode
-            
+
             # Extract and format results
             results = {
                 'exp_id': experiment_id,
-                               'layer_count': pipeline.determine_layer_count(),
+                'layer_count': pipeline.determine_layer_count(),
                 'priors_type': priors_type,
                 'models_results': {},
                 'success': False,  # Will be set to True if any model succeeds
                 'error': None
             }
-            
+
             # Track if any model succeeded
             any_model_succeeded = False
-            
+
             # Extract results from each model
             for model_name, model_result in pipeline.results.items():
                 if model_result['success']:
@@ -1657,7 +1666,7 @@ class InferencePipeline:
                         'polished_params': model_result['polished_params'].tolist() if hasattr(model_result['polished_params'], 'tolist') else model_result['polished_params'],
                         'param_names': model_result['param_names']
                     }
-                    
+
                     # Add parameter metrics if available
                     if 'parameter_metrics' in model_result and model_result['parameter_metrics'] is not None:
                         results['models_results'][model_name]['parameter_metrics'] = model_result['parameter_metrics']
@@ -1666,12 +1675,12 @@ class InferencePipeline:
                         'success': False,
                         'error': model_result.get('error', 'Unknown error')
                     }
-            
+
             # Set experiment success based on whether any model succeeded
             results['success'] = any_model_succeeded
-            
+
             return results
-            
+
         except Exception as e:
             return {
                 'exp_id': experiment_id,
@@ -1694,8 +1703,82 @@ def main():
     print("=" * 50)
     
     try:
+        # Ask user if they want to use custom priors
+        priors_type = None
+        custom_priors = None
+        if len(sys.argv) > 2:
+            priors_type = sys.argv[2]
+        else:
+            priors_type = input("Enter priors type (broad/narrow/custom) [broad]: ").strip() or "broad"
+
+        if priors_type.lower() == "custom":
+            print("Enter custom priors as a list of [min,max] pairs, e.g. [[10,500],[0.1,10],[0.1,10],[-5e-6,5e-6],[-5e-6,5e-6]] for 1-layer.")
+            print("You can paste a Python-style list or enter one bound per line (min,max), empty line to finish.")
+            mode = input("Paste full list or enter one per line? (paste/line) [paste]: ").strip() or "paste"
+            if mode.startswith("p"):
+                inp = input("Custom priors: ")
+                try:
+                    custom_priors = eval(inp, {"__builtins__": None}, {})
+                except Exception as e:
+                    print(f"Error parsing custom priors: {e}")
+                    sys.exit(1)
+            else:
+                # Prompt for each parameter by name
+                # Try to determine layer count from config file
+                import json
+                from pathlib import Path
+                try:
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+                    model_configs = config.get('model_configurations', {})
+                    # Use the first model to guess parameter names
+                    first_model = next(iter(model_configs.values())) if model_configs else None
+                    param_names = first_model.get('parameter_names') if first_model and 'parameter_names' in first_model else None
+                except Exception:
+                    param_names = None
+                # Fallback: ask for layer count
+                if not param_names:
+                    try:
+                        layer_count = int(input("Enter number of layers (1 or 2): ").strip())
+                    except Exception:
+                        layer_count = 1
+                    if layer_count == 1:
+                        param_names = [
+                            "L1 thickness (Å)",
+                            "ambient/L1 roughness (Å)",
+                            "L1/substrate roughness (Å)",
+                            "L1 SLD (×10⁻⁶ Å⁻²)",
+                            "substrate SLD (×10⁻⁶ Å⁻²)"
+                        ]
+                    else:
+                        param_names = [
+                            "L1 thickness (Å)",
+                            "L2 thickness (Å)",
+                            "ambient/L1 roughness (Å)",
+                            "L1/L2 roughness (Å)",
+                            "L2/substrate roughness (Å)",
+                            "L1 SLD (×10⁻⁶ Å⁻²)",
+                            "L2 SLD (×10⁻⁶ Å⁻²)",
+                            "substrate SLD (×10⁻⁶ Å⁻²)"
+                        ]
+                print("Enter prior bounds for each parameter:")
+                custom_priors = []
+                for pname in param_names:
+                    while True:
+                        line = input(f"{pname} (min,max): ").strip()
+                        if not line:
+                            print("Input required. Please enter two numbers separated by a comma.")
+                            continue
+                        try:
+                            minmax = [float(x) for x in line.split(",")]
+                            if len(minmax) != 2:
+                                raise ValueError
+                            custom_priors.append(minmax)
+                            break
+                        except Exception:
+                            print("Invalid input, please enter two numbers separated by a comma.")
         # Initialize and run pipeline
-        pipeline = InferencePipeline(config_file)
+        pipeline = InferencePipeline(config_file, priors_type=priors_type, custom_priors=custom_priors)
         pipeline.run_all_models()
     except FileNotFoundError as e:
         print(f"Error: {e}")
@@ -1703,7 +1786,7 @@ def main():
         print("  - configs/membrane_config.json (membrane analysis with dQ/Q=0.1)")
         print("  - configs/s000000_config.json (s000000 data analysis)")
         print("  - configs/s000004_config.json (s000004 data analysis - single layer)")
-        print("\nUsage: python inference_pipeline.py [config_file]")
+        print("\nUsage: python inference_pipeline.py [config_file] [priors_type]")
         sys.exit(1)
     except Exception as e:
         print(f"Error running pipeline: {e}")
