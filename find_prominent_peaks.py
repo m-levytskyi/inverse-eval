@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from plot_experimental_reflectivity import load_experimental_data, plot_reflectivity
 
-def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3):
+def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=10):
     y = np.log10(np.asarray(y))
     n = len(y)
     peaks = []
