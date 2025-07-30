@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 
 from plot_experimental_reflectivity import load_experimental_data, plot_reflectivity
 
-def detect_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3):
-    y = np.asarray(y)
+def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3):
+    y = np.log10(np.asarray(y))
     n = len(y)
     peaks = []
 
@@ -36,7 +36,7 @@ def detect_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3):
 
     return peaks
 
-def has_significant_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3):
+def has_significant_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3):
     return len(detect_peaks(y, min_prominence, min_rise, min_width)) > 0
 
 def count_curves_with_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3):
@@ -62,9 +62,9 @@ def main():
             good_curves.append((exp_id, r))
         else:
             bad_curves.append((exp_id, r))
-
-    print(f"Good curves: {len(good_curves)}")
-    print(f"Bad curves: {len(bad_curves)}")
+            
+    print(f"Good curves: {len(good_curves)}, e.g {[exp_id for exp_id, _ in good_curves[:5]]}")
+    print(f"Bad curves: {len(bad_curves)}, e.g {[exp_id for exp_id, _ in bad_curves[:5]]}")
 
 if __name__ == "__main__":
     main()
