@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 import glob
 import tqdm
+import os
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -46,23 +47,58 @@ def count_curves_with_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3):
         count += 1
     return count
 
+def plot_and_save_peaks(q, r, peaks, exp_id, output_dir):
+    title = f"Reflectivity: {exp_id}"
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.errorbar(q, r, fmt='o', markersize=3, color='black', label='Experimental')
+    ax.set_yscale('log')
+    ax.set_xlabel('$Q$)')
+    ax.set_ylabel('Reflectivity $R$')
+    ax.set_title(title)
+
+    for i, peak in enumerate(peaks):
+        peak_q = q[peak['index']]
+        peak_r = r[peak['index']]
+        ax.axvline(x=peak_q, color='r', linestyle='--')
+        
+        text_label = (
+            f"Peak {i+1}:\n"
+            f"  Q = {peak_q:.4f}\n"
+            f"  Prominence = {peak['prominence']:.2f}\n"
+            f"  Width = {peak['width']}"
+        )
+        
+        ax.text(peak_q, peak_r, text_label, fontsize=8, verticalalignment='bottom', horizontalalignment='left', bbox=dict(facecolor='white', alpha=0.5))
+
+    ax.legend(["Experimental", "Detected Peaks"])
+    ax.grid(True, which='both', ls='--', alpha=0.5)
+    plt.tight_layout()
+    
+    output_path = Path(output_dir) / f"{exp_id}_peaks.png"
+    plt.savefig(output_path)
+    plt.close(fig)
+
 def main():
-    # title = f"Reflectivity: {data_path.name}"
-    # plot_reflectivity(q, r, dr, dq, title=title)
+    output_dir = "peaks_plots/positive"
+    os.makedirs(output_dir, exist_ok=True)
 
     filepaths = sorted(glob.glob('data/MARIA_VIPR_dataset/1/s*_theoretical_curve.dat'))
 
-    good_curves = []
-    bad_curves = []
+    positive_curves = []
+    negative_curves = []
+    all_peaks = []
 
     for path in tqdm.tqdm(filepaths):
         exp_id = Path(path).stem.split('_')[0]
         q, r, dr, dq = load_experimental_data(path)
+        peaks = detect_peaks(r)
 
-        if has_significant_peaks(r):
-            good_curves.append((exp_id, r))
+        if peaks:
+            positive_curves.append((exp_id, r))
+            all_peaks.extend(peaks)
+            plot_and_save_peaks(q, r, peaks, exp_id, output_dir)
         else:
-            bad_curves.append((exp_id, r))
+            negative_curves.append((exp_id, r))
             
     print(f"Good curves: {len(good_curves)}, e.g {[exp_id for exp_id, _ in good_curves[:5]]}")
     print(f"Bad curves: {len(bad_curves)}, e.g {[exp_id for exp_id, _ in bad_curves[:5]]}")
