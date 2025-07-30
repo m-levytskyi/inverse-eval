@@ -100,8 +100,27 @@ def main():
         else:
             negative_curves.append((exp_id, r))
             
-    print(f"Good curves: {len(good_curves)}, e.g {[exp_id for exp_id, _ in good_curves[:5]]}")
-    print(f"Bad curves: {len(bad_curves)}, e.g {[exp_id for exp_id, _ in bad_curves[:5]]}")
+    print(f"Positive curves: {len(positive_curves)}, e.g {[exp_id for exp_id, _ in positive_curves[:5]]}")
+    print(f"Negative curves: {len(negative_curves)}, e.g {[exp_id for exp_id, _ in negative_curves[:5]]}")
+
+    if all_peaks:
+        prominences = [p['prominence'] for p in all_peaks]
+        widths = [p['width'] for p in all_peaks]
+
+        print("\n--- Peak Statistics ---")
+        print("\nProminence:")
+        print(f"  Min: {np.min(prominences):.4f}")
+        print(f"  Max: {np.max(prominences):.4f}")
+        print(f"  Mean: {np.mean(prominences):.4f}")
+        print(f"  Std Dev: {np.std(prominences):.4f}")
+        print(f"  Median: {np.median(prominences):.4f}")
+
+        print("\nWidth:")
+        print(f"  Min: {np.min(widths)}")
+        print(f"  Max: {np.max(widths)}")
+        print(f"  Mean: {np.mean(widths):.4f}")
+        print(f"  Std Dev: {np.std(widths):.4f}")
+        print(f"  Median: {np.median(widths)}")
 
 if __name__ == "__main__":
     main()
