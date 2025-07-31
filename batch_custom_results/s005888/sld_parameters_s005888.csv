@@ -1,0 +1,3 @@
+Source,Thickness,Amb_Rough,Sub_Rough,Layer_SLD,Substrate_SLD
+Predicted,248.9672,13.2504,3.2173,0.000003,0.000007
+Ground Truth,285.7800,28.0500,3.0000,0.000011,0.000015

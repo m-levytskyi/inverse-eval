@@ -4,7 +4,8 @@
     "data_format": "4_column",
     "dq_over_q": null,
     "max_points": 78,
-    "description": "s000004 experimental neutron reflectometry data from MARIA dataset - 1-layer structure"
+    "description": "s000004 experimental neutron reflectometry data from MARIA dataset - 1-layer structure",
+    "true_parameters_file": "data/s000004/s000004_model.txt"
   },
   
   "model_configurations": {

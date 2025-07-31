@@ -1,0 +1,185 @@
+[
+  {
+    "exp_id": "synth_1_000",
+    "true_params": {
+      "fronting_sld": 0.0,
+      "fronting_roughness": 50.54,
+      "layer1_sld": -3.48308e-06,
+      "layer1_thickness": 482.96,
+      "layer1_roughness": 28.39,
+      "backing_sld": -5.8615e-06,
+      "backing_roughness": 50.54
+    },
+    "curve_data": {
+      "q_range": [
+        0.005,
+        0.2
+      ],
+      "r_range": [
+        -0.12548359224124384,
+        0.8791203767376028
+      ],
+      "num_points": 128,
+      "negative_r_count": 93,
+      "zero_r_count": 0
+    },
+    "inference_success": true,
+    "mape": 36.37028940639419,
+    "predicted_params": {
+      "Thickness L1": 185.0848067086685,
+      "Roughness L1": 0.8388501574881957,
+      "Roughness sub": 2.5101728252244015,
+      "SLD L1": -6.548186071360874,
+      "SLD sub": -7.302440028683293
+    },
+    "param_errors": {
+      "Thickness L1": {
+        "true": 482.96,
+        "predicted": 185.0848067086685,
+        "error_percent": 61.67699049431247
+      },
+      "Roughness L1": {
+        "true": 50.54,
+        "predicted": 0.8388501574881957,
+        "error_percent": 98.34022525229878
+      },
+      "Roughness sub": {
+        "true": 50.54,
+        "predicted": 2.5101728252244015,
+        "error_percent": 95.03329476607756
+      },
+      "SLD L1": {
+        "true": -3.48308,
+        "predicted": -6.548186071360874,
+        "error_percent": 87.99987572380978
+      },
+      "SLD sub": {
+        "true": -5.8614999999999995,
+        "predicted": -7.302440028683293,
+        "error_percent": 24.583127675224663
+      }
+    }
+  },
+  {
+    "exp_id": "synth_1_001",
+    "true_params": {
+      "fronting_sld": 0.0,
+      "fronting_roughness": 51.11,
+      "layer1_sld": -4.82734e-06,
+      "layer1_thickness": 282.41,
+      "layer1_roughness": 52.23,
+      "backing_sld": 1.03628e-06,
+      "backing_roughness": 51.11
+    },
+    "curve_data": {
+      "q_range": [
+        0.005,
+        0.2
+      ],
+      "r_range": [
+        0.17547164954738959,
+        1.0069913839282494
+      ],
+      "num_points": 128,
+      "negative_r_count": 0,
+      "zero_r_count": 0
+    },
+    "inference_success": true,
+    "mape": 49.35890414506019,
+    "predicted_params": {
+      "Thickness L1": 137.62840900220763,
+      "Roughness L1": 0.31370845632864075,
+      "Roughness sub": 5.309430028728528,
+      "SLD L1": -9.367717880708028,
+      "SLD sub": 1.3124517825115163
+    },
+    "param_errors": {
+      "Thickness L1": {
+        "true": 282.41,
+        "predicted": 137.62840900220763,
+        "error_percent": 51.266453382597064
+      },
+      "Roughness L1": {
+        "true": 51.11,
+        "predicted": 0.31370845632864075,
+        "error_percent": 99.38620924216663
+      },
+      "Roughness sub": {
+        "true": 51.11,
+        "predicted": 5.309430028728528,
+        "error_percent": 89.61175889507234
+      },
+      "SLD L1": {
+        "true": -4.8273399999999995,
+        "predicted": -9.367717880708028,
+        "error_percent": 94.05548150136575
+      },
+      "SLD sub": {
+        "true": 1.03628,
+        "predicted": 1.3124517825115163,
+        "error_percent": 26.650305179248484
+      }
+    }
+  },
+  {
+    "exp_id": "synth_1_002",
+    "true_params": {
+      "fronting_sld": 0.0,
+      "fronting_roughness": 32.33,
+      "layer1_sld": 1.09122e-05,
+      "layer1_thickness": 226.12,
+      "layer1_roughness": 27.23,
+      "backing_sld": -5.43148e-06,
+      "backing_roughness": 32.33
+    },
+    "curve_data": {
+      "q_range": [
+        0.005,
+        0.2
+      ],
+      "r_range": [
+        -0.033299033720444626,
+        1.01193763905319
+      ],
+      "num_points": 128,
+      "negative_r_count": 77,
+      "zero_r_count": 0
+    },
+    "inference_success": true,
+    "mape": 49.49494383399626,
+    "predicted_params": {
+      "Thickness L1": 107.48794110171164,
+      "Roughness L1": 8.282633686870504,
+      "Roughness sub": 6.140794878380973,
+      "SLD L1": 14.515506483706758,
+      "SLD sub": -9.4914516500518
+    },
+    "param_errors": {
+      "Thickness L1": {
+        "true": 226.12,
+        "predicted": 107.48794110171164,
+        "error_percent": 52.46420435975958
+      },
+      "Roughness L1": {
+        "true": 32.33,
+        "predicted": 8.282633686870504,
+        "error_percent": 74.38096601648468
+      },
+      "Roughness sub": {
+        "true": 32.33,
+        "predicted": 6.140794878380973,
+        "error_percent": 81.00589273621722
+      },
+      "SLD L1": {
+        "true": 10.9122,
+        "predicted": 14.515506483706758,
+        "error_percent": 33.02089847791241
+      },
+      "SLD sub": {
+        "true": -5.43148,
+        "predicted": -9.4914516500518,
+        "error_percent": 74.74890177358292
+      }
+    }
+  }
+]

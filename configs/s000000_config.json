@@ -4,7 +4,8 @@
     "data_format": "4_column",
     "dq_over_q": null,
     "max_points": 2050,
-    "description": "s000000 experimental neutron reflectometry data from MARIA dataset"
+    "description": "s000000 experimental neutron reflectometry data from MARIA dataset",
+    "true_parameters_file": "data/s000000_model.txt"
   },
   
   "model_configurations": {
