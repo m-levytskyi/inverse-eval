@@ -79,10 +79,13 @@ def plot_and_save_peaks(q, r, peaks, exp_id, output_dir):
     plt.close(fig)
 
 def main():
-    output_dir = "peaks_plots/positive"
-    os.makedirs(output_dir, exist_ok=True)
+    
 
-    filepaths = sorted(glob.glob('data/MARIA_VIPR_dataset/1/s*_theoretical_curve.dat'))
+    layers_count = 1
+    filepaths = sorted(glob.glob(f'data/MARIA_VIPR_dataset/{layers_count}/s*_theoretical_curve.dat'))
+
+    output_dir = f"peaks_plots/{layers_count}/positive"
+    os.makedirs(output_dir, exist_ok=True)
 
     positive_curves = []
     negative_curves = []
