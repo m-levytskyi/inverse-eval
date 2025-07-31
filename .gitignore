@@ -5,6 +5,7 @@ data/
 inference_results/
 batch_inference_results/
 synthetic_data/
+peaks_plots/
 
 debug/
 deprecated/
