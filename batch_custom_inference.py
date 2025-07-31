@@ -21,32 +21,39 @@ models_list = ["b_mc_point_neutron_conv_standard_L1_InputQDq"]
 custom_priors_list = [
     [
         [1.00, 1000.0],      # L1 thickness (Å)
-        [0.00, 60.0],        # ambient/L1 roughness (Å)
-        [0.00, 60.0],        # L1/substrate roughness (Å)
+        [0.5, 30.0],         # ambient/L1 roughness (Å) - more reasonable range
+        [0.5, 250.0],        # L1/substrate roughness (Å) - allow higher values
         [1.50e-06, 6.50e-06],      # L1 SLD (×10⁻⁶ Å⁻²)
         [1.50e-06, 6.50e-06]       # substrate SLD (×10⁻⁶ Å⁻²)
     ],
     [
         [1.00, 1000.0],      # L1 thickness (Å)
-        [0.00, 60.0],        # ambient/L1 roughness (Å)
-        [0.00, 60.0],        # L1/substrate roughness (Å)
+        [0.5, 30.0],         # ambient/L1 roughness (Å) - more reasonable range
+        [0.5, 60.0],         # L1/substrate roughness (Å) - wider range
         [1.50e-06, 6.50e-06],      # L1 SLD (×10⁻⁶ Å⁻²)
         [1.50e-06, 6.50e-06]       # substrate SLD (×10⁻⁶ Å⁻²)
     ]
 ]
 
+print("--- Initial Custom Priors Defined ---")
+for i, priors in enumerate(custom_priors_list):
+    print(f"  Priors for experiment {i+1}:")
+    print(f"    ambient/L1 roughness (Å): {priors[1]}")
+    print(f"    L1/substrate roughness (Å): {priors[2]}")
+print("------------------------------------")
+
 # Output directory for all batch results
 output_base = "batch_custom_results"
-
-
-
-
 
 os.makedirs(output_base, exist_ok=True)
 
 results = {}
 for exp_id, custom_priors in zip(experiments, custom_priors_list):
     print(f"\nRunning inference for experiment: {exp_id}")
+    print(f"--- Using Custom Priors for {exp_id} ---")
+    print(f"  ambient/L1 roughness (Å): {custom_priors[1]}")
+    print(f"  L1/substrate roughness (Å): {custom_priors[2]}")
+    print("------------------------------------")
     exp_outdir = os.path.join(output_base, exp_id)
     os.makedirs(exp_outdir, exist_ok=True)
     pipeline = InferencePipeline(
@@ -68,7 +75,9 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
     model_name = models_list[0]
     result = pipeline.results[model_name]
     param_names = result['param_names']
-    predicted_params = result['polished_params']
+    predicted_params = result['predicted_params']
+    print(f"\n--- Roughness Tracking for {exp_id} ---")
+    print(f"Predicted (polished) parameters: {predicted_params}")
 
 
 
@@ -77,12 +86,15 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
     t = float(predicted_params[0])
     amb_rough = float(predicted_params[1])
     sub_rough = float(predicted_params[2])
+    print(f"  - Predicted ambient/L1 roughness: {amb_rough:.4f} Å")
+    print(f"  - Predicted L1/substrate roughness: {sub_rough:.4f} Å")
     sld_layer = float(predicted_params[3])
     sld_sub = float(predicted_params[4])
     # SLDs: [ambient, layer, substrate] (ambient assumed 0)
     slds_pred = [0.0, sld_layer, sld_sub]
     thicknesses_pred = [t]
     roughnesses_pred = [amb_rough, sub_rough]
+    print(f"  - Roughness values passed to sld_profile (predicted): {roughnesses_pred}")
     z = np.linspace(0, t + 50, 400)
     interfaces_pred = [0] + list(np.cumsum(thicknesses_pred))
     sld_prof_pred = sld_profile(z, slds_pred, interfaces_pred, roughnesses_pred)
@@ -105,11 +117,14 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
         t_o = float(other_params[0])
         amb_rough_o = float(other_params[1])
         sub_rough_o = float(other_params[2])
+        print(f"  - User-input ambient/L1 roughness: {amb_rough_o:.4f} Å")
+        print(f"  - User-input L1/substrate roughness: {sub_rough_o:.4f} Å")
         sld_layer_o = float(other_params[3])
         sld_sub_o = float(other_params[4])
         slds_other = [0.0, sld_layer_o, sld_sub_o]
         thicknesses_other = [t_o]
         roughnesses_other = [amb_rough_o, sub_rough_o]
+        print(f"  - Roughness values from user input: {roughnesses_other}")
         z_other = np.linspace(0, t_o + 50, 400)
         interfaces_other = [0] + list(np.cumsum(thicknesses_other))
         sld_prof_other = sld_profile(z_other, slds_other, interfaces_other, roughnesses_other)
@@ -178,8 +193,13 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
                     t_gt = t_val
                     slds_gt = [layers[0]['sld'], layers[1]['sld'], layers[2]['sld']]
                     thicknesses_gt = [t_gt]  # Only the film layer
-                    roughnesses_gt = [layers[1]['roughness'] if layers[1]['roughness'] is not None else 3.0,
-                                      layers[2]['roughness'] if layers[2]['roughness'] is not None else 3.0]
+                    # Roughness from layer1 is ambient/L1, from layer2 (backing) is L1/substrate
+                    gt_amb_rough = layers[1]['roughness'] if layers[1]['roughness'] is not None else 3.0
+                    gt_sub_rough = layers[2]['roughness'] if layers[2]['roughness'] is not None else 3.0
+                    print(f"  - Ground truth ambient/L1 roughness: {gt_amb_rough:.4f} Å (from layer '{layers[1]['name']}')")
+                    print(f"  - Ground truth L1/substrate roughness: {gt_sub_rough:.4f} Å (from layer '{layers[2]['name']}')")
+                    roughnesses_gt = [gt_amb_rough, gt_sub_rough]
+                    print(f"  - Roughness values passed to sld_profile (ground truth): {roughnesses_gt}")
                     z_gt = np.linspace(0, t_gt + 50, 400)
                     interfaces_gt = [0] + list(np.cumsum(thicknesses_gt))
                     sld_prof_gt = sld_profile(z_gt, slds_gt, interfaces_gt, roughnesses_gt)
@@ -211,14 +231,20 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
                     ) / t_gt if t_gt > 0 else 0.0
                     slds_gt = [layers[0]['sld'], weighted_sld, layers[3]['sld']]
                     thicknesses_gt = [t_gt]
-                    roughnesses_gt = [layers[1]['roughness'] if layers[1]['roughness'] is not None else 3.0,
-                                      layers[2]['roughness'] if layers[2]['roughness'] is not None else 3.0]
+                    # For 2-layer GT, we take roughness from layer1 and layer2 (film layers)
+                    gt_amb_rough = layers[1]['roughness'] if layers[1]['roughness'] is not None else 3.0
+                    gt_sub_rough = layers[2]['roughness'] if layers[2]['roughness'] is not None else 3.0
+                    print(f"  - Ground truth ambient/L1 roughness: {gt_amb_rough:.4f} Å (from layer '{layers[1]['name']}')")
+                    print(f"  - Ground truth L1/substrate roughness: {gt_sub_rough:.4f} Å (from layer '{layers[2]['name']}')")
+                    roughnesses_gt = [gt_amb_rough, gt_sub_rough]
+                    print(f"  - Roughness values passed to sld_profile (ground truth): {roughnesses_gt}")
                     z_gt = np.linspace(0, t_gt + 50, 400)
                     interfaces_gt = [0] + list(np.cumsum(thicknesses_gt))
                     sld_prof_gt = sld_profile(z_gt, slds_gt, interfaces_gt, roughnesses_gt)
                     print(f"Ground truth SLD profile for {exp_id}: slds={slds_gt}, thicknesses={thicknesses_gt}, roughnesses={roughnesses_gt}")
         except Exception as e:
             print(f"Could not parse ground truth model file for {exp_id}: {e}")
+    print("------------------------------------")
 
 
     # Plot all SLD profiles (ensure all are plotted if available)
