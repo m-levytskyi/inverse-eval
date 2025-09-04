@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from inference_pipeline import InferencePipeline
-from plot_sld_profile import plot_sld_profile
 from sld_profile_utils import sld_profile
 
 # Define experiments, model, and two sets of custom priors
@@ -280,8 +279,8 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
         f"{predicted_params[0]:.4f}",
         f"{predicted_params[1]:.4f}",
         f"{predicted_params[2]:.4f}",
-        f"{predicted_params[3]:.6f}",
-        f"{predicted_params[4]:.6f}"
+        f"{(predicted_params[3] * 1e6):.6f}",
+        f"{(predicted_params[4] * 1e6):.6f}"
     ])
     # User-input (other model)
     if other_params is not None and len(other_params) == 5:
@@ -290,8 +289,8 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
             f"{other_params[0]:.4f}",
             f"{other_params[1]:.4f}",
             f"{other_params[2]:.4f}",
-            f"{other_params[3]:.6f}",
-            f"{other_params[4]:.6f}"
+            f"{(other_params[3] * 1e6):.6f}",
+            f"{(other_params[4] * 1e6):.6f}"
         ])
     # Ground truth
     if model_file and sld_prof_gt is not None:
@@ -303,8 +302,8 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
                 f"{gt_layer['thickness']:.4f}",
                 f"{gt_layer['roughness']:.4f}",
                 f"{layers[2]['roughness']:.4f}",
-                f"{gt_layer['sld']:.6f}",
-                f"{layers[2]['sld']:.6f}"
+                f"{(gt_layer['sld'] * 1e6):.6f}",
+                f"{(layers[2]['sld'] * 1e6):.6f}"
             ])
         elif len(layers) == 4:
             # For 2-layer, report combined thickness, weighted SLD, and roughnesses
@@ -328,11 +327,11 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
                 f"{t_gt:.4f}",
                 f"{layers[1]['roughness']:.4f}",
                 f"{layers[2]['roughness']:.4f}",
-                f"{weighted_sld:.6f}",
-                f"{layers[3]['sld']:.6f}"
+                f"{(weighted_sld * 1e6):.6f}",
+                f"{(layers[3]['sld'] * 1e6):.6f}"
             ])
     # Add table to plot
-    col_labels = ["Source", "Thickness", "Amb_Rough", "Sub_Rough", "Layer_SLD", "Substrate_SLD"]
+    col_labels = ["Source", "Thickness", "Amb_Rough", "Sub_Rough", "Layer_SLD [$10^{-6}$ Å$^{-2}$]", "Substrate_SLD [$10^{-6}$ Å$^{-2}$]"]
     table = ax.table(cellText=table_rows, colLabels=col_labels, loc='bottom', cellLoc='center', bbox=[0, -0.55, 1, 0.35])
     table.auto_set_font_size(False)
     table.set_fontsize(8)
@@ -353,8 +352,8 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
         f"{predicted_params[0]:.4f}",
         f"{predicted_params[1]:.4f}",
         f"{predicted_params[2]:.4f}",
-        f"{predicted_params[3]:.6f}",
-        f"{predicted_params[4]:.6f}"
+        f"{(predicted_params[3] * 1e6):.6f}",
+        f"{(predicted_params[4] * 1e6):.6f}"
     ])
     # User-input (other model)
     if other_params is not None and len(other_params) == 5:
@@ -363,8 +362,8 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
             f"{other_params[0]:.4f}",
             f"{other_params[1]:.4f}",
             f"{other_params[2]:.4f}",
-            f"{other_params[3]:.6f}",
-            f"{other_params[4]:.6f}"
+            f"{(other_params[3] * 1e6):.6f}",
+            f"{(other_params[4] * 1e6):.6f}"
         ])
     # Ground truth
     if model_file and sld_prof_gt is not None:
@@ -376,8 +375,8 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
                 f"{gt_layer['thickness']:.4f}",
                 f"{gt_layer['roughness']:.4f}",
                 f"{layers[2]['roughness']:.4f}",
-                f"{gt_layer['sld']:.6f}",
-                f"{layers[2]['sld']:.6f}"
+                f"{(gt_layer['sld'] * 1e6):.6f}",
+                f"{(layers[2]['sld'] * 1e6):.6f}"
             ])
         elif len(layers) == 4:
             # For 2-layer, report combined thickness, weighted SLD, and roughnesses
@@ -401,14 +400,14 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
                 f"{t_gt:.4f}",
                 f"{layers[1]['roughness']:.4f}",
                 f"{layers[2]['roughness']:.4f}",
-                f"{weighted_sld:.6f}",
-                f"{layers[3]['sld']:.6f}"
+                f"{(weighted_sld * 1e6):.6f}",
+                f"{(layers[3]['sld'] * 1e6):.6f}"
             ])
     # Write CSV
     table_path = os.path.join(exp_outdir, f"sld_parameters_{exp_id}.csv")
     with open(table_path, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["Source", "Thickness", "Amb_Rough", "Sub_Rough", "Layer_SLD", "Substrate_SLD"])
+        writer.writerow(["Source", "Thickness", "Amb_Rough", "Sub_Rough", "Layer_SLD (x10^-6)", "Substrate_SLD (x10^-6)"])
         writer.writerows(table_rows)
     print(f"SLD parameter table saved to {table_path}")
 
