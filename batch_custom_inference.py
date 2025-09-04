@@ -13,24 +13,32 @@ from inference_pipeline import InferencePipeline
 from sld_profile_utils import sld_profile
 
 # Define experiments, model, and two sets of custom priors
-experiments = ["s003981", "s005888"]
+# experiments = ["s003981", "s005888"]
+experiments = ["s003981", "s005888", "s004934"] #s006965
 models_list = ["b_mc_point_neutron_conv_standard_L1_InputQDq"]
 
 # Define custom priors for each experiment (order matches experiments list)
 custom_priors_list = [
-    [
-        [1.00, 1000.0],      # L1 thickness (Å)
-        [0.5, 30.0],         # ambient/L1 roughness (Å) - more reasonable range
-        [0.5, 250.0],        # L1/substrate roughness (Å) - allow higher values
-        [1.50e-06, 6.50e-06],      # L1 SLD (×10⁻⁶ Å⁻²)
-        [1.50e-06, 6.50e-06]       # substrate SLD (×10⁻⁶ Å⁻²)
+    [# s003981
+        [0, 500.0],      # L1 thickness (Å)
+        [0.5, 30.0],         # ambient/L1 roughness (Å)
+        [0.5, 250.0],        # L1/substrate roughness (Å)
+        [4.71637e-06, 4.71637e-06],      # L1 SLD (×10⁻⁶ Å⁻²)
+        [-4.77301e-07, -4.77301e-07]       # substrate SLD (×10⁻⁶ Å⁻²)
     ],
-    [
-        [1.00, 1000.0],      # L1 thickness (Å)
-        [0.5, 30.0],         # ambient/L1 roughness (Å) - more reasonable range
-        [0.5, 60.0],         # L1/substrate roughness (Å) - wider range
-        [1.50e-06, 6.50e-06],      # L1 SLD (×10⁻⁶ Å⁻²)
-        [1.50e-06, 6.50e-06]       # substrate SLD (×10⁻⁶ Å⁻²)
+    [# s005888 - as in GUI
+        [142.0, 427.0],
+        [3.5, 10.5],
+        [14.0, 42.0],
+        [11e-06, 16e-06],
+        [11e-06, 16e-06]
+    ],
+    [# s004934 
+        [0, 500.0],
+        [0.5, 30.0],
+        [0.5, 60.0],
+        [-1.48075e-07, -1.48075e-07],
+        [1.92389e-06, 1.92389e-06]
     ]
 ]
 
