@@ -1089,7 +1089,14 @@ class InferencePipeline:
                 prediction_dict['predicted_params_array'],
                 prediction_dict["polished_params_array"]
             ):
-                print(f'{param_name.ljust(25)} -> Predicted: {pred_val:8.2f}   Polished: {polish_val:8.2f}')
+                # Convert SLD values to proper units for display (×10⁻⁶ Å⁻²)
+                if 'sld' in param_name.lower():
+                    pred_display = pred_val * 1e6
+                    polish_display = polish_val * 1e6
+                    print(f'{param_name.ljust(25)} -> Predicted: {pred_display:8.2f}   Polished: {polish_display:8.2f}')
+                    print(f"DEBUG: SLD converted for display - Original pred: {pred_val:.6e}, Display: {pred_display:.4f}")
+                else:
+                    print(f'{param_name.ljust(25)} -> Predicted: {pred_val:8.2f}   Polished: {polish_val:8.2f}')
             
             # Calculate fit quality metrics
             print("DEBUG: Calculating fit quality metrics.")
@@ -1123,8 +1130,13 @@ class InferencePipeline:
                         true_val = metrics['true']
                         sq_error = metrics['squared_error']
                         
+                        # Values are already converted to proper units in calculate_parameter_metrics
                         print(f"{param_name:<25} {pred_val:<12.2f} {true_val:<12.2f} "
                               f"{sq_error:<12.4f}")
+                        
+                        # Debug info for SLD parameters
+                        if 'sld' in param_name.lower():
+                            print(f"DEBUG: SLD comparison - Already converted values in ×10⁻⁶ units")
                     
                     # Print aggregate metrics
                     overall_metrics = result['parameter_metrics']['overall']
@@ -1204,12 +1216,35 @@ class InferencePipeline:
                 'by_parameter': {}
             }
 
-        errors = np.array(pred_params) - np.array(true_params)
+        # Convert arrays and handle unit conversions for SLD parameters
+        pred_params_converted = []
+        true_params_converted = []
+        
+        for i, param_name in enumerate(param_names):
+            pred_val = pred_params[i]
+            true_val = true_params[i]
+            
+            # Convert SLD values to same units for proper comparison
+            if 'sld' in param_name.lower():
+                # Both predicted and true SLD values need to be in same units
+                # The model predicts in scientific notation, true values are in 10^-6 units
+                # Convert both to 10^-6 units for comparison
+                pred_converted = pred_val * 1e6
+                true_converted = true_val  # Already in 10^-6 units from parsing
+                print(f"DEBUG: SLD unit conversion for {param_name} - Pred: {pred_val:.6e} -> {pred_converted:.4f}, True: {true_val:.4f}")
+            else:
+                pred_converted = pred_val
+                true_converted = true_val
+                
+            pred_params_converted.append(pred_converted)
+            true_params_converted.append(true_converted)
+
+        errors = np.array(pred_params_converted) - np.array(true_params_converted)
         squared_errors = errors ** 2
         
         # Avoid division by zero for MAPE calculation
         # Replace true zeros with a small number to avoid infinity, or handle them separately
-        true_params_mape = np.array(true_params)
+        true_params_mape = np.array(true_params_converted)
         zero_mask = true_params_mape == 0
         
         # Calculate percentage error, handling true zeros
@@ -1237,8 +1272,8 @@ class InferencePipeline:
 
         for i, name in enumerate(param_names):
             param_metrics = {
-                'predicted': pred_params[i],
-                'true': true_params[i],
+                'predicted': pred_params_converted[i],  # Use converted values
+                'true': true_params_converted[i],       # Use converted values
                 'error': errors[i],
                 'squared_error': squared_errors[i],
                 'percentage_error': percentage_errors[i]
@@ -1396,8 +1431,8 @@ class InferencePipeline:
                 thickness = layer1.get('thickness', 0.0)
                 amb_rough = fronting.get('roughness', 0.0)  # fronting roughness
                 sub_rough = layer1.get('roughness', 0.0)   # layer1 roughness (interface with substrate)
-                layer_sld = layer1.get('sld', 0.0)
-                sub_sld = backing.get('sld', 0.0)
+                layer_sld = layer1.get('sld', 0.0) * 1e6   # Convert to 10^-6 units
+                sub_sld = backing.get('sld', 0.0) * 1e6    # Convert to 10^-6 units
                 
                 params_1_layer = [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
                 names_1_layer = self.get_parameter_names_for_layer_count(1)
@@ -1407,6 +1442,7 @@ class InferencePipeline:
                     'param_names': names_1_layer
                 }
                 print(f"DEBUG: Successfully parsed as 1-layer model: {params_1_layer}")
+                print(f"DEBUG: SLD values converted to 10^-6 units - layer_sld: {layer_sld:.2f}, sub_sld: {sub_sld:.2f}")
                 
             except Exception as e:
                 print(f"DEBUG: Failed to parse as 1-layer model: {e}")
@@ -1427,9 +1463,9 @@ class InferencePipeline:
                 amb_rough = fronting.get('roughness', 0.0)    # fronting roughness (ambient/L1 interface)
                 l1l2_rough = layer1.get('roughness', 0.0)     # layer1 roughness (L1/L2 interface)
                 l2sub_rough = layer2.get('roughness', 0.0)    # layer2 roughness (L2/substrate interface)
-                l1_sld = layer1.get('sld', 0.0)
-                l2_sld = layer2.get('sld', 0.0)
-                sub_sld = backing.get('sld', 0.0)
+                l1_sld = layer1.get('sld', 0.0) * 1e6         # Convert to 10^-6 units
+                l2_sld = layer2.get('sld', 0.0) * 1e6         # Convert to 10^-6 units
+                sub_sld = backing.get('sld', 0.0) * 1e6       # Convert to 10^-6 units
 
                 params_2_layer = [l1_thick, l2_thick, amb_rough, l1l2_rough, l2sub_rough, l1_sld, l2_sld, sub_sld]
                 names_2_layer = self.get_parameter_names_for_layer_count(2)
@@ -1439,6 +1475,7 @@ class InferencePipeline:
                     'param_names': names_2_layer
                 }
                 print(f"DEBUG: Successfully parsed as 2-layer model: {params_2_layer}")
+                print(f"DEBUG: SLD values converted to 10^-6 units - L1_sld: {l1_sld:.2f}, L2_sld: {l2_sld:.2f}, sub_sld: {sub_sld:.2f}")
                 
             except Exception as e:
                 print(f"DEBUG: Failed to parse as 2-layer model: {e}")
