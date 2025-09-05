@@ -1319,8 +1319,12 @@ class InferencePipeline:
         """
         Parse true parameters from a Motofit-style model file.
         
-        This function now handles both 1-layer and 2-layer models and returns
-        a dictionary containing parameters for each interpretation.
+        This function parses tabular model files where each row represents a layer:
+        - fronting: ambient medium (usually air)
+        - layer1, layer2, etc: material layers
+        - backing: substrate
+        
+        Columns are: layer_name, sld(A^-2), thickness(A), roughness(A)
         """
         print(f"DEBUG: Parsing true parameters from model file: {model_file_path}")
         if not Path(model_file_path).exists():
@@ -1330,74 +1334,117 @@ class InferencePipeline:
         with open(model_file_path, 'r') as f:
             lines = f.readlines()
 
-        params = {}
+        # Parse the tabular format
+        layers = {}
         for line in lines:
-            parts = line.strip().split()
-            if len(parts) >= 2:
-                key = parts[0]
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            parts = line.split()
+            if len(parts) >= 4:
+                layer_name = parts[0]
                 try:
-                    val = float(parts[1])
-                    params[key] = val
-                except ValueError:
+                    sld = float(parts[1])
+                    thickness_str = parts[2]
+                    roughness_str = parts[3]
+                    
+                    # Handle special values for thickness
+                    if thickness_str.lower() in ['inf', 'none', 'nan']:
+                        thickness = float('inf')
+                    else:
+                        thickness = float(thickness_str)
+                    
+                    # Handle special values for roughness
+                    if roughness_str.lower() in ['none', 'nan']:
+                        roughness = 0.0
+                    elif roughness_str.lower() == 'inf':
+                        roughness = float('inf')
+                    else:
+                        roughness = float(roughness_str)
+                    
+                    layers[layer_name] = {
+                        'sld': sld,
+                        'thickness': thickness,
+                        'roughness': roughness
+                    }
+                    print(f"DEBUG: Parsed layer '{layer_name}': sld={sld}, thickness={thickness}, roughness={roughness}")
+                    
+                except (ValueError, IndexError) as e:
+                    print(f"DEBUG: Failed to parse line '{line}': {e}")
                     continue
         
-        print(f"DEBUG: Parsed raw key-value pairs from model file: {params}")
+        print(f"DEBUG: Parsed layers: {list(layers.keys())}")
 
         true_params_dict = {}
 
-        # --- Try to parse as a 2-layer model ---
-        try:
-            print("DEBUG: Attempting to parse as a 2-layer model.")
-            l1_thick = params.get('L1_thick', 0.0)
-            l2_thick = params.get('L2_thick', 0.0)
-            amb_rough = params.get('amb_rough', params.get('L0_rough', 0.0))
-            l1l2_rough = params.get('L1_rough', 0.0)
-            l2sub_rough = params.get('L2_rough', 0.0)
-            l1_sld = params.get('L1_sld', 0.0) * 1e-6
-            l2_sld = params.get('L2_sld', 0.0) * 1e-6
-            sub_sld = params.get('sub_sld', 0.0) * 1e-6
+        # Count actual material layers (exclude fronting and backing)
+        material_layers = [name for name in layers.keys() if name.startswith('layer')]
+        num_material_layers = len(material_layers)
+        print(f"DEBUG: Found {num_material_layers} material layers: {material_layers}")
 
-            params_2_layer = [l1_thick, l2_thick, amb_rough, l1l2_rough, l2sub_rough, l1_sld, l2_sld, sub_sld]
-            names_2_layer = self.get_parameter_names_for_layer_count(2)
-            
-            true_params_dict['2_layer'] = {
-                'params': params_2_layer,
-                'param_names': names_2_layer
-            }
-            print(f"DEBUG: Successfully parsed as 2-layer model: {params_2_layer}")
-        except Exception as e:
-            print(f"DEBUG: Failed to parse as 2-layer model: {e}")
+        # --- Parse as 1-layer model (if we have 1 material layer) ---
+        if num_material_layers == 1 and 'layer1' in layers:
+            try:
+                print("DEBUG: Attempting to parse as a 1-layer model.")
+                
+                fronting = layers.get('fronting', {})
+                layer1 = layers.get('layer1', {})
+                backing = layers.get('backing', {})
+                
+                # 1-layer parameters: [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
+                thickness = layer1.get('thickness', 0.0)
+                amb_rough = fronting.get('roughness', 0.0)  # fronting roughness
+                sub_rough = layer1.get('roughness', 0.0)   # layer1 roughness (interface with substrate)
+                layer_sld = layer1.get('sld', 0.0)
+                sub_sld = backing.get('sld', 0.0)
+                
+                params_1_layer = [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
+                names_1_layer = self.get_parameter_names_for_layer_count(1)
+                
+                true_params_dict['1_layer'] = {
+                    'params': params_1_layer,
+                    'param_names': names_1_layer
+                }
+                print(f"DEBUG: Successfully parsed as 1-layer model: {params_1_layer}")
+                
+            except Exception as e:
+                print(f"DEBUG: Failed to parse as 1-layer model: {e}")
 
-        # --- Try to parse as a 1-layer model ---
-        try:
-            print("DEBUG: Attempting to parse as a 1-layer model.")
-            # For 1-layer, thickness is often the sum
-            total_thick = params.get('L1_thick', 0.0) + params.get('L2_thick', 0.0)
-            if total_thick == 0: # If L1/L2 don't exist, maybe it's just 'thick'
-                total_thick = params.get('thick', 0.0)
+        # --- Parse as 2-layer model (if we have 2 material layers) ---
+        if num_material_layers >= 2 and 'layer1' in layers and 'layer2' in layers:
+            try:
+                print("DEBUG: Attempting to parse as a 2-layer model.")
+                
+                fronting = layers.get('fronting', {})
+                layer1 = layers.get('layer1', {})
+                layer2 = layers.get('layer2', {})
+                backing = layers.get('backing', {})
+                
+                # 2-layer parameters: [L1_thick, L2_thick, amb_rough, L1L2_rough, L2sub_rough, L1_sld, L2_sld, sub_sld]
+                l1_thick = layer1.get('thickness', 0.0)
+                l2_thick = layer2.get('thickness', 0.0)
+                amb_rough = fronting.get('roughness', 0.0)    # fronting roughness (ambient/L1 interface)
+                l1l2_rough = layer1.get('roughness', 0.0)     # layer1 roughness (L1/L2 interface)
+                l2sub_rough = layer2.get('roughness', 0.0)    # layer2 roughness (L2/substrate interface)
+                l1_sld = layer1.get('sld', 0.0)
+                l2_sld = layer2.get('sld', 0.0)
+                sub_sld = backing.get('sld', 0.0)
 
-            # Roughness can be tricky. Let's try to find the most logical ones.
-            # ambient/L1 roughness
-            front_rough = params.get('amb_rough', params.get('L0_rough', 0.0))
-            # L1/substrate roughness
-            back_rough = params.get('L1_rough', params.get('sub_rough', 0.0))
+                params_2_layer = [l1_thick, l2_thick, amb_rough, l1l2_rough, l2sub_rough, l1_sld, l2_sld, sub_sld]
+                names_2_layer = self.get_parameter_names_for_layer_count(2)
+                
+                true_params_dict['2_layer'] = {
+                    'params': params_2_layer,
+                    'param_names': names_2_layer
+                }
+                print(f"DEBUG: Successfully parsed as 2-layer model: {params_2_layer}")
+                
+            except Exception as e:
+                print(f"DEBUG: Failed to parse as 2-layer model: {e}")
 
-            # SLD is also tricky. Average SLD might be a good approximation if it's a single layer.
-            # Or just use L1_sld if it exists.
-            layer_sld = params.get('L1_sld', params.get('sld', 0.0)) * 1e-6
-            
-            sub_sld_1l = params.get('sub_sld', 0.0) * 1e-6
-
-            params_1_layer = [total_thick, front_rough, back_rough, layer_sld, sub_sld_1l]
-            names_1_layer = self.get_parameter_names_for_layer_count(1)
-
-            true_params_dict['1_layer'] = {
-                'params': params_1_layer,
-                'param_names': names_1_layer
-            }
-            print(f"DEBUG: Successfully parsed as 1-layer model: {params_1_layer}")
-        except Exception as e:
-            print(f"DEBUG: Failed to parse as 1-layer model: {e}")
+        # --- If we have more than 2 layers, we can still try to create a 2-layer equivalent ---
+        # This would involve combining layers appropriately, but for now we'll skip this
 
         if not true_params_dict:
             print("DEBUG: WARNING - Could not parse model file for either 1 or 2 layers.")
