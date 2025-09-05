@@ -9,9 +9,14 @@ import matplotlib.pyplot as plt
 
 from plot_experimental_reflectivity import load_experimental_data, plot_reflectivity
 
-def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=10):
+def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=10, analyze_first_half=True):
     y = np.log10(np.asarray(y))
     n = len(y)
+    
+    # If analyze_first_half is True, only analyze the first half of the data
+    if analyze_first_half:
+        n = n // 2
+    
     peaks = []
 
     i = 1
@@ -38,19 +43,30 @@ def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=10):
 
     return peaks
 
-def has_significant_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3):
-    return len(detect_peaks(y, min_prominence, min_rise, min_width)) > 0
+def has_significant_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3, analyze_first_half=True):
+    return len(detect_peaks(y, min_prominence, min_rise, min_width, analyze_first_half)) > 0
 
-def count_curves_with_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3):
+def count_curves_with_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3, analyze_first_half=True):
     count = 0
-    if has_significant_peaks(y, min_prominence, min_rise, min_width):
+    if has_significant_peaks(y, min_prominence, min_rise, min_width, analyze_first_half):
         count += 1
     return count
 
-def plot_and_save_peaks(q, r, peaks, exp_id, output_dir):
+def plot_and_save_peaks(q, r, peaks, exp_id, output_dir, analyze_first_half=True):
     title = f"Reflectivity: {exp_id}"
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.errorbar(q, r, fmt='o', markersize=3, color='black', label='Experimental')
+    
+    # If analyzing first half, only plot the first half
+    if analyze_first_half:
+        half_idx = len(q) // 2
+        q_plot = q[:half_idx]
+        r_plot = r[:half_idx]
+        title += " (First Half)"
+    else:
+        q_plot = q
+        r_plot = r
+    
+    ax.errorbar(q_plot, r_plot, fmt='o', markersize=3, color='black', label='Experimental')
     ax.set_yscale('log')
     ax.set_xlabel('$Q$)')
     ax.set_ylabel('Reflectivity $R$')
@@ -81,7 +97,7 @@ def plot_and_save_peaks(q, r, peaks, exp_id, output_dir):
 def main():
     
 
-    layers_count = 1
+    layers_count = 2
     filepaths = sorted(glob.glob(f'data/MARIA_VIPR_dataset/{layers_count}/s*_theoretical_curve.dat'))
 
     output_dir = f"peaks_plots/{layers_count}/positive"
@@ -94,12 +110,12 @@ def main():
     for path in tqdm.tqdm(filepaths):
         exp_id = Path(path).stem.split('_')[0]
         q, r, dr, dq = load_experimental_data(path)
-        peaks = detect_peaks(r)
+        peaks = detect_peaks(r, analyze_first_half=True)
 
         if peaks:
             positive_curves.append((exp_id, r))
             all_peaks.extend(peaks)
-            plot_and_save_peaks(q, r, peaks, exp_id, output_dir)
+            plot_and_save_peaks(q, r, peaks, exp_id, output_dir, analyze_first_half=True)
         else:
             negative_curves.append((exp_id, r))
             
