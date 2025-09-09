@@ -42,6 +42,9 @@ jobs:
     - name: Run ReflecTorch inference test
       run: |
         pipenv run python test_single_experiment.py
+      env:
+        CI: true
+        GITHUB_ACTIONS: true
         
     - name: Upload test results
       if: always()

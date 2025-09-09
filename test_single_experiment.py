@@ -61,8 +61,17 @@ class ReflectometryTest:
         """Run inference on experimental data."""
         print("Running inference for test...")
         
-        # Setup inference model
-        inference_model = EasyInferenceModel("b_mc_point_neutron_conv_standard_L1_InputQDq")
+        # Detect CI environment and force CPU usage
+        import os
+        is_ci = os.getenv('CI', '').lower() in ('true', '1', 'yes') or os.getenv('GITHUB_ACTIONS', '').lower() in ('true', '1', 'yes')
+        device = 'cpu' if is_ci else 'cpu'  # Always use CPU for now to ensure compatibility
+        
+        print(f"Using device: {device}")
+        if is_ci:
+            print("CI environment detected - forcing CPU usage")
+        
+        # Setup inference model with explicit device
+        inference_model = EasyInferenceModel("b_mc_point_neutron_conv_standard_L1_InputQDq", device=device)
         
         # Interpolate data
         q_model, exp_curve_interp = inference_model.interpolate_data_to_model_q(q_exp, curve_exp)
