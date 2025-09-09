@@ -1,11 +1,20 @@
 __pycache__/
-.github/
 
-data/
+# Large data directories (keep these ignored)
+data/MARIA_VIPR_dataset/
+data/Experimental/
+
+# Generated results (keep these ignored)
 inference_results/
 batch_inference_results/
 synthetic_data/
 peaks_plots/
 
+# Development directories (keep these ignored)
 debug/
 deprecated/
+
+# Allow small test data files
+!data/test_data/
+!data/*.dat
+!data/*.txt
