@@ -34,17 +34,12 @@ def discover_experiment_files(experiment_id, data_directory, layer_count=None):
     
     # Define search patterns
     data_patterns = [
-        f"{experiment_id}_experimental_curve.dat",
-        f"{experiment_id}_experimental.dat", 
-        f"{experiment_id}.dat"
+        f"{experiment_id}_experimental_curve.dat"
     ]
     
     model_patterns = [
         f"{experiment_id}_model.txt",
-        f"{experiment_id}_model.dat",
-        f"{experiment_id}.model",
-        f"{experiment_id}_true.txt",
-        f"{experiment_id}_true.dat"
+        f"{experiment_id}_model.dat"
     ]
     
     # Define layer directories to search
