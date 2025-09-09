@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from reflectorch import EasyInferenceModel
-from pathlib import Path
 
 # Import our modular utilities
 from plotting_utils import plot_simple_comparison
@@ -17,7 +16,9 @@ from error_calculation import (
     calculate_parameter_metrics,
     print_metrics_report
 )
-from filter_error_bars import filter_and_truncate
+from data_preprocessing import (
+    preprocess_experimental_data as dp_preprocess_experimental_data
+)
 
 # Set seed for reproducibility
 torch.manual_seed(42)
@@ -26,7 +27,7 @@ def preprocess_experimental_data(q_exp, curve_exp, sigmas_exp,
                                 threshold=0.5, consecutive=3, 
                                 remove_singles=False, enable_preprocessing=True):
     """
-    Apply preprocessing steps to experimental data.
+    Apply preprocessing steps to experimental data using data_preprocessing module.
     
     Args:
         q_exp: Q values (momentum transfer)
@@ -49,11 +50,11 @@ def preprocess_experimental_data(q_exp, curve_exp, sigmas_exp,
     # Store original data size
     original_size = len(q_exp)
     
-    # Apply filtering and truncation
-    q_processed, curve_processed, sigmas_processed = filter_and_truncate(
+    # Use the data_preprocessing module
+    q_processed, curve_processed, sigmas_processed = dp_preprocess_experimental_data(
         q_exp, curve_exp, sigmas_exp,
-        threshold=threshold,
-        consecutive=consecutive,
+        error_threshold=threshold,
+        consecutive_threshold=consecutive,
         remove_singles=remove_singles
     )
     
@@ -61,7 +62,7 @@ def preprocess_experimental_data(q_exp, curve_exp, sigmas_exp,
     processed_size = len(q_processed)
     removed_points = original_size - processed_size
     
-    print(f"Preprocessing results:")
+    print("Preprocessing results:")
     print(f"  Original data points: {original_size}")
     print(f"  After preprocessing: {processed_size}")
     print(f"  Removed points: {removed_points} ({removed_points/original_size*100:.1f}%)")
@@ -137,8 +138,7 @@ def display_results(prediction_dict):
     for param_name, pred_val, polished_val in zip(param_names, pred_params, polished_params):
         print(f'{param_name.ljust(18)} -> Predicted: {pred_val:.3f}    Polished: {polished_val:.3f}')
 
-def run_single_experiment(experiment_id, layer_count=1, output_dir=None, 
-                         enable_polishing=True, enable_preprocessing=True,
+def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=True,
                          preprocessing_threshold=0.5, preprocessing_consecutive=3,
                          preprocessing_remove_singles=False):
     """
@@ -147,8 +147,6 @@ def run_single_experiment(experiment_id, layer_count=1, output_dir=None,
     Args:
         experiment_id: ID of the experiment to analyze
         layer_count: Number of layers (1 or 2)
-        output_dir: Directory to save results (optional)
-        enable_polishing: Whether to enable parameter polishing
         enable_preprocessing: Whether to enable data preprocessing
         preprocessing_threshold: Error threshold for preprocessing
         preprocessing_consecutive: Consecutive points threshold
@@ -331,11 +329,8 @@ def main():
     print_metrics_report(fit_metrics, param_metrics, config_name)
     
     # Generate true SLD profile for plotting
-    true_sld_data = None
     if true_params_dict:
-        true_x, true_y = generate_true_sld_profile(true_params_dict)
-        if true_x is not None:
-            true_sld_data = (true_x, true_y)
+        generate_true_sld_profile(true_params_dict)
     
     # Create plots
     plot_simple_comparison(
