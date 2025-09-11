@@ -12,6 +12,7 @@ import numpy as np
 
 # Import the simple pipeline functions
 from simple_pipeline import run_single_experiment
+from plotting_utils import create_batch_analysis_plots
 
 
 class BatchInferencePipeline:
@@ -220,6 +221,9 @@ class BatchInferencePipeline:
             
             # Print summary to console
             self.print_summary_statistics(summary)
+            
+            # Print MAPE distribution summary
+            self.print_mape_summary(successful_results)
         
         return results_file, len(successful_results), len(all_results)
     
@@ -307,6 +311,38 @@ class BatchInferencePipeline:
             print(f"  Std:  {mape_stats['std']:.2f}%")
             print(f"  Range: {mape_stats['min']:.2f}% - {mape_stats['max']:.2f}%")
     
+    def print_mape_summary(self, successful_results):
+        """Print detailed MAPE distribution summary."""
+        # Collect MAPE values
+        mape_values = []
+        
+        for result in successful_results.values():
+            if 'param_metrics' in result and result['param_metrics']:
+                param_metrics = result['param_metrics']
+                if 'overall_mape' in param_metrics:
+                    mape_values.append(param_metrics['overall_mape'])
+        
+        if not mape_values:
+            return
+        
+        print("MAPE DISTRIBUTION SUMMARY:")
+        print("-" * 50)
+        print(f"Total experiments: {len(mape_values)}")
+        print(f"Mean MAPE: {np.mean(mape_values):.1f}% ± {np.std(mape_values):.1f}%")
+        print(f"Median MAPE: {np.median(mape_values):.1f}%")
+        print(f"Range: {np.min(mape_values):.1f}% - {np.max(mape_values):.1f}%")
+        
+        # Count experiments in quality ranges
+        excellent = sum(1 for mape in mape_values if mape < 5)
+        good = sum(1 for mape in mape_values if 5 <= mape < 10)
+        acceptable = sum(1 for mape in mape_values if 10 <= mape < 20)
+        poor = sum(1 for mape in mape_values if mape >= 20)
+        
+        print(f"Excellent (< 5%): {excellent} ({100*excellent/len(mape_values):.1f}%)")
+        print(f"Good (5-10%): {good} ({100*good/len(mape_values):.1f}%)")
+        print(f"Acceptable (10-20%): {acceptable} ({100*acceptable/len(mape_values):.1f}%)")
+        print(f"Poor (≥ 20%): {poor} ({100*poor/len(mape_values):.1f}%)")
+    
     def run(self):
         """Run the complete batch processing pipeline."""
         print("STARTING BATCH INFERENCE PIPELINE")
@@ -326,6 +362,21 @@ class BatchInferencePipeline:
         
         # Save results
         _, successful_count, total_count = self.save_results(all_results)
+        
+        # Create batch analysis plots if there are successful results
+        if successful_count > 0:
+            print("\nCreating batch analysis plots...")
+            try:
+                create_batch_analysis_plots(
+                    all_results, 
+                    layer_count=self.layer_count, 
+                    output_dir=str(self.output_dir), 
+                    save=True
+                )
+            except Exception as e:  # pylint: disable=broad-except
+                print(f"Warning: Failed to create plots: {e}")
+        else:
+            print("No successful results - skipping plot generation")
         
         # Final summary
         end_time = time.time()
