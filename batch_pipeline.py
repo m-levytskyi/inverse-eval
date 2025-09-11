@@ -68,8 +68,18 @@ class BatchInferencePipeline:
         self.narrow_priors_deviation = narrow_priors_deviation
         self.priors_type = "narrow" if use_narrow_priors else "broad"
         
-        # Create output directory
-        self.output_dir.mkdir(exist_ok=True)
+        # Create timestamped output directory in batch_inference_results
+        timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
+        if experiment_ids:
+            folder_name = f"custom_{len(experiment_ids)}experiments_{layer_count}_layer_{timestamp}"
+        else:
+            folder_name = f"{num_experiments}experiments_{layer_count}_layer_{timestamp}"
+        self.output_dir = Path("batch_inference_results") / folder_name
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create organized output directories
+        self.plots_dir = self.output_dir / "plots"
+        self.plots_dir.mkdir(exist_ok=True)
         
         print(f"Output directory: {self.output_dir}")
         print(f"Layer count: {self.layer_count}")
@@ -264,7 +274,8 @@ class BatchInferencePipeline:
         if successful_results:
             summary = self.create_summary_statistics(successful_results)
             
-            summary_file = self.output_dir / "batch_summary.json"
+            # Save with naming convention from batch_inference_pipeline.py  
+            summary_file = self.output_dir / f"batch_summary_{self.layer_count}layer.json"
             with open(summary_file, 'w', encoding='utf-8') as f:
                 json.dump(summary, f, indent=2)
             
