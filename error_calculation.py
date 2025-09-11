@@ -96,17 +96,14 @@ def calculate_parameter_metrics(pred_params, true_params, param_names):
         pred_val = pred_params[i]
         true_val = true_params[i]
         
-        # Convert SLD values to same units for proper comparison
+        # No unit conversion needed - both predicted and true values are already in consistent units
+        # The parsing process has already converted true SLD values to the same scale as predictions
+        pred_converted = pred_val
+        true_converted = true_val
+        
         if 'sld' in param_name.lower():
-            # The model predicts in scientific notation, true values are in 10^-6 units
-            # Convert both to 10^-6 units for comparison
-            pred_converted = pred_val * 1e6
-            true_converted = true_val  # Already in 10^-6 units from parsing
-            print(f"SLD unit conversion for {param_name} - Pred: {pred_val:.6e} -> {pred_converted:.4f}, True: {true_val:.4f}")
-        else:
-            pred_converted = pred_val
-            true_converted = true_val
-            
+            print(f"SLD comparison for {param_name} - Pred: {pred_val:.6f}, True: {true_val:.6f} (no conversion needed)")
+        
         pred_params_converted.append(pred_converted)
         true_params_converted.append(true_converted)
 
