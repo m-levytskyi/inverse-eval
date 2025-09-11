@@ -9,6 +9,9 @@ import json
 import time
 from pathlib import Path
 import numpy as np
+from datetime import datetime
+from collections import defaultdict
+import matplotlib.pyplot as plt
 
 # Import the simple pipeline functions
 from simple_pipeline import run_single_experiment
@@ -46,20 +49,22 @@ class BatchInferencePipeline:
     def __init__(self, num_experiments=DEFAULT_NUM_EXPERIMENTS, layer_count=DEFAULT_LAYER_COUNT, 
                  output_dir=DEFAULT_OUTPUT_DIR, data_directory=DEFAULT_DATA_DIRECTORY, 
                  enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, use_narrow_priors=USE_NARROW_PRIORS,
-                 narrow_priors_deviation=NARROW_PRIORS_DEVIATION):
+                 narrow_priors_deviation=NARROW_PRIORS_DEVIATION, experiment_ids=None):
         """
         Initialize the batch inference pipeline.
         
         Args:
-            num_experiments: Number of experiments to process
+            num_experiments: Number of experiments to process (ignored if experiment_ids provided)
             layer_count: Number of layers (1 or 2)
             output_dir: Output directory for results
             data_directory: Directory containing experimental data
             enable_preprocessing: Whether to enable data preprocessing
             use_narrow_priors: Whether to use narrow priors (requires true parameters)
             narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
+            experiment_ids: List of specific experiment IDs to process (optional)
         """
-        self.num_experiments = num_experiments
+        self.experiment_ids = experiment_ids
+        self.num_experiments = len(experiment_ids) if experiment_ids else num_experiments
         self.layer_count = layer_count
         self.output_dir = Path(output_dir)
         self.data_directory = Path(data_directory)
@@ -83,6 +88,10 @@ class BatchInferencePipeline:
         
         print(f"Output directory: {self.output_dir}")
         print(f"Layer count: {self.layer_count}")
+        if experiment_ids:
+            print(f"Processing specific experiments: {experiment_ids}")
+        else:
+            print(f"Processing first {self.num_experiments} experiments")
         print(f"Preprocessing: {'enabled' if self.enable_preprocessing else 'disabled'}")
         print(f"Prior bounds: {self.priors_type}")
         if self.use_narrow_priors:
@@ -124,10 +133,31 @@ class BatchInferencePipeline:
     def discover_experiments(self):
         """
         Discover available experiments in the data directory.
+        If specific experiment IDs were provided, validate and return those.
+        Otherwise, discover experiments from the data directory.
         
         Returns:
             List of experiment IDs
         """
+        if self.experiment_ids:
+            print(f"\nUsing provided experiment IDs: {self.experiment_ids}")
+            
+            # Validate that the experiments exist
+            validated_experiments = []
+            for exp_id in self.experiment_ids:
+                if self._experiment_exists(exp_id):
+                    validated_experiments.append(exp_id)
+                    print(f"  ✓ {exp_id}: found")
+                else:
+                    print(f"  ✗ {exp_id}: not found - skipping")
+            
+            if not validated_experiments:
+                raise FileNotFoundError("None of the provided experiment IDs were found")
+            
+            print(f"Validated {len(validated_experiments)}/{len(self.experiment_ids)} experiments")
+            return validated_experiments
+        
+        # Original discovery logic
         print(f"\nDiscovering experiments in {self.data_directory}")
         
         experiments = []
@@ -178,6 +208,38 @@ class BatchInferencePipeline:
             print(f"Limited to first {self.num_experiments} experiments")
         
         return experiments
+    
+    def _experiment_exists(self, experiment_id):
+        """
+        Check if an experiment exists in the data directory.
+        
+        Args:
+            experiment_id: Experiment identifier
+            
+        Returns:
+            bool: True if experiment files exist
+        """
+        # Check MARIA dataset structure
+        maria_dataset_path = self.data_directory / "MARIA_VIPR_dataset"
+        if maria_dataset_path.exists():
+            for layer_dir in maria_dataset_path.iterdir():
+                if layer_dir.is_dir() and layer_dir.name.isdigit():
+                    exp_file = layer_dir / f"{experiment_id}_experimental_curve.dat"
+                    model_file = layer_dir / f"{experiment_id}_model.txt"
+                    if not model_file.exists():
+                        model_file = layer_dir / f"{experiment_id}_model.dat"
+                    
+                    if exp_file.exists() and model_file.exists():
+                        return True
+        
+        # Check test data structure
+        test_data_path = self.data_directory / "test_data" / str(self.layer_count)
+        if test_data_path.exists():
+            exp_file = test_data_path / f"{experiment_id}_experimental_curve.dat"
+            if exp_file.exists():
+                return True
+        
+        return False
     
     def process_single_experiment_wrapper(self, experiment_id):
         """
@@ -466,6 +528,8 @@ def parse_arguments():
                        help='Disable data preprocessing')
     parser.add_argument('--output-dir', type=str, default='batch_results',
                        help='Output directory (default: batch_results)')
+    parser.add_argument('--experiment-ids', type=str, nargs='+',
+                       help='Specific experiment IDs to process (e.g., s005156 s004141)')
     
     return parser.parse_args()
 
@@ -480,7 +544,8 @@ def main():
         layer_count=args.layer_count,
         output_dir=args.output_dir,
         data_directory=args.data_directory,
-        enable_preprocessing=not args.disable_preprocessing
+        enable_preprocessing=not args.disable_preprocessing,
+        experiment_ids=args.experiment_ids
     )
     
     # Run the pipeline
