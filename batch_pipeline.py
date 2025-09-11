@@ -14,14 +14,39 @@ import numpy as np
 from simple_pipeline import run_single_experiment
 from plotting_utils import create_batch_analysis_plots
 
+# =============================================================================
+# CONFIGURATION PARAMETERS - Adjust these as needed
+# =============================================================================
+
+# Batch processing configuration
+DEFAULT_NUM_EXPERIMENTS = 10
+DEFAULT_LAYER_COUNT = 1
+DEFAULT_OUTPUT_DIR = "batch_results"
+DEFAULT_DATA_DIRECTORY = "data"
+
+# Preprocessing configuration  
+DEFAULT_ENABLE_PREPROCESSING = True
+DEFAULT_PREPROCESSING_THRESHOLD = 0.5      # Relative error threshold (50%)
+DEFAULT_PREPROCESSING_CONSECUTIVE = 3      # Consecutive high-error points
+DEFAULT_PREPROCESSING_REMOVE_SINGLES = False
+
+# Prior bounds configuration
+USE_NARROW_PRIORS = True                   # Set to False to use broad priors
+NARROW_PRIORS_DEVIATION = 0.3              # Deviation for narrow priors (30%)
+PRIORS_TYPE = "narrow" if USE_NARROW_PRIORS else "broad"
+
+# =============================================================================
+
 
 class BatchInferencePipeline:
     """
     Batch processing pipeline that leverages simple_pipeline functions.
     """
     
-    def __init__(self, num_experiments=10, layer_count=1, output_dir="batch_results", 
-                 data_directory="data", enable_preprocessing=True):
+    def __init__(self, num_experiments=DEFAULT_NUM_EXPERIMENTS, layer_count=DEFAULT_LAYER_COUNT, 
+                 output_dir=DEFAULT_OUTPUT_DIR, data_directory=DEFAULT_DATA_DIRECTORY, 
+                 enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, use_narrow_priors=USE_NARROW_PRIORS,
+                 narrow_priors_deviation=NARROW_PRIORS_DEVIATION):
         """
         Initialize the batch inference pipeline.
         
@@ -31,12 +56,17 @@ class BatchInferencePipeline:
             output_dir: Output directory for results
             data_directory: Directory containing experimental data
             enable_preprocessing: Whether to enable data preprocessing
+            use_narrow_priors: Whether to use narrow priors (requires true parameters)
+            narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
         """
         self.num_experiments = num_experiments
         self.layer_count = layer_count
         self.output_dir = Path(output_dir)
         self.data_directory = Path(data_directory)
         self.enable_preprocessing = enable_preprocessing
+        self.use_narrow_priors = use_narrow_priors
+        self.narrow_priors_deviation = narrow_priors_deviation
+        self.priors_type = "narrow" if use_narrow_priors else "broad"
         
         # Create output directory
         self.output_dir.mkdir(exist_ok=True)
@@ -44,6 +74,42 @@ class BatchInferencePipeline:
         print(f"Output directory: {self.output_dir}")
         print(f"Layer count: {self.layer_count}")
         print(f"Preprocessing: {'enabled' if self.enable_preprocessing else 'disabled'}")
+        print(f"Prior bounds: {self.priors_type}")
+        if self.use_narrow_priors:
+            print(f"Narrow priors deviation: ±{self.narrow_priors_deviation*100:.1f}%")
+    
+    def _convert_to_json_serializable(self, obj):
+        """
+        Recursively convert objects to JSON serializable format.
+        
+        Args:
+            obj: Object to convert
+            
+        Returns:
+            JSON serializable version of the object
+        """
+        if isinstance(obj, dict):
+            return {k: self._convert_to_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_to_json_serializable(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return list(self._convert_to_json_serializable(list(obj)))
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
+        elif hasattr(obj, '__dict__'):
+            # Handle objects with attributes (like BasicParams)
+            return {k: self._convert_to_json_serializable(v) for k, v in obj.__dict__.items()}
+        else:
+            # Try to handle other types
+            try:
+                import json
+                json.dumps(obj)  # Test if it's already JSON serializable
+                return obj
+            except (TypeError, ValueError):
+                # If all else fails, convert to string
+                return str(obj)
     
     def discover_experiments(self):
         """
@@ -123,7 +189,9 @@ class BatchInferencePipeline:
                 enable_preprocessing=self.enable_preprocessing,
                 preprocessing_threshold=0.5,
                 preprocessing_consecutive=3,
-                preprocessing_remove_singles=False
+                preprocessing_remove_singles=False,
+                priors_type=self.priors_type,
+                priors_deviation=self.narrow_priors_deviation
             )
             
             # Add experiment metadata
@@ -182,25 +250,8 @@ class BatchInferencePipeline:
         # Save detailed results as JSON
         results_file = self.output_dir / "batch_results.json"
         
-        # Convert numpy arrays to lists for JSON serialization
-        json_results = {}
-        for exp_id, result in all_results.items():
-            json_result = {}
-            for key, value in result.items():
-                if isinstance(value, np.ndarray):
-                    json_result[key] = value.tolist()
-                elif isinstance(value, dict):
-                    # Handle nested dictionaries (like prediction_dict)
-                    json_dict = {}
-                    for k, v in value.items():
-                        if isinstance(v, np.ndarray):
-                            json_dict[k] = v.tolist()
-                        else:
-                            json_dict[k] = v
-                    json_result[key] = json_dict
-                else:
-                    json_result[key] = value
-            json_results[exp_id] = json_result
+        # Convert to JSON serializable format
+        json_results = self._convert_to_json_serializable(all_results)
         
         with open(results_file, 'w', encoding='utf-8') as f:
             json.dump(json_results, f, indent=2)

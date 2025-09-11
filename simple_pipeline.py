@@ -140,7 +140,8 @@ def display_results(prediction_dict):
 
 def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=True,
                          preprocessing_threshold=0.5, preprocessing_consecutive=3,
-                         preprocessing_remove_singles=False):
+                         preprocessing_remove_singles=False, priors_type="broad", 
+                         priors_deviation=0.5):
     """
     Run a single experiment inference with configurable options.
     
@@ -151,6 +152,8 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         preprocessing_threshold: Error threshold for preprocessing
         preprocessing_consecutive: Consecutive points threshold
         preprocessing_remove_singles: Remove isolated high-error points
+        priors_type: Type of priors to use ("broad" or "narrow")
+        priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
     
     Returns:
         Dictionary with results including parameters and metrics
@@ -185,7 +188,8 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
     prior_bounds = get_prior_bounds_for_experiment(
         experiment_id, 
         true_params_dict, 
-        priors_type="broad",
+        priors_type=priors_type,
+        deviation=priors_deviation,
         layer_count=final_layer_count
     )
     
