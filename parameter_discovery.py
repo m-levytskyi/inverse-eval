@@ -345,29 +345,6 @@ def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000
     return x_axis, sld_profile
 
 
-def auto_detect_layer_count(model_file_path):
-    """
-    Automatically detect the number of layers from a model file.
-    
-    Args:
-        model_file_path: Path to model file
-        
-    Returns:
-        Number of layers (1 or 2) or None if cannot determine
-    """
-    true_params = parse_true_parameters_from_model_file(model_file_path)
-    
-    if '2_layer' in true_params:
-        print("Auto-detected: 2 layers")
-        return 2
-    elif '1_layer' in true_params:
-        print("Auto-detected: 1 layer")
-        return 1
-    else:
-        print("Could not auto-detect layer count")
-        return None
-
-
 def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None, 
                                    priors_type="broad", deviation=0.5, layer_count=1):
     """
@@ -398,8 +375,10 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
                     max_val = param * (1 + deviation)
                     bounds.append((min_val, max_val))
                 else:
-                    # Handle zero or negative parameters
-                    bounds.append((-abs(param) - 1, abs(param) + 1))
+                    # For negative parameters, use relative deviation around the true value
+                    min_val = param * (1 + deviation)  # More negative
+                    max_val = param * (1 - deviation)  # Less negative
+                    bounds.append((min_val, max_val))
             
             print(f"Generated narrow priors with {deviation*100}% deviation")
             return bounds
