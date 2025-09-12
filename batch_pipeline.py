@@ -44,6 +44,9 @@ DEFAULT_PREPROCESSING_REMOVE_SINGLES = False
 # Constraints configuration
 DEFAULT_APPLY_CONSTRAINTS = True           # Apply physical constraints
 
+# SLD fixing configuration
+DEFAULT_FIX_SLD_MODE = "all"              # SLD fixing mode: "none", "fronting_backing", "all"
+
 # Prior bounds configuration
 USE_NARROW_PRIORS = True                   # Set to False to use broad priors
 NARROW_PRIORS_DEVIATION = 0.99            # Deviation for narrow priors
@@ -61,7 +64,7 @@ class BatchInferencePipeline:
                  output_dir=DEFAULT_OUTPUT_DIR, data_directory=DEFAULT_DATA_DIRECTORY, 
                  enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, apply_constraints=DEFAULT_APPLY_CONSTRAINTS,
                  use_narrow_priors=USE_NARROW_PRIORS, narrow_priors_deviation=NARROW_PRIORS_DEVIATION, 
-                 experiment_ids=None):
+                 experiment_ids=None, fix_sld_mode=DEFAULT_FIX_SLD_MODE):
         """
         Initialize the batch inference pipeline.
         
@@ -74,6 +77,7 @@ class BatchInferencePipeline:
             apply_constraints: Whether to apply physical constraints to parameters
             use_narrow_priors: Whether to use narrow priors (requires true parameters)
             narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
+            fix_sld_mode: SLD fixing mode - "none", "fronting_backing", or "all"
             experiment_ids: List of specific experiment IDs to process (optional)
         """
         self.experiment_ids = experiment_ids
@@ -84,6 +88,7 @@ class BatchInferencePipeline:
         self.apply_constraints = apply_constraints
         self.use_narrow_priors = use_narrow_priors
         self.narrow_priors_deviation = narrow_priors_deviation
+        self.fix_sld_mode = fix_sld_mode
         self.priors_type = "narrow" if use_narrow_priors else "broad"
         
         # Create timestamped output directory in batch_inference_results
@@ -108,6 +113,7 @@ class BatchInferencePipeline:
         print(f"Preprocessing: {'enabled' if self.enable_preprocessing else 'disabled'}")
         print(f"Physical constraints: {'enabled' if self.apply_constraints else 'disabled'}")
         print(f"Prior bounds: {self.priors_type}")
+        print(f"SLD fixing mode: {self.fix_sld_mode}")
         if self.use_narrow_priors:
             print(f"Narrow priors deviation: ±{self.narrow_priors_deviation*100:.1f}%")
     
@@ -152,7 +158,8 @@ class BatchInferencePipeline:
                 preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
                 apply_constraints=self.apply_constraints,
                 priors_type=self.priors_type,
-                priors_deviation=self.narrow_priors_deviation if self.use_narrow_priors else 0.5
+                priors_deviation=self.narrow_priors_deviation if self.use_narrow_priors else 0.5,
+                fix_sld_mode=self.fix_sld_mode
             )
             
             # Success with primary priors
@@ -188,7 +195,8 @@ class BatchInferencePipeline:
                         preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
                         apply_constraints=self.apply_constraints,
                         priors_type="broad",
-                        priors_deviation=0.5
+                        priors_deviation=0.5,
+                        fix_sld_mode="none"  # Disable SLD fixing in fallback mode
                     )
                     
                     # Success with broad priors fallback
@@ -384,6 +392,9 @@ def parse_arguments():
                        help='Output directory (default: batch_results)')
     parser.add_argument('--experiment-ids', type=str, nargs='+',
                        help='Specific experiment IDs to process (e.g., s005156 s004141)')
+    parser.add_argument('--fix-sld-mode', type=str, choices=['none', 'fronting_backing', 'all'], 
+                       default='none',
+                       help='SLD fixing mode: none (default), fronting_backing, or all')
     
     return parser.parse_args()
 
@@ -400,6 +411,7 @@ def main():
         data_directory=args.data_directory,
         enable_preprocessing=not args.disable_preprocessing,
         apply_constraints=not args.disable_constraints,
+        fix_sld_mode=args.fix_sld_mode,
         experiment_ids=args.experiment_ids
     )
     

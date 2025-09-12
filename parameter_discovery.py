@@ -345,8 +345,64 @@ def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000
     return x_axis, sld_profile
 
 
+def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
+    """
+    Apply SLD fixing to prior bounds based on the specified mode.
+    
+    Args:
+        bounds: List of (min, max) tuples for prior bounds
+        true_params_dict: Dictionary with true parameters
+        layer_count: Number of layers (1 or 2)
+        fix_sld_mode: SLD fixing mode - "fronting_backing", "all", or "none"
+        
+    Returns:
+        Updated list of (min, max) tuples with fixed SLD bounds
+    """
+    if fix_sld_mode == "none" or not true_params_dict:
+        return bounds
+    
+    layer_key = f'{layer_count}_layer'
+    if layer_key not in true_params_dict:
+        print(f"Warning: No true parameters found for {layer_count} layer - cannot apply SLD fixing")
+        return bounds
+    
+    true_params = true_params_dict[layer_key]['params']
+    param_names = get_parameter_names_for_layer_count(layer_count)
+    
+    # Create a copy of bounds to modify
+    fixed_bounds = list(bounds)
+    
+    print(f"Applying SLD fixing mode: {fix_sld_mode}")
+    
+    # Define which SLDs to fix based on mode
+    if fix_sld_mode == "fronting_backing":
+        if layer_count == 1:
+            sld_params_to_fix = ['layer_sld', 'sub_sld']  # fronting and backing
+        elif layer_count == 2:
+            sld_params_to_fix = ['layer1_sld', 'sub_sld']  # fronting (first layer) and backing
+    elif fix_sld_mode == "all":
+        if layer_count == 1:
+            sld_params_to_fix = ['layer_sld', 'sub_sld']  # all SLDs
+        elif layer_count == 2:
+            sld_params_to_fix = ['layer1_sld', 'layer2_sld', 'sub_sld']  # all SLDs
+    else:
+        raise ValueError(f"Unknown fix_sld_mode: {fix_sld_mode}")
+    
+    # Apply fixing
+    for i, param_name in enumerate(param_names):
+        if param_name in sld_params_to_fix:
+            true_value = true_params[i]
+            # Set tight bounds around the true value (±0.001 to essentially fix it)
+            epsilon = 0.001
+            fixed_bounds[i] = (true_value - epsilon, true_value + epsilon)
+            print(f"  Fixed {param_name}: {true_value:.3f} (bounds: [{true_value - epsilon:.3f}, {true_value + epsilon:.3f}])")
+    
+    return fixed_bounds
+
+
 def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None, 
-                                   priors_type="broad", deviation=0.5, layer_count=1):
+                                   priors_type="broad", deviation=0.5, layer_count=1,
+                                   fix_sld_mode="none"):
     """
     Generate appropriate prior bounds for an experiment.
     
@@ -356,11 +412,14 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
         priors_type: "broad" or "narrow"
         deviation: Relative deviation for narrow priors (e.g., 0.5 for 50%)
         layer_count: Number of layers (1 or 2)
+        fix_sld_mode: SLD fixing mode - "none", "fronting_backing", or "all"
         
     Returns:
         List of (min, max) tuples for prior bounds
     """
     print(f"Generating {priors_type} prior bounds for {experiment_id} ({layer_count} layer{'s' if layer_count > 1 else ''})")
+    if fix_sld_mode != "none":
+        print(f"SLD fixing mode: {fix_sld_mode}")
     
     if priors_type == "narrow" and true_params_dict:
         # Use true parameters to generate narrow priors
@@ -475,8 +534,12 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
             
             print(f"Generated narrow priors with {deviation*100}% deviation (constrained to model limits)")
             
+            # Apply SLD fixing if requested
+            if fix_sld_mode != "none":
+                bounds = apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode)
+            
             # Log the detailed bounds for debugging
-            print("Narrow prior bounds details:")
+            print("Final narrow prior bounds details:")
             for i, (name, (min_val, max_val)) in enumerate(zip(param_names, bounds)):
                 width = max_val - min_val
                 print(f"  {name}: [{min_val:.3f}, {max_val:.3f}] (width: {width:.3f})")
@@ -509,9 +572,13 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
     
     print(f"Using default broad {layer_count}-layer priors")
     
+    # Apply SLD fixing if requested and true parameters are available
+    if fix_sld_mode != "none" and true_params_dict:
+        broad_priors = apply_sld_fixing(broad_priors, true_params_dict, layer_count, fix_sld_mode)
+    
     # Log the detailed bounds for debugging
     param_names = get_parameter_names_for_layer_count(layer_count)
-    print("Broad prior bounds details:")
+    print("Final prior bounds details:")
     for i, (name, (min_val, max_val)) in enumerate(zip(param_names, broad_priors)):
         print(f"  {name}: [{min_val:.3f}, {max_val:.3f}]")
     

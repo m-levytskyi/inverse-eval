@@ -106,7 +106,7 @@ def display_results(prediction_dict):
 def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=True,
                          preprocessing_threshold=0.5, preprocessing_consecutive=3,
                          preprocessing_remove_singles=False, apply_constraints=True,
-                         priors_type="broad", priors_deviation=0.5):
+                         priors_type="broad", priors_deviation=0.5, fix_sld_mode="none"):
     """
     Run a single experiment inference with configurable options.
     
@@ -120,6 +120,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         apply_constraints: Whether to apply physical constraints to parameters
         priors_type: Type of priors to use ("broad" or "narrow")
         priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
+        fix_sld_mode: SLD fixing mode - "none", "fronting_backing", or "all"
     
     Returns:
         Dictionary with results including parameters and metrics
@@ -156,7 +157,8 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         true_params_dict, 
         priors_type=priors_type,
         deviation=priors_deviation,
-        layer_count=final_layer_count
+        layer_count=final_layer_count,
+        fix_sld_mode=fix_sld_mode
     )
     
     # Initialize inference model
@@ -200,7 +202,8 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         'prior_bounds': prior_bounds,
         'priors_config': {
             'priors_type': priors_type,
-            'priors_deviation': priors_deviation
+            'priors_deviation': priors_deviation,
+            'fix_sld_mode': fix_sld_mode
         }
     }
     
@@ -261,7 +264,8 @@ def main():
         experiment_name, 
         true_params_dict, 
         priors_type="broad",
-        layer_count=final_layer_count
+        layer_count=final_layer_count,
+        fix_sld_mode="none"  # Default for main function
     )
     
     print("\nPrior bounds:")
