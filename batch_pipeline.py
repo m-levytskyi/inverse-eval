@@ -38,7 +38,7 @@ DEFAULT_APPLY_CONSTRAINTS = True           # Apply physical constraints to preve
 
 # Prior bounds configuration
 USE_NARROW_PRIORS = True                   # Set to False to use broad priors
-NARROW_PRIORS_DEVIATION = 0.3              # Deviation for narrow priors (30%)
+NARROW_PRIORS_DEVIATION = 0.99              # Deviation for narrow priors (0.3 = 30%)
 PRIORS_TYPE = "narrow" if USE_NARROW_PRIORS else "broad"
 
 # =============================================================================

@@ -14,18 +14,19 @@ from sld_profile_utils import sld_profile
 
 # Define experiments, model, and two sets of custom priors
 # experiments = ["s003981", "s005888"]
-experiments = ["s003981", "s005888", "s004934"] #s006965
+# experiments = ["s003981", "s005888", "s004934"] #s006965
+experiments = ["s005888"]
 models_list = ["b_mc_point_neutron_conv_standard_L1_InputQDq"]
 
 # Define custom priors for each experiment (order matches experiments list)
 custom_priors_list = [
-    [# s003981
-        [0, 500.0],      # L1 thickness (Å)
-        [0.5, 30.0],         # ambient/L1 roughness (Å)
-        [0.5, 250.0],        # L1/substrate roughness (Å)
-        [4.71637e-06, 4.71637e-06],      # L1 SLD (×10⁻⁶ Å⁻²)
-        [-4.77301e-07, -4.77301e-07]       # substrate SLD (×10⁻⁶ Å⁻²)
-    ],
+    # [# s003981
+    #     [0, 500.0],      # L1 thickness (Å)
+    #     [0.5, 30.0],         # ambient/L1 roughness (Å)
+    #     [0.5, 250.0],        # L1/substrate roughness (Å)
+    #     [4.71637e-06, 4.71637e-06],      # L1 SLD (×10⁻⁶ Å⁻²)
+    #     [-4.77301e-07, -4.77301e-07]       # substrate SLD (×10⁻⁶ Å⁻²)
+    # ],
     [# s005888 - as in GUI
         [142.0, 427.0],
         [3.5, 10.5],
@@ -33,13 +34,13 @@ custom_priors_list = [
         [11e-06, 16e-06],
         [11e-06, 16e-06]
     ],
-    [# s004934 
-        [0, 500.0],
-        [0.5, 30.0],
-        [0.5, 60.0],
-        [-1.48075e-07, -1.48075e-07],
-        [1.92389e-06, 1.92389e-06]
-    ]
+    # [# s004934 
+    #     [0, 500.0],
+    #     [0.5, 30.0],
+    #     [0.5, 60.0],
+    #     [-1.48075e-07, -1.48075e-07],
+    #     [1.92389e-06, 1.92389e-06]
+    # ]
 ]
 
 print("--- Initial Custom Priors Defined ---")
@@ -69,11 +70,11 @@ for exp_id, custom_priors in zip(experiments, custom_priors_list):
         data_directory="data",
         priors_type="custom",
         custom_priors=custom_priors,
-        preprocess=False,
+        preprocess=True,
         layer_count=1,
         output_dir=exp_outdir
     )
-    pipeline.run_all_models(show_plots=False)
+    pipeline.run_all_models()
     results[exp_id] = pipeline.results
     print(f"Results for {exp_id} saved in {exp_outdir}")
 
