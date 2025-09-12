@@ -367,26 +367,119 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
         layer_key = f'{layer_count}_layer'
         if layer_key in true_params_dict:
             true_params = true_params_dict[layer_key]['params']
+            param_names = get_parameter_names_for_layer_count(layer_count)
             bounds = []
             
-            for param in true_params:
-                if param > 0:
-                    min_val = param * (1 - deviation)
-                    max_val = param * (1 + deviation)
-                    bounds.append((min_val, max_val))
+            # Model constraints and allowed widths
+            model_constraints = {
+                'thickness': (1.0, 1000.0),
+                'amb_rough': (0.0, 60.0),
+                'sub_rough': (0.0, 60.0),
+                'int_rough': (0.0, 60.0),  # for 2-layer
+                'layer_sld': (-8.0, 16.0),
+                'layer1_sld': (-8.0, 16.0),  # for 2-layer
+                'layer2_sld': (-8.0, 16.0),  # for 2-layer
+                'sub_sld': (-8.0, 16.0),
+                'thickness1': (1.0, 1000.0),  # for 2-layer
+                'thickness2': (1.0, 1000.0)   # for 2-layer
+            }
+            
+            allowed_widths = {
+                'thickness': (0.01, 1000.0),
+                'amb_rough': (0.01, 60.0),
+                'sub_rough': (0.01, 60.0),
+                'int_rough': (0.01, 60.0),  # for 2-layer
+                'layer_sld': (0.01, 5.0),
+                'layer1_sld': (0.01, 5.0),  # for 2-layer
+                'layer2_sld': (0.01, 5.0),  # for 2-layer
+                'sub_sld': (0.01, 5.0),
+                'thickness1': (0.01, 1000.0),  # for 2-layer
+                'thickness2': (0.01, 1000.0)   # for 2-layer
+            }
+            
+            for i, (param_name, param_value) in enumerate(zip(param_names, true_params)):
+                # Get constraints for this parameter
+                model_min, model_max = model_constraints.get(param_name, (-1e6, 1e6))
+                width_min, width_max = allowed_widths.get(param_name, (0.01, 1e6))
+                
+                # Calculate initial bounds based on deviation
+                if param_value > 0:
+                    min_val = param_value * (1 - deviation)
+                    max_val = param_value * (1 + deviation)
                 else:
                     # For negative parameters, use relative deviation around the true value
-                    min_val = param * (1 + deviation)  # More negative
-                    max_val = param * (1 - deviation)  # Less negative
-                    bounds.append((min_val, max_val))
+                    min_val = param_value * (1 + deviation)  # More negative
+                    max_val = param_value * (1 - deviation)  # Less negative
+                
+                # Ensure proper ordering (min < max)
+                if min_val > max_val:
+                    min_val, max_val = max_val, min_val
+                
+                # Calculate current width
+                current_width = max_val - min_val
+                
+                # Constrain width to allowed limits
+                if current_width < width_min:
+                    # Expand bounds symmetrically around true value
+                    center = param_value
+                    half_width = width_min / 2
+                    min_val = center - half_width
+                    max_val = center + half_width
+                elif current_width > width_max:
+                    # Shrink bounds symmetrically around true value
+                    center = param_value
+                    half_width = width_max / 2
+                    min_val = center - half_width
+                    max_val = center + half_width
+                
+                # Constrain to model limits
+                min_val = max(min_val, model_min)
+                max_val = min(max_val, model_max)
+                
+                # Ensure min <= max after constraining to model limits
+                if min_val > max_val:
+                    # If true parameter is outside model constraints, use full model range
+                    if param_value > model_max:
+                        # True value too high, use full model range or centered around model_max
+                        max_val = model_max
+                        min_val = max(model_max - width_max, model_min)
+                    elif param_value < model_min:
+                        # True value too low, use full model range or centered around model_min
+                        min_val = model_min
+                        max_val = min(model_min + width_max, model_max)
+                    else:
+                        # Should not happen, but safety fallback
+                        min_val = model_min
+                        max_val = model_max
+                
+                # Final check: ensure minimum width is still respected after model constraints
+                final_width = max_val - min_val
+                if final_width < width_min:
+                    # If constraining to model limits made width too small, 
+                    # expand within model limits as much as possible
+                    available_width = model_max - model_min
+                    if available_width >= width_min:
+                        center = (min_val + max_val) / 2
+                        half_width = width_min / 2
+                        min_val = max(center - half_width, model_min)
+                        max_val = min(center + half_width, model_max)
+                        # Adjust if still outside bounds
+                        if max_val > model_max:
+                            max_val = model_max
+                            min_val = max_val - width_min
+                        if min_val < model_min:
+                            min_val = model_min
+                            max_val = min_val + width_min
+                
+                bounds.append((min_val, max_val))
             
-            print(f"Generated narrow priors with {deviation*100}% deviation")
+            print(f"Generated narrow priors with {deviation*100}% deviation (constrained to model limits)")
             
             # Log the detailed bounds for debugging
-            param_names = get_parameter_names_for_layer_count(layer_count)
             print("Narrow prior bounds details:")
             for i, (name, (min_val, max_val)) in enumerate(zip(param_names, bounds)):
-                print(f"  {name}: [{min_val:.3f}, {max_val:.3f}]")
+                width = max_val - min_val
+                print(f"  {name}: [{min_val:.3f}, {max_val:.3f}] (width: {width:.3f})")
             
             return bounds
     
