@@ -548,6 +548,99 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
         return None
 
 
+def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", save=True):
+    """
+    Create MAPE distribution plot showing how experiments are distributed across MAPE ranges.
+    
+    Args:
+        batch_results: Dictionary of batch results from BatchInferencePipeline
+        layer_count: Number of layers for plot title
+        output_dir: Directory to save plot
+        save: Whether to save the plot
+        
+    Returns:
+        Figure path if saved, None otherwise
+    """
+    # Import here to avoid circular imports
+    from batch_analysis import create_mape_distribution_plot
+    
+    # Filter successful results
+    successful_results = {k: v for k, v in batch_results.items() if v.get('success', False)}
+    
+    if not successful_results:
+        print("No successful results available for MAPE distribution plot")
+        return None
+    
+    if save:
+        plots_dir = Path(output_dir) / "plots"
+        plots_dir.mkdir(exist_ok=True)
+        return create_mape_distribution_plot(successful_results, layer_count, plots_dir)
+    else:
+        return create_mape_distribution_plot(successful_results, layer_count, Path(output_dir))
+
+
+def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".", save=True):
+    """
+    Create edge case detection visualization showing worst performing experiments.
+    
+    Args:
+        batch_results: Dictionary of batch results from BatchInferencePipeline
+        layer_count: Number of layers for plot title
+        output_dir: Directory to save plot
+        save: Whether to save the plot
+        
+    Returns:
+        Figure path if saved, None otherwise
+    """
+    # Import here to avoid circular imports
+    from batch_analysis import detect_edge_cases
+    
+    # Filter successful results
+    successful_results = {k: v for k, v in batch_results.items() if v.get('success', False)}
+    
+    if not successful_results:
+        print("No successful results available for edge case detection")
+        return None
+    
+    # Detect edge cases (this function also prints them)
+    edge_cases = detect_edge_cases(successful_results)
+    
+    # For now, just return None as the function mainly prints results
+    # Could be extended to create an actual plot in the future
+    return None
+
+
+def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".", save=True):
+    """
+    Create parameter-specific MAPE breakdown showing performance by parameter type.
+    
+    Args:
+        batch_results: Dictionary of batch results from BatchInferencePipeline
+        layer_count: Number of layers for plot title
+        output_dir: Directory to save plot
+        save: Whether to save the plot
+        
+    Returns:
+        Figure path if saved, None otherwise
+    """
+    # Import here to avoid circular imports
+    from batch_analysis import create_parameter_breakdown_plot
+    
+    # Filter successful results
+    successful_results = {k: v for k, v in batch_results.items() if v.get('success', False)}
+    
+    if not successful_results:
+        print("No successful results available for parameter breakdown plot")
+        return None
+    
+    if save:
+        plots_dir = Path(output_dir) / "plots"
+        plots_dir.mkdir(exist_ok=True)
+        return create_parameter_breakdown_plot(successful_results, layer_count, plots_dir)
+    else:
+        return create_parameter_breakdown_plot(successful_results, layer_count, Path(output_dir))
+
+
 def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", save=True):
     """
     Create all batch analysis plots (MAPE distribution, edge case detection, parameter breakdown).

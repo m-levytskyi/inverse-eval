@@ -3,7 +3,7 @@
 Parameter discovery utilities for reflectometry analysis.
 
 This module contains functions to discover and parse true parameters from 
-experimental data files and model files.
+experimental data files and model files, as well as discover available experiments.
 """
 
 import numpy as np
@@ -516,3 +516,182 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
         print(f"  {name}: [{min_val:.3f}, {max_val:.3f}]")
     
     return broad_priors
+
+
+def discover_batch_experiments(data_directory, layer_count=None, num_experiments=None, experiment_ids=None):
+    """
+    Discover available experiments in the data directory for batch processing.
+    
+    Args:
+        data_directory: Base data directory to search
+        layer_count: Number of layers to search for (1 or 2). If None, searches all
+        num_experiments: Maximum number of experiments to return (None for all)
+        experiment_ids: List of specific experiment IDs to validate (None for discovery)
+        
+    Returns:
+        List of experiment IDs
+    """
+    data_dir = Path(data_directory)
+    
+    if experiment_ids:
+        print(f"\nValidating provided experiment IDs: {experiment_ids}")
+        
+        # Validate that the experiments exist
+        validated_experiments = []
+        for exp_id in experiment_ids:
+            if experiment_exists(exp_id, data_directory, layer_count):
+                validated_experiments.append(exp_id)
+                print(f"  ✓ {exp_id}: found")
+            else:
+                print(f"  ✗ {exp_id}: not found - skipping")
+        
+        if not validated_experiments:
+            raise FileNotFoundError("None of the provided experiment IDs were found")
+        
+        print(f"Validated {len(validated_experiments)}/{len(experiment_ids)} experiments")
+        return validated_experiments
+    
+    # Original discovery logic
+    print(f"\nDiscovering experiments in {data_dir}")
+    if layer_count is not None:
+        print(f"  Looking for {layer_count}-layer experiments")
+    if num_experiments is not None:
+        print(f"  Limiting to first {num_experiments} experiments")
+    
+    experiments = []
+    
+    # Try MARIA dataset structure first
+    maria_dataset_path = data_dir / "MARIA_VIPR_dataset"
+    if maria_dataset_path.exists():
+        print(f"  Found MARIA dataset: {maria_dataset_path}")
+        
+        # Search in subdirectories (e.g., 0/, 1/, 2/)
+        layer_dirs_to_search = []
+        if layer_count is not None:
+            layer_dirs_to_search = [str(layer_count)]
+        else:
+            layer_dirs_to_search = ['0', '1', '2']
+        
+        for layer_dir_name in layer_dirs_to_search:
+            layer_dir = maria_dataset_path / layer_dir_name
+            if layer_dir.is_dir():
+                print(f"  Checking layer directory: {layer_dir.name}")
+                
+                # Find all experimental data files
+                exp_files = list(layer_dir.glob("s*_experimental_curve.dat"))
+                
+                for exp_file in exp_files:
+                    exp_id = exp_file.name.replace('_experimental_curve.dat', '')
+                    
+                    # Check if model file exists
+                    model_file = layer_dir / f"{exp_id}_model.txt"
+                    if not model_file.exists():
+                        model_file = layer_dir / f"{exp_id}_model.dat"
+                    
+                    if model_file.exists():
+                        experiments.append(exp_id)
+                    else:
+                        print(f"  Skipping {exp_id}: no model file found")
+    
+    else:
+        print(f"  Directory not found: {maria_dataset_path}")
+        
+        # Try test data structure
+        test_data_path = data_dir / "test_data"
+        if test_data_path.exists():
+            print(f"  Found test data: {test_data_path}")
+            
+            if layer_count is not None:
+                layer_test_dir = test_data_path / str(layer_count)
+                if layer_test_dir.exists():
+                    exp_files = list(layer_test_dir.glob("s*_experimental_curve.dat"))
+                    for exp_file in exp_files:
+                        exp_id = exp_file.name.replace('_experimental_curve.dat', '')
+                        experiments.append(exp_id)
+                else:
+                    print(f"  Layer directory not found: {layer_test_dir}")
+            else:
+                # Search all layer directories
+                for layer_dir in test_data_path.iterdir():
+                    if layer_dir.is_dir() and layer_dir.name.isdigit():
+                        exp_files = list(layer_dir.glob("s*_experimental_curve.dat"))
+                        for exp_file in exp_files:
+                            exp_id = exp_file.name.replace('_experimental_curve.dat', '')
+                            experiments.append(exp_id)
+        else:
+            print(f"  Directory not found: {test_data_path}")
+    
+    print(f"Found {len(experiments)} experiments")
+    
+    # Limit to requested number
+    if num_experiments is not None and len(experiments) > num_experiments:
+        print(f"Limiting to first {num_experiments} experiments")
+        experiments = experiments[:num_experiments]
+    
+    return experiments
+
+
+def experiment_exists(experiment_id, data_directory, layer_count=None):
+    """
+    Check if an experiment exists in the data directory.
+    
+    Args:
+        experiment_id: Experiment identifier
+        data_directory: Base data directory to search
+        layer_count: Number of layers to check for (optional)
+        
+    Returns:
+        bool: True if experiment files exist
+    """
+    data_dir = Path(data_directory)
+    
+    # Check MARIA dataset structure
+    maria_dataset_path = data_dir / "MARIA_VIPR_dataset"
+    if maria_dataset_path.exists():
+        layer_dirs_to_search = []
+        if layer_count is not None:
+            layer_dirs_to_search = [str(layer_count)]
+        else:
+            layer_dirs_to_search = ['0', '1', '2']
+        
+        for layer_dir_name in layer_dirs_to_search:
+            layer_dir = maria_dataset_path / layer_dir_name
+            if layer_dir.is_dir():
+                exp_data_file = layer_dir / f"{experiment_id}_experimental_curve.dat"
+                if exp_data_file.exists():
+                    # Check for model file too
+                    model_file = layer_dir / f"{experiment_id}_model.txt"
+                    if not model_file.exists():
+                        model_file = layer_dir / f"{experiment_id}_model.dat"
+                    if model_file.exists():
+                        return True
+    
+    # Check test data structure
+    test_data_path = data_dir / "test_data"
+    if test_data_path.exists():
+        if layer_count is not None:
+            layer_test_dir = test_data_path / str(layer_count)
+            if layer_test_dir.exists():
+                exp_data_file = layer_test_dir / f"{experiment_id}_experimental_curve.dat"
+                return exp_data_file.exists()
+        else:
+            # Search all layer directories
+            for layer_dir in test_data_path.iterdir():
+                if layer_dir.is_dir() and layer_dir.name.isdigit():
+                    exp_data_file = layer_dir / f"{experiment_id}_experimental_curve.dat"
+                    if exp_data_file.exists():
+                        return True
+    
+    return False
+
+
+if __name__ == "__main__":
+    print("Parameter discovery module loaded successfully.")
+    print("Available functions:")
+    print("  - discover_experiment_files()")
+    print("  - parse_true_parameters_from_model_file()")
+    print("  - generate_true_sld_profile()")
+    print("  - get_prior_bounds_for_experiment()")
+    print("  - get_parameter_names_for_layer_count()")
+    print("  - discover_batch_experiments()")
+    print("  - experiment_exists()")

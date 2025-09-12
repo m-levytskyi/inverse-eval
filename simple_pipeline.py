@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+"""
+Single experiment processing pipeline for reflectometry analysis.
+
+This module contains functions to process individual experiments, focusing on 
+the core workflow for analyzing a single reflectometry experiment.
+"""
+
 import torch
 import numpy as np
 from reflectorch import EasyInferenceModel
@@ -16,62 +24,12 @@ from error_calculation import (
     calculate_parameter_metrics,
     print_metrics_report
 )
-from data_preprocessing import (
-    preprocess_experimental_data as dp_preprocess_experimental_data
-)
+from data_preprocessing import preprocess_experimental_data
 from parameter_constraints import apply_physical_constraints
 
 # Set seed for reproducibility
 torch.manual_seed(42)
 
-def preprocess_experimental_data(q_exp, curve_exp, sigmas_exp, 
-                                threshold=0.5, consecutive=3, 
-                                remove_singles=False, enable_preprocessing=True):
-    """
-    Apply preprocessing steps to experimental data using data_preprocessing module.
-    
-    Args:
-        q_exp: Q values (momentum transfer)
-        curve_exp: Experimental reflectivity curve
-        sigmas_exp: Error bars (uncertainties)
-        threshold: Relative error threshold for filtering (default: 0.5)
-        consecutive: Number of consecutive high-error points to trigger truncation (default: 3)
-        remove_singles: Remove isolated high-error points (default: False)
-        enable_preprocessing: Enable/disable preprocessing (default: True)
-    
-    Returns:
-        Processed q_exp, curve_exp, sigmas_exp arrays
-    """
-    if not enable_preprocessing:
-        print("Preprocessing disabled - using raw data")
-        return q_exp, curve_exp, sigmas_exp
-    
-    print(f"Applying preprocessing with threshold={threshold}, consecutive={consecutive}")
-    
-    # Store original data size
-    original_size = len(q_exp)
-    
-    # Use the data_preprocessing module
-    q_processed, curve_processed, sigmas_processed = dp_preprocess_experimental_data(
-        q_exp, curve_exp, sigmas_exp,
-        error_threshold=threshold,
-        consecutive_threshold=consecutive,
-        remove_singles=remove_singles
-    )
-    
-    # Report preprocessing results
-    processed_size = len(q_processed)
-    removed_points = original_size - processed_size
-    
-    print("Preprocessing results:")
-    print(f"  Original data points: {original_size}")
-    print(f"  After preprocessing: {processed_size}")
-    print(f"  Removed points: {removed_points} ({removed_points/original_size*100:.1f}%)")
-    
-    if removed_points > 0:
-        print(f"  Q range changed: {q_exp.min():.4f}-{q_exp.max():.4f} → {q_processed.min():.4f}-{q_processed.max():.4f} Å⁻¹")
-    
-    return q_processed, curve_processed, sigmas_processed
 
 def load_experimental_data(data_file_path, enable_preprocessing=True, 
                           threshold=0.5, consecutive=3, remove_singles=False):
@@ -92,11 +50,10 @@ def load_experimental_data(data_file_path, enable_preprocessing=True,
     # Apply preprocessing
     q_exp, curve_exp, sigmas_exp = preprocess_experimental_data(
         q_exp, curve_exp, sigmas_exp,
-        threshold=threshold,
-        consecutive=consecutive,
-        remove_singles=remove_singles,
-        enable_preprocessing=enable_preprocessing
-    )
+        error_threshold=threshold,
+        consecutive_threshold=consecutive,
+        remove_singles=remove_singles
+    ) if enable_preprocessing else (q_exp, curve_exp, sigmas_exp)
     
     print(f"Final Q range: {q_exp.min():.4f} - {q_exp.max():.4f} Å⁻¹")
     print(f"Final curve shape: {curve_exp.shape}")
@@ -365,5 +322,20 @@ def main():
     
     print(f"\nInference completed for experiment {experiment_name}")
 
+
 if __name__ == "__main__":
-    main()
+    print("Simple pipeline module loaded successfully.")
+    print("Available functions:")
+    print("  - run_single_experiment() - Main function for processing one experiment")
+    print("  - load_experimental_data() - Load and preprocess data from file")
+    print("  - run_inference() - Run reflectorch inference")
+    print("  - display_results() - Display prediction results")
+    print("\nTo run the example:")
+    print("  main()")
+    
+    # Optionally run the main function
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--run-example":
+        main()
+    else:
+        print("\nUse --run-example to run the built-in example")
