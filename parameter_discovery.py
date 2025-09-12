@@ -390,25 +390,26 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
             
             return bounds
     
-    # Default broad priors for common structures
+    # Default broad priors for common structures - matched exactly to model constraints
+    # Model constraints: thickness [1.0, 1000.0], roughness [0.0, 60.0], sld [-8.0, 16.0]
     if layer_count == 1:
         broad_priors = [
-            (50.0, 500.0),     # layer thickness (Å)
-            (1.0, 15.0),       # ambient roughness (Å)
-            (1.0, 50.0),       # substrate roughness (Å)
-            (-5.0, 20.0),      # layer SLD (×10^-6 Å^-2)
-            (0.0, 25.0)        # substrate SLD (×10^-6 Å^-2)
+            (1.0, 1000.0),     # layer thickness (Å) - exact model limits
+            (0.0, 60.0),       # ambient roughness (Å) - exact model limits  
+            (0.0, 60.0),       # substrate roughness (Å) - exact model limits
+            (-8.0, 16.0),      # layer SLD (×10^-6 Å^-2) - exact model limits
+            (-8.0, 16.0)       # substrate SLD (×10^-6 Å^-2) - exact model limits
         ]
     elif layer_count == 2:
         broad_priors = [
-            (20.0, 300.0),     # layer1 thickness (Å)
-            (20.0, 300.0),     # layer2 thickness (Å)
-            (1.0, 15.0),       # ambient roughness (Å)
-            (1.0, 30.0),       # interface roughness (Å)
-            (1.0, 50.0),       # substrate roughness (Å)
-            (-5.0, 20.0),      # layer1 SLD (×10^-6 Å^-2)
-            (-5.0, 20.0),      # layer2 SLD (×10^-6 Å^-2)
-            (0.0, 25.0)        # substrate SLD (×10^-6 Å^-2)
+            (1.0, 1000.0),     # layer1 thickness (Å) - exact model limits
+            (1.0, 1000.0),     # layer2 thickness (Å) - exact model limits
+            (0.0, 60.0),       # ambient roughness (Å) - exact model limits
+            (0.0, 60.0),       # interface roughness (Å) - exact model limits
+            (0.0, 60.0),       # substrate roughness (Å) - exact model limits
+            (-8.0, 16.0),      # layer1 SLD (×10^-6 Å^-2) - exact model limits
+            (-8.0, 16.0),      # layer2 SLD (×10^-6 Å^-2) - exact model limits
+            (-8.0, 16.0)       # substrate SLD (×10^-6 Å^-2) - exact model limits
         ]
     else:
         raise ValueError(f"Unsupported layer count: {layer_count}")
