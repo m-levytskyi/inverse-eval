@@ -293,6 +293,40 @@ class BatchInferencePipeline:
                     narrow_error_msg = str(narrow_error)
                     print(f"  ❌ Failed with narrow priors: {narrow_error_msg}")
                     
+                    # Capture narrow prior bounds for failed experiments
+                    narrow_prior_bounds = None
+                    narrow_priors_info = None
+                    true_params_dict = None
+                    try:
+                        from parameter_discovery import get_prior_bounds_for_experiment, discover_experiment_files, parse_true_parameters_from_model_file
+                        
+                        # Get experimental files and true parameters
+                        exp_data_file, model_file, layer_count = discover_experiment_files(
+                            experiment_id, data_directory="data", layer_count=self.layer_count
+                        )
+                        
+                        if model_file:
+                            true_params_dict = parse_true_parameters_from_model_file(str(model_file))
+                        
+                        # Generate narrow prior bounds
+                        narrow_prior_bounds = get_prior_bounds_for_experiment(
+                            experiment_id, 
+                            true_params_dict, 
+                            priors_type="narrow",
+                            deviation=self.narrow_priors_deviation,
+                            layer_count=self.layer_count
+                        )
+                        
+                        narrow_priors_info = {
+                            'bounds': narrow_prior_bounds,
+                            'type': 'narrow',
+                            'deviation': self.narrow_priors_deviation,
+                            'true_params': true_params_dict
+                        }
+                        
+                    except Exception as bounds_error:
+                        print(f"    Warning: Could not capture narrow prior bounds: {bounds_error}")
+                    
                     # Check if it's a negative parameter error (our known issue)
                     if ("Negative roughness encountered" in narrow_error_msg or 
                         "Negative thickness encountered" in narrow_error_msg):
@@ -320,7 +354,7 @@ class BatchInferencePipeline:
                             results['fallback_applied'] = True
                             results['narrow_error'] = narrow_error_msg
                             
-                            # Add prior bounds information to logs
+                            # Add prior bounds information to logs (both narrow that failed and broad that succeeded)
                             if 'prior_bounds' in results:
                                 results['prior_bounds_info'] = {
                                     'bounds': results['prior_bounds'],
@@ -328,14 +362,42 @@ class BatchInferencePipeline:
                                     'deviation': 0.5,
                                     'fallback_reason': narrow_error_msg
                                 }
+                                
+                                # Add failed narrow priors info
+                                if narrow_priors_info:
+                                    results['failed_narrow_priors_info'] = narrow_priors_info
                             
                             print(f"  ✅ {experiment_id} completed with broad priors (fallback)")
                             return results
                             
                         except Exception as broad_error:
                             print(f"  ❌ Failed with broad priors too: {str(broad_error)}")
-                            # Both failed - return comprehensive error info
-                            return {
+                            
+                            # Capture broad prior bounds for completely failed experiments
+                            broad_prior_bounds = None
+                            broad_priors_info = None
+                            try:
+                                # Generate broad prior bounds  
+                                broad_prior_bounds = get_prior_bounds_for_experiment(
+                                    experiment_id, 
+                                    true_params_dict, 
+                                    priors_type="broad",
+                                    deviation=0.5,
+                                    layer_count=self.layer_count
+                                )
+                                
+                                broad_priors_info = {
+                                    'bounds': broad_prior_bounds,
+                                    'type': 'broad',
+                                    'deviation': 0.5,
+                                    'true_params': true_params_dict
+                                }
+                                
+                            except Exception as bounds_error:
+                                print(f"    Warning: Could not capture broad prior bounds: {bounds_error}")
+                            
+                            # Both failed - return comprehensive error info with prior bounds
+                            failed_result = {
                                 'experiment_id': experiment_id,
                                 'success': False,
                                 'narrow_error': narrow_error_msg,
@@ -344,10 +406,20 @@ class BatchInferencePipeline:
                                 'fallback_applied': True,
                                 'processing_time': time.time()
                             }
+                            
+                            # Add prior bounds information
+                            if narrow_priors_info:
+                                failed_result['failed_narrow_priors_info'] = narrow_priors_info
+                            if broad_priors_info:
+                                failed_result['failed_broad_priors_info'] = broad_priors_info
+                                
+                            return failed_result
                     else:
                         # Non-negative parameter error - don't attempt fallback
                         print(f"  ❌ Non-parameter error - not attempting fallback")
-                        return {
+                        
+                        # Prepare failed result with prior bounds information
+                        failed_result = {
                             'experiment_id': experiment_id,
                             'success': False,
                             'error': narrow_error_msg,
@@ -355,6 +427,12 @@ class BatchInferencePipeline:
                             'fallback_applied': False,
                             'processing_time': time.time()
                         }
+                        
+                        # Add narrow prior bounds information if captured
+                        if narrow_priors_info:
+                            failed_result['failed_narrow_priors_info'] = narrow_priors_info
+                            
+                        return failed_result
             else:
                 # Direct broad priors (no fallback needed)
                 results = run_single_experiment(
@@ -442,6 +520,21 @@ class BatchInferencePipeline:
             json.dump(json_results, f, indent=2)
         
         print(f"  Detailed results saved to: {results_file}")
+        
+        # Save failed experiments to separate file
+        failed_results = {k: v for k, v in all_results.items() if not v.get('success', False)}
+        
+        if failed_results:
+            failed_file = self.output_dir / "failed_experiments.json"
+            failed_json_results = self._convert_to_json_serializable(failed_results)
+            
+            with open(failed_file, 'w', encoding='utf-8') as f:
+                json.dump(failed_json_results, f, indent=2)
+            
+            print(f"  Failed experiments saved to: {failed_file}")
+            print(f"  Total failed experiments: {len(failed_results)}")
+        else:
+            print("  No failed experiments to save")
         
         # Create summary statistics
         successful_results = {k: v for k, v in all_results.items() if v.get('success', False)}
