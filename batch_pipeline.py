@@ -33,6 +33,9 @@ DEFAULT_PREPROCESSING_THRESHOLD = 0.75     # Relative error threshold (75%) - Pr
 DEFAULT_PREPROCESSING_CONSECUTIVE = 5      # Consecutive high-error points - More conservative truncation
 DEFAULT_PREPROCESSING_REMOVE_SINGLES = False
 
+# Constraints configuration
+DEFAULT_APPLY_CONSTRAINTS = True           # Apply physical constraints to prevent negative values
+
 # Prior bounds configuration
 USE_NARROW_PRIORS = True                   # Set to False to use broad priors
 NARROW_PRIORS_DEVIATION = 0.3              # Deviation for narrow priors (30%)
@@ -48,8 +51,9 @@ class BatchInferencePipeline:
     
     def __init__(self, num_experiments=DEFAULT_NUM_EXPERIMENTS, layer_count=DEFAULT_LAYER_COUNT, 
                  output_dir=DEFAULT_OUTPUT_DIR, data_directory=DEFAULT_DATA_DIRECTORY, 
-                 enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, use_narrow_priors=USE_NARROW_PRIORS,
-                 narrow_priors_deviation=NARROW_PRIORS_DEVIATION, experiment_ids=None):
+                 enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, apply_constraints=DEFAULT_APPLY_CONSTRAINTS,
+                 use_narrow_priors=USE_NARROW_PRIORS, narrow_priors_deviation=NARROW_PRIORS_DEVIATION, 
+                 experiment_ids=None):
         """
         Initialize the batch inference pipeline.
         
@@ -59,6 +63,7 @@ class BatchInferencePipeline:
             output_dir: Output directory for results
             data_directory: Directory containing experimental data
             enable_preprocessing: Whether to enable data preprocessing
+            apply_constraints: Whether to apply physical constraints to parameters
             use_narrow_priors: Whether to use narrow priors (requires true parameters)
             narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
             experiment_ids: List of specific experiment IDs to process (optional)
@@ -69,6 +74,7 @@ class BatchInferencePipeline:
         self.output_dir = Path(output_dir)
         self.data_directory = Path(data_directory)
         self.enable_preprocessing = enable_preprocessing
+        self.apply_constraints = apply_constraints
         self.use_narrow_priors = use_narrow_priors
         self.narrow_priors_deviation = narrow_priors_deviation
         self.priors_type = "narrow" if use_narrow_priors else "broad"
@@ -93,6 +99,7 @@ class BatchInferencePipeline:
         else:
             print(f"Processing first {self.num_experiments} experiments")
         print(f"Preprocessing: {'enabled' if self.enable_preprocessing else 'disabled'}")
+        print(f"Physical constraints: {'enabled' if self.apply_constraints else 'disabled'}")
         print(f"Prior bounds: {self.priors_type}")
         if self.use_narrow_priors:
             print(f"Narrow priors deviation: ±{self.narrow_priors_deviation*100:.1f}%")
@@ -267,6 +274,7 @@ class BatchInferencePipeline:
                         preprocessing_threshold=DEFAULT_PREPROCESSING_THRESHOLD,
                         preprocessing_consecutive=DEFAULT_PREPROCESSING_CONSECUTIVE,
                         preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
+                        apply_constraints=self.apply_constraints,
                         priors_type="narrow",
                         priors_deviation=self.narrow_priors_deviation
                     )
@@ -342,6 +350,7 @@ class BatchInferencePipeline:
                                 preprocessing_threshold=DEFAULT_PREPROCESSING_THRESHOLD,
                                 preprocessing_consecutive=DEFAULT_PREPROCESSING_CONSECUTIVE,
                                 preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
+                                apply_constraints=self.apply_constraints,
                                 priors_type="broad",
                                 priors_deviation=0.5
                             )
@@ -442,6 +451,7 @@ class BatchInferencePipeline:
                     preprocessing_threshold=DEFAULT_PREPROCESSING_THRESHOLD,
                     preprocessing_consecutive=DEFAULT_PREPROCESSING_CONSECUTIVE,
                     preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
+                    apply_constraints=self.apply_constraints,
                     priors_type="broad",
                     priors_deviation=0.5
                 )
@@ -1038,6 +1048,8 @@ def parse_arguments():
                        help='Data directory path (default: data)')
     parser.add_argument('--disable-preprocessing', action='store_true',
                        help='Disable data preprocessing')
+    parser.add_argument('--disable-constraints', action='store_true',
+                       help='Disable physical constraints application')
     parser.add_argument('--output-dir', type=str, default='batch_results',
                        help='Output directory (default: batch_results)')
     parser.add_argument('--experiment-ids', type=str, nargs='+',
@@ -1057,6 +1069,7 @@ def main():
         output_dir=args.output_dir,
         data_directory=args.data_directory,
         enable_preprocessing=not args.disable_preprocessing,
+        apply_constraints=not args.disable_constraints,
         experiment_ids=args.experiment_ids
     )
     

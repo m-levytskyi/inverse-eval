@@ -104,7 +104,7 @@ def load_experimental_data(data_file_path, enable_preprocessing=True,
     
     return q_exp, curve_exp, sigmas_exp
 
-def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1):
+def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1, apply_constraints=True):
     """Run the inference prediction."""
     print("Performing inference prediction...")
     
@@ -125,8 +125,12 @@ def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=
         calc_polished_sld_profile=True,
     )
     
-    # Apply physical constraints to prevent negative thickness/roughness
-    prediction_dict = apply_physical_constraints(prediction_dict)
+    # Apply physical constraints to prevent negative thickness/roughness (if enabled)
+    if apply_constraints:
+        print("Applying physical constraints...")
+        prediction_dict = apply_physical_constraints(prediction_dict)
+    else:
+        print("Physical constraints disabled - skipping constraint application")
     
     return q_model, prediction_dict
 
@@ -144,8 +148,8 @@ def display_results(prediction_dict):
 
 def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=True,
                          preprocessing_threshold=0.5, preprocessing_consecutive=3,
-                         preprocessing_remove_singles=False, priors_type="broad", 
-                         priors_deviation=0.5):
+                         preprocessing_remove_singles=False, apply_constraints=True,
+                         priors_type="broad", priors_deviation=0.5):
     """
     Run a single experiment inference with configurable options.
     
@@ -156,6 +160,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         preprocessing_threshold: Error threshold for preprocessing
         preprocessing_consecutive: Consecutive points threshold
         preprocessing_remove_singles: Remove isolated high-error points
+        apply_constraints: Whether to apply physical constraints to parameters
         priors_type: Type of priors to use ("broad" or "narrow")
         priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
     
@@ -203,7 +208,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
     
     # Run inference
     q_model, prediction_dict = run_inference(
-        inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1
+        inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1, apply_constraints=apply_constraints
     )
     
     # Calculate metrics
@@ -246,15 +251,15 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
 
 def main():
     # Experiment configuration
-    experiment_name = "s005888"
+    experiment_name = "s005063"
     data_directory = "data"
     layer_count = 1  # This experiment has 1 layer
     
     # Preprocessing configuration
     preprocessing_config = {
         'enable_preprocessing': True,
-        'threshold': 0.5,          # Relative error threshold (50%)
-        'consecutive': 3,          # Number of consecutive bad points to trigger truncation
+        'threshold': 0.75,          # Relative error threshold (50%)
+        'consecutive': 5,          # Number of consecutive bad points to trigger truncation
         'remove_singles': False    # Remove isolated high-error points
     }
     
@@ -315,7 +320,7 @@ def main():
     
     # Run inference
     q_model, prediction_dict = run_inference(
-        inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1
+        inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1, apply_constraints=True
     )
     
     # Display results
