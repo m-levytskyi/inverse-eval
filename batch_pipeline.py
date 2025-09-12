@@ -741,8 +741,8 @@ class BatchInferencePipeline:
         
         # Create distribution plot
         fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-        fig.suptitle(f'REAL MAPE Distribution Analysis - {len(successful_results)} {self.layer_count}-Layer Experiments\n'
-                    f'(Narrow Priors ±{int(self.narrow_priors_deviation * 100)}%) - No Artificial Scaling', 
+        fig.suptitle(f'MAPE Distribution - {len(successful_results)} {self.layer_count}-Layer Experiments\n'
+                    f'(Narrow Priors ±{int(self.narrow_priors_deviation * 100)}%)', 
                     fontsize=16, fontweight='bold')
         
         # Define MAPE ranges
@@ -877,7 +877,7 @@ class BatchInferencePipeline:
         ax.set_xlabel('Parameter Type', fontsize=12)
         ax.set_ylabel('MAPE (%)', fontsize=12)
         ax.set_title(f'Parameter-Specific MAPE Distribution - {len(successful_results)} {self.layer_count}-Layer Experiments\n'
-                    f'(Narrow Priors ±{int(self.narrow_priors_deviation * 100)}%) - DEBUG MODE', 
+                    f'(Narrow Priors ±{int(self.narrow_priors_deviation * 100)}%)', 
                     fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3, axis='y')
         
@@ -887,7 +887,7 @@ class BatchInferencePipeline:
                 median_val = np.median(values)
                 mean_val = np.mean(values)
                 ax.text(i + 1, ax.get_ylim()[1] * 0.95, 
-                       f'Med: {median_val:.1f}%\nMean: {mean_val:.1f}%\nN: {len(values)}', 
+                       f'Med: {median_val:.1f}%\nMean: {mean_val:.1f}%', 
                        ha='center', va='top', fontsize=9,
                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
         
