@@ -381,6 +381,13 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
                     bounds.append((min_val, max_val))
             
             print(f"Generated narrow priors with {deviation*100}% deviation")
+            
+            # Log the detailed bounds for debugging
+            param_names = get_parameter_names_for_layer_count(layer_count)
+            print("Narrow prior bounds details:")
+            for i, (name, (min_val, max_val)) in enumerate(zip(param_names, bounds)):
+                print(f"  {name}: [{min_val:.3f}, {max_val:.3f}]")
+            
             return bounds
     
     # Default broad priors for common structures
@@ -407,4 +414,11 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
         raise ValueError(f"Unsupported layer count: {layer_count}")
     
     print(f"Using default broad {layer_count}-layer priors")
+    
+    # Log the detailed bounds for debugging
+    param_names = get_parameter_names_for_layer_count(layer_count)
+    print("Broad prior bounds details:")
+    for i, (name, (min_val, max_val)) in enumerate(zip(param_names, broad_priors)):
+        print(f"  {name}: [{min_val:.3f}, {max_val:.3f}]")
+    
     return broad_priors

@@ -29,8 +29,8 @@ DEFAULT_DATA_DIRECTORY = "data"
 
 # Preprocessing configuration  
 DEFAULT_ENABLE_PREPROCESSING = True
-DEFAULT_PREPROCESSING_THRESHOLD = 0.5      # Relative error threshold (50%)
-DEFAULT_PREPROCESSING_CONSECUTIVE = 3      # Consecutive high-error points
+DEFAULT_PREPROCESSING_THRESHOLD = 0.75     # Relative error threshold (75%) - Prevents tensor concatenation error
+DEFAULT_PREPROCESSING_CONSECUTIVE = 5      # Consecutive high-error points - More conservative truncation
 DEFAULT_PREPROCESSING_REMOVE_SINGLES = False
 
 # Prior bounds configuration
@@ -244,6 +244,7 @@ class BatchInferencePipeline:
     def process_single_experiment_wrapper(self, experiment_id):
         """
         Wrapper function for processing a single experiment using simple_pipeline.
+        Includes automatic fallback from narrow to broad priors for robustness.
         
         Args:
             experiment_id: Experiment identifier
@@ -254,32 +255,144 @@ class BatchInferencePipeline:
         try:
             print(f"Processing {experiment_id}...")
             
-            # Use the simple pipeline function
-            results = run_single_experiment(
-                experiment_id=experiment_id,
-                layer_count=self.layer_count,
-                enable_preprocessing=self.enable_preprocessing,
-                preprocessing_threshold=0.5,
-                preprocessing_consecutive=3,
-                preprocessing_remove_singles=False,
-                priors_type=self.priors_type,
-                priors_deviation=self.narrow_priors_deviation
-            )
-            
-            # Add experiment metadata
-            results['experiment_id'] = experiment_id
-            results['processing_time'] = time.time()
-            results['success'] = True
-            
-            print(f"  {experiment_id} completed successfully")
-            return results
+            # First attempt: Use preferred priors (narrow if enabled, broad otherwise)
+            if self.use_narrow_priors:
+                print(f"  [1/2] Attempting with narrow priors...")
+                
+                try:
+                    results = run_single_experiment(
+                        experiment_id=experiment_id,
+                        layer_count=self.layer_count,
+                        enable_preprocessing=self.enable_preprocessing,
+                        preprocessing_threshold=DEFAULT_PREPROCESSING_THRESHOLD,
+                        preprocessing_consecutive=DEFAULT_PREPROCESSING_CONSECUTIVE,
+                        preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
+                        priors_type="narrow",
+                        priors_deviation=self.narrow_priors_deviation
+                    )
+                    
+                    # Success with narrow priors
+                    results['experiment_id'] = experiment_id
+                    results['processing_time'] = time.time()
+                    results['success'] = True
+                    results['priors_used'] = "narrow"
+                    results['fallback_applied'] = False
+                    
+                    # Add prior bounds information to logs
+                    if 'prior_bounds' in results:
+                        results['prior_bounds_info'] = {
+                            'bounds': results['prior_bounds'],
+                            'type': 'narrow',
+                            'deviation': self.narrow_priors_deviation
+                        }
+                    
+                    print(f"  ✅ {experiment_id} completed with narrow priors")
+                    return results
+                    
+                except Exception as narrow_error:
+                    narrow_error_msg = str(narrow_error)
+                    print(f"  ❌ Failed with narrow priors: {narrow_error_msg}")
+                    
+                    # Check if it's a negative parameter error (our known issue)
+                    if ("Negative roughness encountered" in narrow_error_msg or 
+                        "Negative thickness encountered" in narrow_error_msg):
+                        
+                        print(f"  🔄 Detected negative parameter error - falling back to broad priors...")
+                        
+                        # Second attempt: Broad priors fallback
+                        try:
+                            results = run_single_experiment(
+                                experiment_id=experiment_id,
+                                layer_count=self.layer_count,
+                                enable_preprocessing=self.enable_preprocessing,
+                                preprocessing_threshold=DEFAULT_PREPROCESSING_THRESHOLD,
+                                preprocessing_consecutive=DEFAULT_PREPROCESSING_CONSECUTIVE,
+                                preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
+                                priors_type="broad",
+                                priors_deviation=0.5
+                            )
+                            
+                            # Success with broad priors fallback
+                            results['experiment_id'] = experiment_id
+                            results['processing_time'] = time.time()
+                            results['success'] = True
+                            results['priors_used'] = "broad"
+                            results['fallback_applied'] = True
+                            results['narrow_error'] = narrow_error_msg
+                            
+                            # Add prior bounds information to logs
+                            if 'prior_bounds' in results:
+                                results['prior_bounds_info'] = {
+                                    'bounds': results['prior_bounds'],
+                                    'type': 'broad',
+                                    'deviation': 0.5,
+                                    'fallback_reason': narrow_error_msg
+                                }
+                            
+                            print(f"  ✅ {experiment_id} completed with broad priors (fallback)")
+                            return results
+                            
+                        except Exception as broad_error:
+                            print(f"  ❌ Failed with broad priors too: {str(broad_error)}")
+                            # Both failed - return comprehensive error info
+                            return {
+                                'experiment_id': experiment_id,
+                                'success': False,
+                                'narrow_error': narrow_error_msg,
+                                'broad_error': str(broad_error),
+                                'priors_used': None,
+                                'fallback_applied': True,
+                                'processing_time': time.time()
+                            }
+                    else:
+                        # Non-negative parameter error - don't attempt fallback
+                        print(f"  ❌ Non-parameter error - not attempting fallback")
+                        return {
+                            'experiment_id': experiment_id,
+                            'success': False,
+                            'error': narrow_error_msg,
+                            'priors_used': "narrow",
+                            'fallback_applied': False,
+                            'processing_time': time.time()
+                        }
+            else:
+                # Direct broad priors (no fallback needed)
+                results = run_single_experiment(
+                    experiment_id=experiment_id,
+                    layer_count=self.layer_count,
+                    enable_preprocessing=self.enable_preprocessing,
+                    preprocessing_threshold=DEFAULT_PREPROCESSING_THRESHOLD,
+                    preprocessing_consecutive=DEFAULT_PREPROCESSING_CONSECUTIVE,
+                    preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
+                    priors_type="broad",
+                    priors_deviation=0.5
+                )
+                
+                results['experiment_id'] = experiment_id
+                results['processing_time'] = time.time()
+                results['success'] = True
+                results['priors_used'] = "broad"
+                results['fallback_applied'] = False
+                
+                # Add prior bounds information to logs
+                if 'prior_bounds' in results:
+                    results['prior_bounds_info'] = {
+                        'bounds': results['prior_bounds'],
+                        'type': 'broad',
+                        'deviation': 0.5
+                    }
+                
+                print(f"  ✅ {experiment_id} completed with broad priors")
+                return results
             
         except Exception as e:  # pylint: disable=broad-except
-            print(f"  {experiment_id} failed: {str(e)}")
+            print(f"  💥 {experiment_id} failed unexpectedly: {str(e)}")
             return {
                 'experiment_id': experiment_id,
                 'success': False,
                 'error': str(e),
+                'priors_used': None,
+                'fallback_applied': False,
                 'processing_time': time.time()
             }
     

@@ -19,6 +19,7 @@ from error_calculation import (
 from data_preprocessing import (
     preprocess_experimental_data as dp_preprocess_experimental_data
 )
+from parameter_constraints import apply_physical_constraints
 
 # Set seed for reproducibility
 torch.manual_seed(42)
@@ -123,6 +124,9 @@ def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=
         calc_pred_sld_profile=True,
         calc_polished_sld_profile=True,
     )
+    
+    # Apply physical constraints to prevent negative thickness/roughness
+    prediction_dict = apply_physical_constraints(prediction_dict)
     
     return q_model, prediction_dict
 
@@ -230,7 +234,12 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         'q_exp': q_exp,
         'curve_exp': curve_exp,
         'sigmas_exp': sigmas_exp,
-        'q_model': q_model
+        'q_model': q_model,
+        'prior_bounds': prior_bounds,
+        'priors_config': {
+            'priors_type': priors_type,
+            'priors_deviation': priors_deviation
+        }
     }
     
     return results
