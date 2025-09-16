@@ -140,7 +140,7 @@ def plot_sld_profiles(results, true_sld_data=None, experiment_id=None,
 def plot_simple_comparison(q_exp, curve_exp, sigmas_exp, q_model, 
                           predicted_curve, polished_curve, 
                           predicted_sld_x, predicted_sld_y, polished_sld_y,
-                          experiment_name="Analysis", show=True):
+                          experiment_name="Analysis", show=True, priors_config=None):
     """
     Simple plot for single model comparison (used by simple_pipeline).
     
@@ -156,7 +156,15 @@ def plot_simple_comparison(q_exp, curve_exp, sigmas_exp, q_model,
         polished_sld_y: Polished SLD profile
         experiment_name: Name for plot title
         show: Whether to show the plot
+        priors_config: Configuration dictionary containing SLD fixing mode
     """
+    # Add SLD fixing mode to the experiment name if available
+    display_name = experiment_name
+    if priors_config and 'fix_sld_mode' in priors_config:
+        fix_sld_mode = priors_config['fix_sld_mode']
+        if fix_sld_mode != 'none':
+            display_name = f"{experiment_name} (SLD fixed: {fix_sld_mode})"
+    
     fig, ax = plt.subplots(1, 2, figsize=(15, 6))
     
     # Plot reflectivity curves
@@ -179,7 +187,7 @@ def plot_simple_comparison(q_exp, curve_exp, sigmas_exp, q_model,
                c='orange', ls='--', lw=2, label='Polished')
     
     ax[0].legend(loc='upper right', fontsize=12)
-    ax[0].set_title(f'Reflectivity - {experiment_name}', fontsize=14)
+    ax[0].set_title(f'Reflectivity - {display_name}', fontsize=14)
     ax[0].grid(True, which='both', linestyle='--', alpha=0.3)
     
     # Plot SLD profiles
@@ -281,81 +289,17 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
     Returns:
         Figure path if saved, None otherwise
     """
-    # Collect MAPE values
+    # Extract MAPE values and SLD fixing mode from successful experiments
     mape_values = []
+    fix_sld_mode = "none"  # Default value
     
-    for exp_result in batch_results.values():
-        if exp_result.get('success', False) and 'param_metrics' in exp_result:
-            param_metrics = exp_result['param_metrics']
-            if param_metrics and 'overall_mape' in param_metrics:
-                mape_values.append(param_metrics['overall_mape'])
-    
-    if not mape_values:
-        print("No MAPE data available for plotting")
-        return None
-    
-    # Create distribution plot
-    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(f'MAPE Distribution Analysis - {len(batch_results)} {layer_count}-Layer Experiments', 
-                fontsize=16, fontweight='bold')
-    
-    # Define MAPE ranges
-    mape_ranges = [0, 5, 10, 15, 20, 25, 30, 40, 50, 100]
-    range_labels = ['0-5%', '5-10%', '10-15%', '15-20%', '20-25%', '25-30%', '30-40%', '40-50%', '50%+']
-    
-    # Count experiments in each MAPE range
-    counts = []
-    for i in range(len(mape_ranges) - 1):
-        count = sum(1 for mape in mape_values if mape_ranges[i] <= mape < mape_ranges[i+1])
-        counts.append(count)
-    
-    # Add count for 50%+ range
-    counts.append(sum(1 for mape in mape_values if mape >= 50))
-    
-    # Create bar chart with proper colormap
-    colors = plt.cm.get_cmap('RdYlGn_r')(np.linspace(0.2, 0.8, len(counts)))
-    bars = ax.bar(range(len(counts)), counts, color=colors, alpha=0.8, edgecolor='black')
-    
-    # Add value labels on bars
-    for i, (bar, count) in enumerate(zip(bars, counts)):
-        if count > 0:
-            percentage = (count / len(mape_values)) * 100
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                   f'{count}\n({percentage:.1f}%)', ha='center', va='bottom', 
-                   fontsize=10, fontweight='bold')
-    
-    ax.set_xlabel('MAPE Range')
-    ax.set_ylabel('Number of Experiments')
-    ax.set_title('MAPE Distribution')
-    ax.set_xticks(range(len(range_labels)))
-    ax.set_xticklabels(range_labels, rotation=45, ha='right')
-    ax.grid(True, alpha=0.3, axis='y')
-    
-    # Add statistics text
-    stats_text = f'Total: {len(mape_values)} experiments\n'
-    stats_text += f'Mean MAPE: {np.mean(mape_values):.1f}%\n'
-    stats_text += f'Median MAPE: {np.median(mape_values):.1f}%\n'
-    stats_text += f'Std Dev: {np.std(mape_values):.1f}%\n'
-    stats_text += f'Min MAPE: {np.min(mape_values):.1f}%\n'
-    stats_text += f'Max MAPE: {np.max(mape_values):.1f}%'
-    
-    ax.text(0.98, 0.98, stats_text, transform=ax.transAxes, 
-           ha='right', va='top', fontsize=10, 
-           bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
-    
-    plt.tight_layout()
-    
-    if save:
-        timestamp = datetime.now().strftime("%d%b%Y_%H_%M")
-        filename = f"mape_distribution_{layer_count}layer_{timestamp}.png"
-        plot_path = Path(output_dir) / filename
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"MAPE distribution plot saved to: {plot_path}")
-        return plot_path
-    else:
-        plt.show()
-        return None
+    for result in batch_results.values():
+        if result.get('success', False) and 'param_metrics' in result and result['param_metrics']:
+            mape = result['param_metrics']['overall']['mape']
+            mape_values.append(mape)
+            # Extract SLD fixing mode from first successful result
+            if fix_sld_mode == "none" and 'priors_config' in result:
+                fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
 
 
 def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".", save=True):
@@ -371,12 +315,16 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
     Returns:
         Figure path if saved, None otherwise
     """
-    # Collect experiment data
+    # Collect experiment data and SLD fixing mode
     exp_data = {}
+    fix_sld_mode = "none"  # Default value
     
     for exp_id, exp_result in batch_results.items():
         if exp_result.get('success', False) and 'param_metrics' in exp_result:
             param_metrics = exp_result['param_metrics']
+            # Extract SLD fixing mode from first successful result
+            if fix_sld_mode == "none" and 'priors_config' in exp_result:
+                fix_sld_mode = exp_result['priors_config'].get('fix_sld_mode', 'none')
             if param_metrics and 'overall_mape' in param_metrics:
                 exp_data[exp_id] = param_metrics['overall_mape']
     
@@ -386,8 +334,13 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
     
     # Create edge case detection plot
     fig, ax = plt.subplots(1, 1, figsize=(15, 8))
-    fig.suptitle(f'Edge Case Detection - {len(batch_results)} {layer_count}-Layer Experiments', 
-                fontsize=16, fontweight='bold')
+    # Create SLD mode display text
+    sld_text = ""
+    if fix_sld_mode != "none":
+        sld_text = f" (SLD: {fix_sld_mode})"
+    
+    fig.suptitle(f'Edge Case Detection - {len(batch_results)} {layer_count}-Layer Experiments{sld_text}', 
+                 fontsize=16, fontweight='bold')
     
     exp_ids = list(exp_data.keys())
     exp_vals = list(exp_data.values())
@@ -479,11 +432,15 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
     Returns:
         Figure path if saved, None otherwise
     """
-    # Collect parameter-specific MAPE data
+    # Collect parameter-specific MAPE data and SLD fixing mode
     param_data = defaultdict(list)
+    fix_sld_mode = "none"  # Default value
     
     for exp_result in batch_results.values():
         if exp_result.get('success', False) and 'param_metrics' in exp_result:
+            # Extract SLD fixing mode from first successful result
+            if fix_sld_mode == "none" and 'priors_config' in exp_result:
+                fix_sld_mode = exp_result['priors_config'].get('fix_sld_mode', 'none')
             param_metrics = exp_result['param_metrics']
             if param_metrics and 'by_type' in param_metrics:
                 by_type = param_metrics['by_type']
@@ -498,7 +455,13 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
     
     # Create parameter breakdown plot
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(f'Parameter-Specific MAPE Breakdown - {len(batch_results)} {layer_count}-Layer Experiments', 
+    
+    # Create SLD mode display text
+    sld_text = ""
+    if fix_sld_mode != "none":
+        sld_text = f" (SLD fixing: {fix_sld_mode})"
+    
+    fig.suptitle(f'Parameter-Specific MAPE Breakdown - {len(batch_results)} {layer_count}-Layer Experiments{sld_text}', 
                 fontsize=16, fontweight='bold')
     
     param_types = list(param_data.keys())

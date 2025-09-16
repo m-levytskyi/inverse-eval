@@ -164,12 +164,17 @@ def create_mape_distribution_plot(successful_results, layer_count, plots_dir, na
     """Create MAPE distribution plot showing real overall MAPE values with debugging."""
     # Collect real overall MAPE values with debugging
     mape_data = {'narrow': []}
+    fix_sld_mode = "none"  # Default value
     
     print("\nDEBUG - MAPE distribution collection:")
     
     for exp_id, result in successful_results.items():
         if 'param_metrics' in result and result['param_metrics']:
             param_metrics = result['param_metrics']
+            
+            # Extract SLD fixing mode from first successful result
+            if fix_sld_mode == "none" and 'priors_config' in result:
+                fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
             
             # Get the real overall MAPE - no artificial calculations
             overall_mape = None
@@ -194,9 +199,12 @@ def create_mape_distribution_plot(successful_results, layer_count, plots_dir, na
     print(f"Mean MAPE: {np.mean(mapes):.1f}% ± {np.std(mapes):.1f}%")
     print(f"Median MAPE: {np.median(mapes):.1f}%")
     
+    # Create SLD mode text for title
+    sld_mode_text = f" (SLD: {fix_sld_mode})" if fix_sld_mode != 'none' else ""
+    
     # Create distribution plot
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(f'MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments\n'
+    fig.suptitle(f'MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{sld_mode_text}\n'
                 f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
                 fontsize=16, fontweight='bold')
     
@@ -266,6 +274,13 @@ def create_parameter_breakdown_plot(successful_results, layer_count, plots_dir, 
         'overall': []
     }
     
+    # Extract SLD fixing mode from results
+    fix_sld_mode = "none"  # Default value
+    for result in successful_results.values():
+        if 'priors_config' in result and fix_sld_mode == "none":
+            fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
+            break
+    
     print("\nDEBUG - Parameter breakdown collection:")
     
     for exp_id, result in successful_results.items():
@@ -330,7 +345,12 @@ def create_parameter_breakdown_plot(successful_results, layer_count, plots_dir, 
     
     ax.set_xlabel('Parameter Type', fontsize=12)
     ax.set_ylabel('MAPE (%)', fontsize=12)
-    ax.set_title(f'Parameter-Specific MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments\n'
+    # Create SLD mode text for title
+    sld_mode_text = ""
+    if fix_sld_mode != "none":
+        sld_mode_text = f" (SLD: {fix_sld_mode})"
+    
+    ax.set_title(f'Parameter-Specific MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{sld_mode_text}\n'
                 f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
                 fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
