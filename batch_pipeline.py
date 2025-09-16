@@ -393,8 +393,8 @@ def parse_arguments():
     parser.add_argument('--experiment-ids', type=str, nargs='+',
                        help='Specific experiment IDs to process (e.g., s005156 s004141)')
     parser.add_argument('--fix-sld-mode', type=str, choices=['none', 'fronting_backing', 'all'], 
-                       default='none',
-                       help='SLD fixing mode: none (default), fronting_backing, or all')
+                       default=DEFAULT_FIX_SLD_MODE,
+                       help=f'SLD fixing mode: none, fronting_backing, or all (default: {DEFAULT_FIX_SLD_MODE})')
     
     return parser.parse_args()
 
