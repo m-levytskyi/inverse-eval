@@ -24,6 +24,7 @@ from batch_analysis import (
 )
 from plotting_utils import create_batch_analysis_plots
 from utils import convert_to_json_serializable, ensure_directory_exists
+from find_prominent_peaks import find_experiments_with_prominent_peaks
 
 # =============================================================================
 # CONFIGURATION PARAMETERS - Adjust these as needed
@@ -45,7 +46,7 @@ DEFAULT_PREPROCESSING_REMOVE_SINGLES = False
 DEFAULT_APPLY_CONSTRAINTS = True           # Apply physical constraints
 
 # SLD fixing configuration
-DEFAULT_FIX_SLD_MODE = "all"              # SLD fixing mode: "none", "fronting_backing", "all"
+DEFAULT_FIX_SLD_MODE = "none"              # SLD fixing mode: "none", "fronting_backing", "all"
 
 # Prior bounds configuration
 USE_NARROW_PRIORS = True                   # Set to False to use broad priors
@@ -197,16 +198,63 @@ class BatchInferencePipeline:
     def discover_experiments(self):
         """
         Discover available experiments using the parameter_discovery module.
+        If use_prominent_features is enabled, filter experiments by prominent peaks.
         
         Returns:
             List of experiment IDs
         """
-        return discover_batch_experiments(
-            data_directory=str(self.data_directory),
-            layer_count=self.layer_count,
-            num_experiments=self.num_experiments,
-            experiment_ids=self.experiment_ids
-        )
+        if self.use_prominent_features:
+            print(f"\n🔍 PROMINENT FEATURES MODE ENABLED")
+            print("=" * 50)
+            
+            # Find experiments with prominent peaks
+            experiments_with_peaks = find_experiments_with_prominent_peaks(
+                layer_count=self.layer_count,
+                data_directory=str(self.data_directory),
+                verbose=True
+            )
+            
+            if not experiments_with_peaks:
+                print("⚠️  No experiments with prominent peaks found!")
+                return []
+            
+            # Update experiment count based on filtered results
+            original_num = self.num_experiments
+            self.num_experiments = len(experiments_with_peaks)
+            
+            print(f"\n📊 PROMINENT FEATURES FILTERING RESULTS:")
+            print(f"  Found {len(experiments_with_peaks)} experiments with prominent peaks")
+            print(f"  Original request: {original_num} experiments")
+            print(f"  Updated count: {self.num_experiments} experiments")
+            
+            # If specific experiment_ids were provided, filter them
+            if self.experiment_ids:
+                # Intersect provided IDs with experiments that have peaks
+                filtered_ids = [exp_id for exp_id in self.experiment_ids if exp_id in experiments_with_peaks]
+                print(f"  Filtering provided experiment IDs...")
+                print(f"  Provided: {len(self.experiment_ids)} experiments")
+                print(f"  With prominent peaks: {len(filtered_ids)} experiments")
+                
+                if not filtered_ids:
+                    print("⚠️  None of the provided experiment IDs have prominent peaks!")
+                    return []
+                
+                return filtered_ids
+            else:
+                # Use the first N experiments with peaks
+                selected_experiments = experiments_with_peaks[:self.num_experiments]
+                print(f"  Selected first {len(selected_experiments)} experiments with peaks")
+                print(f"  Examples: {selected_experiments[:5]}")
+                return selected_experiments
+        
+        else:
+            # Standard experiment discovery
+            return discover_batch_experiments(
+                data_directory=str(self.data_directory),
+                layer_count=self.layer_count,
+                num_experiments=self.num_experiments,
+                experiment_ids=self.experiment_ids
+            )
     
     def process_single_experiment_wrapper(self, experiment_id):
         """
@@ -431,7 +479,9 @@ class BatchInferencePipeline:
                     successful_results, 
                     layer_count=self.layer_count, 
                     output_dir=str(self.output_dir), 
-                    save=True
+                    save=True,
+                    use_prominent_features=self.use_prominent_features,
+                    narrow_priors_deviation=self.narrow_priors_deviation if self.use_narrow_priors else 0.5
                 )
                 print(f"Analysis plots completed")
             except Exception as e:

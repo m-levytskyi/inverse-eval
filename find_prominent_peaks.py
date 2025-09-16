@@ -52,6 +52,68 @@ def count_curves_with_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3, 
         count += 1
     return count
 
+def find_experiments_with_prominent_peaks(layer_count, data_directory="data", 
+                                        min_prominence=0.2, min_rise=0.05, min_width=10, 
+                                        analyze_first_half=True, verbose=True):
+    """
+    Find experiments that have prominent peaks in their reflectivity curves.
+    
+    Args:
+        layer_count: Number of layers (1 or 2)
+        data_directory: Path to the data directory
+        min_prominence: Minimum prominence for peak detection
+        min_rise: Minimum rise for peak detection  
+        min_width: Minimum width for peak detection
+        analyze_first_half: Whether to analyze only the first half of the data
+        verbose: Whether to print progress and statistics
+        
+    Returns:
+        List of experiment IDs that have prominent peaks
+    """
+    filepaths = sorted(glob.glob(f'{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_theoretical_curve.dat'))
+    
+    if verbose:
+        print(f"Scanning {len(filepaths)} experiments for prominent peaks...")
+        print(f"Layer count: {layer_count}")
+        print(f"Parameters: prominence≥{min_prominence}, rise≥{min_rise}, width≥{min_width}")
+        print(f"Analyzing: {'first half' if analyze_first_half else 'full curve'}")
+    
+    experiments_with_peaks = []
+    experiments_without_peaks = []
+    all_peaks = []
+
+    iterator = tqdm.tqdm(filepaths) if verbose else filepaths
+    
+    for path in iterator:
+        exp_id = Path(path).stem.split('_')[0]
+        try:
+            q, r, dr, dq = load_experimental_data(path)
+            peaks = detect_peaks(r, min_prominence, min_rise, min_width, analyze_first_half)
+
+            if peaks:
+                experiments_with_peaks.append(exp_id)
+                all_peaks.extend(peaks)
+            else:
+                experiments_without_peaks.append(exp_id)
+        except Exception as e:
+            if verbose:
+                print(f"Warning: Failed to process {exp_id}: {e}")
+            experiments_without_peaks.append(exp_id)
+            
+    if verbose:
+        print(f"\nResults:")
+        print(f"  Experiments with prominent peaks: {len(experiments_with_peaks)}")
+        print(f"  Experiments without prominent peaks: {len(experiments_without_peaks)}")
+        print(f"  Examples with peaks: {experiments_with_peaks[:5]}")
+        
+        if all_peaks:
+            prominences = [p['prominence'] for p in all_peaks]
+            print(f"  Peak statistics: {len(all_peaks)} total peaks")
+            print(f"    Prominence range: {np.min(prominences):.3f} - {np.max(prominences):.3f}")
+            print(f"    Mean prominence: {np.mean(prominences):.3f}")
+
+    return experiments_with_peaks
+
 def plot_and_save_peaks(q, r, peaks, exp_id, output_dir, analyze_first_half=True):
     title = f"Reflectivity: {exp_id}"
     fig, ax = plt.subplots(figsize=(7, 5))

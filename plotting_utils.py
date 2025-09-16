@@ -90,7 +90,7 @@ def plot_simple_comparison(q_exp, curve_exp, sigmas_exp, q_model,
 
 
 
-def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".", save=True):
+def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".", save=True, use_prominent_features=False):
     """
     Create edge case detection plot showing experiments with high MAPE values.
     
@@ -99,6 +99,7 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
         layer_count: Number of layers for plot title
         output_dir: Directory to save plot
         save: Whether to save the plot
+        use_prominent_features: Whether prominent features filtering was used
         
     Returns:
         Figure path if saved, None otherwise
@@ -122,12 +123,19 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
     
     # Create edge case detection plot
     fig, ax = plt.subplots(1, 1, figsize=(15, 8))
-    # Create SLD mode display text
-    sld_text = ""
-    if fix_sld_mode != "none":
-        sld_text = f" (SLD fix: {fix_sld_mode})"
     
-    fig.suptitle(f'Edge Case Detection - {len(batch_results)} {layer_count}-Layer Experiments{sld_text}', 
+    # Create title with all configuration information
+    title_parts = [f'{len(batch_results)} {layer_count}-Layer Experiments']
+    
+    if fix_sld_mode != "none":
+        title_parts.append(f"SLD fix: {fix_sld_mode}")
+    
+    if use_prominent_features:
+        title_parts.append("Prominent Features")
+    
+    title_suffix = f" ({', '.join(title_parts[1:])})" if len(title_parts) > 1 else ""
+    
+    fig.suptitle(f'Edge Case Detection - {title_parts[0]}{title_suffix}', 
                  fontsize=16, fontweight='bold')
     
     exp_ids = list(exp_data.keys())
@@ -189,7 +197,13 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
     
     if save:
         timestamp = datetime.now().strftime("%d%b%Y_%H_%M")
-        filename = f"edge_case_detection_{layer_count}layer_{timestamp}.png"
+        filename_parts = [f"edge_case_detection_{layer_count}layer"]
+        
+        if use_prominent_features:
+            filename_parts.append("prominent")
+        
+        filename_parts.append(timestamp)
+        filename = "_".join(filename_parts) + ".png"
         plot_path = Path(output_dir) / filename
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
@@ -209,7 +223,8 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
 
 
 
-def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", save=True, narrow_priors_deviation=0.99):
+def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", save=True, 
+                                narrow_priors_deviation=0.99, use_prominent_features=False):
     """
     Create MAPE distribution plot showing how experiments are distributed across MAPE ranges.
     
@@ -219,6 +234,7 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
         output_dir: Directory to save plot
         save: Whether to save the plot
         narrow_priors_deviation: Deviation for narrow priors display in title
+        use_prominent_features: Whether prominent features filtering was used
         
     Returns:
         Figure path if saved, None otherwise
@@ -267,12 +283,18 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
     print(f"Mean MAPE: {np.mean(mapes):.1f}% ± {np.std(mapes):.1f}%")
     print(f"Median MAPE: {np.median(mapes):.1f}%")
     
-    # Create SLD mode text for title
-    sld_mode_text = f" (SLD fix: {fix_sld_mode})" if fix_sld_mode != 'none' else ""
+    # Create title with all configuration information
+    title_parts = []
+    if fix_sld_mode != 'none':
+        title_parts.append(f"SLD fix: {fix_sld_mode}")
+    if use_prominent_features:
+        title_parts.append("Prominent Features")
+    
+    title_suffix = f" ({', '.join(title_parts)})" if title_parts else ""
     
     # Create distribution plot
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(f'MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{sld_mode_text}\n'
+    fig.suptitle(f'MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{title_suffix}\n'
                 f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
                 fontsize=16, fontweight='bold')
     
@@ -324,7 +346,13 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
     
     if save:
         # Save plot
-        plot_file = Path(output_dir) / f"mape_distribution_{layer_count}layer.png"
+        filename_parts = [f"mape_distribution_{layer_count}layer"]
+        
+        if use_prominent_features:
+            filename_parts.append("prominent")
+        
+        filename = "_".join(filename_parts) + ".png"
+        plot_file = Path(output_dir) / filename
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -335,7 +363,8 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
         return None
 
 
-def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".", save=True, narrow_priors_deviation=0.99):
+def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".", save=True, 
+                                  narrow_priors_deviation=0.99, use_prominent_features=False):
     """
     Create parameter-specific MAPE breakdown plot with detailed debugging.
     
@@ -345,6 +374,7 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
         output_dir: Directory to save plot
         save: Whether to save the plot
         narrow_priors_deviation: Deviation for narrow priors display in title
+        use_prominent_features: Whether prominent features filtering was used
         
     Returns:
         Figure path if saved, None otherwise
@@ -451,12 +481,16 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
     ax.set_xlabel('Parameter Type', fontsize=12)
     ax.set_ylabel('MAPE (%)', fontsize=12)
     
-    # Create SLD mode text for title
-    sld_mode_text = ""
+    # Create title with all configuration information
+    title_parts = []
     if fix_sld_mode != "none":
-        sld_mode_text = f" (SLD fix: {fix_sld_mode})"
+        title_parts.append(f"SLD fix: {fix_sld_mode}")
+    if use_prominent_features:
+        title_parts.append("Prominent Features")
     
-    ax.set_title(f'Parameter-Specific MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{sld_mode_text}\n'
+    title_suffix = f" ({', '.join(title_parts)})" if title_parts else ""
+    
+    ax.set_title(f'Parameter-Specific MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{title_suffix}\n'
                 f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
                 fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
@@ -499,7 +533,13 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
     
     if save:
         # Save plot
-        plot_file = Path(output_dir) / f"parameter_breakdown_{layer_count}layer.png"
+        filename_parts = [f"parameter_breakdown_{layer_count}layer"]
+        
+        if use_prominent_features:
+            filename_parts.append("prominent")
+        
+        filename = "_".join(filename_parts) + ".png"
+        plot_file = Path(output_dir) / filename
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -510,7 +550,8 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
         return None
 
 
-def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", save=True):
+def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", save=True, 
+                               use_prominent_features=False, narrow_priors_deviation=0.99):
     """
     Create all batch analysis plots (MAPE distribution, edge case detection, parameter breakdown).
     
@@ -519,6 +560,8 @@ def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", sa
         layer_count: Number of layers for plot titles
         output_dir: Directory to save plots
         save: Whether to save the plots
+        use_prominent_features: Whether prominent features filtering was used
+        narrow_priors_deviation: Deviation for narrow priors display in titles
         
     Returns:
         Dictionary with paths to saved plots
@@ -529,17 +572,17 @@ def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", sa
     
     # Create MAPE distribution plot
     plot_paths['mape_distribution'] = plot_batch_mape_distribution(
-        batch_results, layer_count, output_dir, save
+        batch_results, layer_count, output_dir, save, narrow_priors_deviation, use_prominent_features
     )
     
     # Create edge case detection plot
     plot_paths['edge_case_detection'] = plot_batch_edge_case_detection(
-        batch_results, layer_count, output_dir, save
+        batch_results, layer_count, output_dir, save, use_prominent_features
     )
     
     # Create parameter breakdown plot
     plot_paths['parameter_breakdown'] = plot_batch_parameter_breakdown(
-        batch_results, layer_count, output_dir, save
+        batch_results, layer_count, output_dir, save, narrow_priors_deviation, use_prominent_features
     )
     
     print("Batch analysis plots completed!")
