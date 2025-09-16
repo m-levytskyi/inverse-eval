@@ -7,8 +7,6 @@ calculating statistics, and detecting edge cases.
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
 
 
 def create_summary_statistics(successful_results, layer_count, enable_preprocessing=True, 
@@ -43,7 +41,7 @@ def create_summary_statistics(successful_results, layer_count, enable_preprocess
                 
                 # Debug: Show by_type breakdown if available
                 if 'by_type' in param_metrics:
-                    print(f"  Parameter breakdown:")
+                    print("  Parameter breakdown:")
                     by_type = param_metrics['by_type']
                     for param_type, metrics in by_type.items():
                         if isinstance(metrics, dict) and 'mape' in metrics:
@@ -51,7 +49,7 @@ def create_summary_statistics(successful_results, layer_count, enable_preprocess
                 
                 # Debug: Show individual parameter details if available
                 if 'by_parameter' in param_metrics:
-                    print(f"  Individual parameters:")
+                    print("  Individual parameters:")
                     for param_name, metrics in param_metrics['by_parameter'].items():
                         if isinstance(metrics, dict):
                             pred = metrics.get('predicted', 'N/A')
@@ -154,227 +152,13 @@ def print_mape_distribution(successful_results):
     print(f"Acceptable (10-20%): {acceptable} ({100*acceptable/total:.1f}%)")
     print(f"Poor (≥ 20%): {poor} ({100*poor/total:.1f}%)")
     
-    print(f"\nStatistics:")
+    print("\nStatistics:")
     print(f"Mean: {np.mean(mape_values):.1f}% ± {np.std(mape_values):.1f}%")
     print(f"Median: {np.median(mape_values):.1f}%")
     print(f"Range: {np.min(mape_values):.1f}% - {np.max(mape_values):.1f}%")
 
 
-def create_mape_distribution_plot(successful_results, layer_count, plots_dir, narrow_priors_deviation=0.99):
-    """Create MAPE distribution plot showing real overall MAPE values with debugging."""
-    # Collect real overall MAPE values with debugging
-    mape_data = {'narrow': []}
-    fix_sld_mode = "none"  # Default value
-    
-    print("\nDEBUG - MAPE distribution collection:")
-    
-    for exp_id, result in successful_results.items():
-        if 'param_metrics' in result and result['param_metrics']:
-            param_metrics = result['param_metrics']
-            
-            # Extract SLD fixing mode from first successful result
-            if fix_sld_mode == "none" and 'priors_config' in result:
-                fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
-            
-            # Get the real overall MAPE - no artificial calculations
-            overall_mape = None
-            if 'overall_mape' in param_metrics:
-                overall_mape = param_metrics['overall_mape']
-                print(f"  {exp_id}: overall_mape = {overall_mape:.2f}%")
-            elif 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
-                if 'mape' in param_metrics['overall']:
-                    overall_mape = param_metrics['overall']['mape']
-                    print(f"  {exp_id}: overall.mape = {overall_mape:.2f}%")
-            
-            if overall_mape is not None:
-                mape_data['narrow'].append(overall_mape)
-    
-    if not mape_data['narrow']:
-        print("No MAPE data available for plotting")
-        return None
-    
-    mapes = mape_data['narrow']
-    print(f"\nCollected {len(mapes)} real MAPE values")
-    print(f"MAPE range: {np.min(mapes):.1f}% - {np.max(mapes):.1f}%")
-    print(f"Mean MAPE: {np.mean(mapes):.1f}% ± {np.std(mapes):.1f}%")
-    print(f"Median MAPE: {np.median(mapes):.1f}%")
-    
-    # Create SLD mode text for title
-    sld_mode_text = f" (SLD: {fix_sld_mode})" if fix_sld_mode != 'none' else ""
-    
-    # Create distribution plot
-    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(f'MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{sld_mode_text}\n'
-                f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
-                fontsize=16, fontweight='bold')
-    
-    # Define MAPE ranges
-    mape_ranges = [0, 5, 10, 15, 20, 25, 30, 40, 50, 100]
-    range_labels = ['0-5%', '5-10%', '10-15%', '15-20%', '20-25%', '25-30%', '30-40%', '40-50%', '50%+']
-    
-    # Count experiments in each MAPE range
-    counts = []
-    for i in range(len(mape_ranges) - 1):
-        count = sum(1 for mape in mapes if mape_ranges[i] <= mape < mape_ranges[i+1])
-        counts.append(count)
-    
-    # Add count for 50%+ range
-    counts.append(sum(1 for mape in mapes if mape >= 50))
-    
-    # Create bar chart
-    colors = plt.cm.RdYlGn_r(np.linspace(0.2, 0.8, len(counts)))
-    bars = ax.bar(range(len(counts)), counts, color=colors, alpha=0.8, edgecolor='black')
-    
-    # Add value labels on bars
-    for i, (bar, count) in enumerate(zip(bars, counts)):
-        if count > 0:
-            percentage = (count / len(mapes)) * 100
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                   f'{count}\n({percentage:.1f}%)', ha='center', va='bottom', 
-                   fontsize=10, fontweight='bold')
-    
-    ax.set_xlabel('MAPE Range')
-    ax.set_ylabel('Number of Experiments')
-    ax.set_xticks(range(len(range_labels)))
-    ax.set_xticklabels(range_labels, rotation=45, ha='right')
-    ax.grid(True, alpha=0.3, axis='y')
-    
-    # Add statistics text
-    if mapes:
-        stats_text = f'Total: {len(mapes)} experiments\n'
-        stats_text += f'Mean MAPE: {np.mean(mapes):.1f}%\n'
-        stats_text += f'Median MAPE: {np.median(mapes):.1f}%\n'
-        stats_text += f'Std Dev: {np.std(mapes):.1f}%\n'
-        stats_text += f'Min MAPE: {np.min(mapes):.1f}%\n'
-        stats_text += f'Max MAPE: {np.max(mapes):.1f}%'
-        
-        ax.text(0.98, 0.98, stats_text, transform=ax.transAxes, 
-               ha='right', va='top', fontsize=10, 
-               bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
-    
-    plt.tight_layout()
-    
-    # Save plot
-    plot_file = plots_dir / f"mape_distribution_{layer_count}layer.png"
-    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"MAPE distribution plot saved to: {plot_file}")
-    
-    return plot_file
 
-
-def create_parameter_breakdown_plot(successful_results, layer_count, plots_dir, narrow_priors_deviation=0.99):
-    """Create parameter-specific MAPE breakdown plot with proper debugging."""
-    # Collect parameter-specific MAPE values from by_type structure
-    param_mapes = {
-        'thickness': [],
-        'roughness': [], 
-        'sld': [],
-        'overall': []
-    }
-    
-    # Extract SLD fixing mode from results
-    fix_sld_mode = "none"  # Default value
-    for result in successful_results.values():
-        if 'priors_config' in result and fix_sld_mode == "none":
-            fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
-            break
-    
-    print("\nDEBUG - Parameter breakdown collection:")
-    
-    for exp_id, result in successful_results.items():
-        if 'param_metrics' in result and result['param_metrics']:
-            param_metrics = result['param_metrics']
-            
-            print(f"\nExperiment {exp_id}:")
-            
-            # Overall MAPE
-            if 'overall_mape' in param_metrics:
-                overall_mape = param_metrics['overall_mape']
-                param_mapes['overall'].append(overall_mape)
-                print(f"  Overall MAPE: {overall_mape:.2f}%")
-            elif 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
-                if 'mape' in param_metrics['overall']:
-                    overall_mape = param_metrics['overall']['mape']
-                    param_mapes['overall'].append(overall_mape)
-                    print(f"  Overall MAPE: {overall_mape:.2f}%")
-            
-            # Individual parameter MAPEs from by_type structure
-            if 'by_type' in param_metrics:
-                by_type = param_metrics['by_type']
-                print(f"  by_type data:")
-                for param_type in ['thickness', 'roughness', 'sld']:
-                    if param_type in by_type and isinstance(by_type[param_type], dict):
-                        if 'mape' in by_type[param_type]:
-                            mape_val = by_type[param_type]['mape']
-                            param_mapes[param_type].append(mape_val)
-                            print(f"    {param_type}: {mape_val:.2f}%")
-                        else:
-                            print(f"    {param_type}: no MAPE data")
-                    else:
-                        print(f"    {param_type}: not found in by_type")
-    
-    # Filter out empty parameter types
-    param_mapes = {k: v for k, v in param_mapes.items() if v}
-    
-    print(f"\nFinal parameter counts:")
-    for param_type, values in param_mapes.items():
-        print(f"  {param_type}: {len(values)} values")
-    
-    if not param_mapes:
-        print("No parameter-specific MAPE data available for plotting")
-        return None
-    
-    # Create box plot
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    param_names = list(param_mapes.keys())
-    param_values = [param_mapes[name] for name in param_names]
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#95E1D3'][:len(param_names)]
-    
-    # Create box plot
-    box_plot = ax.boxplot(param_values, tick_labels=param_names, patch_artist=True,
-                         showfliers=True, flierprops=dict(marker='o', markerfacecolor='red', 
-                         markersize=5, alpha=0.5))
-    
-    # Color the boxes
-    for patch, color in zip(box_plot['boxes'], colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-    
-    ax.set_xlabel('Parameter Type', fontsize=12)
-    ax.set_ylabel('MAPE (%)', fontsize=12)
-    # Create SLD mode text for title
-    sld_mode_text = ""
-    if fix_sld_mode != "none":
-        sld_mode_text = f" (SLD: {fix_sld_mode})"
-    
-    ax.set_title(f'Parameter-Specific MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{sld_mode_text}\n'
-                f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
-                fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3, axis='y')
-    
-    # Add statistical annotations
-    for i, (name, values) in enumerate(zip(param_names, param_values)):
-        if values:  # Only add annotation if there are values
-            median_val = np.median(values)
-            mean_val = np.mean(values)
-            ax.text(i + 1, ax.get_ylim()[1] * 0.95, 
-                   f'Med: {median_val:.1f}%\nMean: {mean_val:.1f}%', 
-                   ha='center', va='top', fontsize=9,
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
-    
-    plt.tight_layout()
-    
-    # Save plot
-    plot_file = plots_dir / f"parameter_breakdown_{layer_count}layer.png"
-    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Parameter breakdown plot saved to: {plot_file}")
-    
-    return plot_file
 
 
 def detect_edge_cases(successful_results):
@@ -449,6 +233,5 @@ if __name__ == "__main__":
     print("  - create_summary_statistics()")
     print("  - print_summary_statistics()")
     print("  - print_mape_distribution()")
-    print("  - create_mape_distribution_plot()")
-    print("  - create_parameter_breakdown_plot()")
     print("  - detect_edge_cases()")
+    print("Note: Plotting functions are available in plotting_utils module")
