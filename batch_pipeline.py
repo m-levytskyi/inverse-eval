@@ -52,6 +52,9 @@ USE_NARROW_PRIORS = True                   # Set to False to use broad priors
 NARROW_PRIORS_DEVIATION = 0.99            # Deviation for narrow priors
 PRIORS_TYPE = "narrow" if USE_NARROW_PRIORS else "broad"
 
+# Prominent features configuration
+DEFAULT_USE_PROMINENT_FEATURES = False    # Prominent features analysis
+
 # =============================================================================
 
 
@@ -64,7 +67,8 @@ class BatchInferencePipeline:
                  output_dir=DEFAULT_OUTPUT_DIR, data_directory=DEFAULT_DATA_DIRECTORY, 
                  enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, apply_constraints=DEFAULT_APPLY_CONSTRAINTS,
                  use_narrow_priors=USE_NARROW_PRIORS, narrow_priors_deviation=NARROW_PRIORS_DEVIATION, 
-                 experiment_ids=None, fix_sld_mode=DEFAULT_FIX_SLD_MODE):
+                 experiment_ids=None, fix_sld_mode=DEFAULT_FIX_SLD_MODE, 
+                 use_prominent_features=DEFAULT_USE_PROMINENT_FEATURES):
         """
         Initialize the batch inference pipeline.
         
@@ -79,6 +83,7 @@ class BatchInferencePipeline:
             narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
             fix_sld_mode: SLD fixing mode - "none", "fronting_backing", or "all"
             experiment_ids: List of specific experiment IDs to process (optional)
+            use_prominent_features: Whether to use prominent features analysis
         """
         self.experiment_ids = experiment_ids
         self.num_experiments = len(experiment_ids) if experiment_ids else num_experiments
@@ -89,14 +94,12 @@ class BatchInferencePipeline:
         self.use_narrow_priors = use_narrow_priors
         self.narrow_priors_deviation = narrow_priors_deviation
         self.fix_sld_mode = fix_sld_mode
+        self.use_prominent_features = use_prominent_features
         self.priors_type = "narrow" if use_narrow_priors else "broad"
         
         # Create timestamped output directory in batch_inference_results
         timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
-        if experiment_ids:
-            folder_name = f"custom_{len(experiment_ids)}experiments_{layer_count}_layer_{timestamp}"
-        else:
-            folder_name = f"{num_experiments}experiments_{layer_count}_layer_{timestamp}"
+        folder_name = self._generate_folder_name(timestamp)
         self.output_dir = Path("batch_inference_results") / folder_name
         ensure_directory_exists(self.output_dir)
         
@@ -116,6 +119,80 @@ class BatchInferencePipeline:
         print(f"SLD fixing mode: {self.fix_sld_mode}")
         if self.use_narrow_priors:
             print(f"Narrow priors deviation: ±{self.narrow_priors_deviation*100:.1f}%")
+        print(f"Prominent features: {'enabled' if self.use_prominent_features else 'disabled'}")
+    
+    def _get_next_index(self):
+        """Get the next available index by scanning existing directories."""
+        batch_results_dir = Path("batch_inference_results")
+        if not batch_results_dir.exists():
+            return 1
+        
+        existing_indices = []
+        for folder in batch_results_dir.iterdir():
+            if folder.is_dir():
+                folder_name = folder.name
+                # Extract index from folder name (assuming it starts with digits followed by underscore)
+                if '_' in folder_name:
+                    index_part = folder_name.split('_')[0]
+                    if index_part.isdigit():
+                        existing_indices.append(int(index_part))
+        
+        return max(existing_indices, default=0) + 1
+    
+    def _format_prior_info(self):
+        """Format prior information for folder name."""
+        if self.use_narrow_priors:
+            # Convert deviation to percentage (e.g., 0.99 -> 99)
+            percentage = int(self.narrow_priors_deviation * 100)
+            return f"{percentage}priors"
+        else:
+            return "broadpriors"
+    
+    def _format_sld_fix_info(self):
+        """Format SLD fix information for folder name."""
+        if self.fix_sld_mode == "all":
+            return "allSLDfix"
+        elif self.fix_sld_mode == "fronting_backing":
+            return "partSLDfix"
+        else:  # "none"
+            return ""
+    
+    def _format_prominent_info(self):
+        """Format prominent features information for folder name."""
+        return "PROMINENT" if self.use_prominent_features else ""
+    
+    def _generate_folder_name(self, timestamp):
+        """Generate the complete folder name with all components."""
+        index = self._get_next_index()
+        
+        # Base experiment info
+        if self.experiment_ids:
+            exp_info = f"custom_{len(self.experiment_ids)}exps"
+        else:
+            exp_info = f"{self.num_experiments}exps"
+        
+        layers_info = f"{self.layer_count}layers"
+        prior_info = self._format_prior_info()
+        sld_fix_info = self._format_sld_fix_info()
+        prominent_info = self._format_prominent_info()
+        
+        # Build folder name components
+        components = [
+            f"{index:03d}",  # Zero-padded index (001, 002, etc.)
+            exp_info,
+            layers_info,
+            prior_info
+        ]
+        
+        # Add optional components if not empty
+        if sld_fix_info:
+            components.append(sld_fix_info)
+        if prominent_info:
+            components.append(prominent_info)
+        
+        components.append(timestamp)
+        
+        return "_".join(components)
     
     def discover_experiments(self):
         """
@@ -395,6 +472,8 @@ def parse_arguments():
     parser.add_argument('--fix-sld-mode', type=str, choices=['none', 'fronting_backing', 'all'], 
                        default=DEFAULT_FIX_SLD_MODE,
                        help=f'SLD fixing mode: none, fronting_backing, or all (default: {DEFAULT_FIX_SLD_MODE})')
+    parser.add_argument('--use-prominent-features', action='store_true',
+                       help='Enable prominent features analysis')
     
     return parser.parse_args()
 
@@ -412,7 +491,8 @@ def main():
         enable_preprocessing=not args.disable_preprocessing,
         apply_constraints=not args.disable_constraints,
         fix_sld_mode=args.fix_sld_mode,
-        experiment_ids=args.experiment_ids
+        experiment_ids=args.experiment_ids,
+        use_prominent_features=args.use_prominent_features
     )
     
     # Run the pipeline
