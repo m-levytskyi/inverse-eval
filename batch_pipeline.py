@@ -524,6 +524,8 @@ def parse_arguments():
                        help=f'SLD fixing mode: none, fronting_backing, or all (default: {DEFAULT_FIX_SLD_MODE})')
     parser.add_argument('--use-prominent-features', action='store_true',
                        help='Enable prominent features analysis')
+    parser.add_argument('--priors-deviation', type=int, choices=[5, 30, 99], default=99,
+                       help='Prior bounds deviation percentage: 5, 30, or 99 (default: 99)')
     
     return parser.parse_args()
 
@@ -542,7 +544,8 @@ def main():
         apply_constraints=not args.disable_constraints,
         fix_sld_mode=args.fix_sld_mode,
         experiment_ids=args.experiment_ids,
-        use_prominent_features=args.use_prominent_features
+        use_prominent_features=args.use_prominent_features,
+        narrow_priors_deviation=args.priors_deviation / 100.0  # Convert percentage to decimal
     )
     
     # Run the pipeline
