@@ -9,6 +9,7 @@ inference_results/
 batch_inference_results/
 synthetic_data/
 peaks_plots/
+sld_plots/
 
 # Development directories (keep these ignored)
 debug/
