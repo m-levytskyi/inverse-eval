@@ -34,6 +34,7 @@ def discover_experiment_files(experiment_id, data_directory, layer_count=None):
     
     # Define search patterns
     data_patterns = [
+        f"{experiment_id}_theoretical_curve.dat",
         f"{experiment_id}_experimental_curve.dat"
     ]
     

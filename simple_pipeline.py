@@ -41,7 +41,16 @@ def load_experimental_data(data_file_path, enable_preprocessing=True,
     
     q_exp = data[..., 0]
     curve_exp = data[..., 1]
-    sigmas_exp = data[..., 2]
+    
+    # Handle both theoretical (3 columns) and experimental (4 columns) data
+    if data.shape[1] == 3:
+        # Theoretical data: create minimal dummy error bars
+        sigmas_exp = np.full_like(curve_exp, 1e-6)
+        print("Detected theoretical data (3 columns) - using minimal dummy errors")
+    else:
+        # Experimental data: use actual error bars
+        sigmas_exp = data[..., 2]
+        print("Detected experimental data (4 columns) - using actual errors")
     
     print(f"Raw Q range: {q_exp.min():.4f} - {q_exp.max():.4f} Å⁻¹")
     print(f"Raw curve shape: {curve_exp.shape}")
