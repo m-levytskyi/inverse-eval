@@ -378,9 +378,11 @@ def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
     # Define which SLDs to fix based on mode
     if fix_sld_mode == "fronting_backing":
         if layer_count == 1:
-            sld_params_to_fix = ['layer_sld', 'sub_sld']  # fronting and backing
+            # Can only fix backing (sub_sld) - fronting SLD is not a parameter
+            sld_params_to_fix = ['sub_sld']  # backing only
         elif layer_count == 2:
-            sld_params_to_fix = ['layer1_sld', 'sub_sld']  # fronting (first layer) and backing
+            # Can only fix backing (sub_sld) - fronting SLD is not a parameter  
+            sld_params_to_fix = ['sub_sld']  # backing only
     elif fix_sld_mode == "all":
         if layer_count == 1:
             sld_params_to_fix = ['layer_sld', 'sub_sld']  # all SLDs
