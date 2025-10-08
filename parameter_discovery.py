@@ -354,7 +354,7 @@ def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
         bounds: List of (min, max) tuples for prior bounds
         true_params_dict: Dictionary with true parameters
         layer_count: Number of layers (1 or 2)
-        fix_sld_mode: SLD fixing mode - "fronting_backing", "all", or "none"
+        fix_sld_mode: SLD fixing mode - "backing", "all", or "none"
         
     Returns:
         Updated list of (min, max) tuples with fixed SLD bounds
@@ -376,7 +376,7 @@ def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
     print(f"Applying SLD fixing mode: {fix_sld_mode}")
     
     # Define which SLDs to fix based on mode
-    if fix_sld_mode == "fronting_backing":
+    if fix_sld_mode == "backing":
         if layer_count == 1:
             # Can only fix backing (sub_sld) - fronting SLD is not a parameter
             sld_params_to_fix = ['sub_sld']  # backing only
@@ -415,7 +415,7 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
         priors_type: "broad" or "narrow"
         deviation: Relative deviation for narrow priors (e.g., 0.5 for 50%)
         layer_count: Number of layers (1 or 2)
-        fix_sld_mode: SLD fixing mode - "none", "fronting_backing", or "all"
+        fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
         
     Returns:
         List of (min, max) tuples for prior bounds

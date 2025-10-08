@@ -4,7 +4,7 @@ Automated batch pipeline parameter sweep script.
 
 This script runs the batch pipeline with different parameter combinations:
 - Prior deviations: 5%, 30%, 99%
-- SLD fixing modes: none, fronting_backing, all
+- SLD fixing modes: none, backing, all
 - With and without prominent features
 - Results stored in dedicated sweep_results folder
 """
@@ -22,7 +22,7 @@ import json
 
 # Parameter combinations to test
 PRIOR_DEVIATIONS = [5, 30, 99]
-SLD_MODES = ["none", "fronting_backing", "all"]
+SLD_MODES = ["none", "backing", "all"]
 PROMINENT_FEATURES = [False, True]
 
 # Experiment configuration

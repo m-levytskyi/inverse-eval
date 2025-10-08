@@ -46,7 +46,7 @@ DEFAULT_PREPROCESSING_REMOVE_SINGLES = False
 DEFAULT_APPLY_CONSTRAINTS = True           # Apply physical constraints
 
 # SLD fixing configuration
-DEFAULT_FIX_SLD_MODE = "none"              # SLD fixing mode: "none", "fronting_backing", "all"
+DEFAULT_FIX_SLD_MODE = "none"              # SLD fixing mode: "none", "backing", "all"
 
 # Prior bounds configuration
 USE_NARROW_PRIORS = True                   # Set to False to use broad priors
@@ -82,7 +82,7 @@ class BatchInferencePipeline:
             apply_constraints: Whether to apply physical constraints to parameters
             use_narrow_priors: Whether to use narrow priors (requires true parameters)
             narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
-            fix_sld_mode: SLD fixing mode - "none", "fronting_backing", or "all"
+            fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
             experiment_ids: List of specific experiment IDs to process (optional)
             use_prominent_features: Whether to use prominent features analysis
         """
@@ -153,8 +153,8 @@ class BatchInferencePipeline:
         """Format SLD fix information for folder name."""
         if self.fix_sld_mode == "all":
             return "allSLDfix"
-        elif self.fix_sld_mode == "fronting_backing":
-            return "partSLDfix"
+        elif self.fix_sld_mode == "backing":
+            return "backSLDfix"
         else:  # "none"
             return ""
     
@@ -519,9 +519,9 @@ def parse_arguments():
                        help='Output directory (default: batch_results)')
     parser.add_argument('--experiment-ids', type=str, nargs='+',
                        help='Specific experiment IDs to process (e.g., s005156 s004141)')
-    parser.add_argument('--fix-sld-mode', type=str, choices=['none', 'fronting_backing', 'all'], 
+    parser.add_argument('--fix-sld-mode', type=str, choices=['none', 'backing', 'all'], 
                        default=DEFAULT_FIX_SLD_MODE,
-                       help=f'SLD fixing mode: none, fronting_backing, or all (default: {DEFAULT_FIX_SLD_MODE})')
+                       help=f'SLD fixing mode: none, backing, or all (default: {DEFAULT_FIX_SLD_MODE})')
     parser.add_argument('--use-prominent-features', action='store_true',
                        help='Enable prominent features analysis')
     parser.add_argument('--priors-deviation', type=int, choices=[5, 30, 99], default=99,

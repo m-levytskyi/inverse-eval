@@ -129,7 +129,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         apply_constraints: Whether to apply physical constraints to parameters
         priors_type: Type of priors to use ("broad" or "narrow")
         priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
-        fix_sld_mode: SLD fixing mode - "none", "fronting_backing", or "all"
+        fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
     
     Returns:
         Dictionary with results including parameters and metrics
