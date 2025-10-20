@@ -127,8 +127,9 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         preprocessing_consecutive: Consecutive points threshold
         preprocessing_remove_singles: Remove isolated high-error points
         apply_constraints: Whether to apply physical constraints to parameters
-        priors_type: Type of priors to use ("broad" or "narrow")
-        priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
+        priors_type: Type of priors to use ("broad", "narrow", or "constraint_based")
+        priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%) or 
+                         constraint percentage for constraint_based priors
         fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
     
     Returns:

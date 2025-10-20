@@ -403,6 +403,100 @@ def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
     return fixed_bounds
 
 
+def get_constraint_based_prior_bounds(true_params_dict, layer_count, constraint_percentage):
+    """
+    Generate constraint-based prior bounds using a percentage of the model constraint span.
+    
+    Args:
+        true_params_dict: Dictionary with true parameters
+        layer_count: Number of layers (1 or 2)  
+        constraint_percentage: Percentage of constraint span to use (e.g., 0.3 for 30%)
+        
+    Returns:
+        List of (min, max) tuples for prior bounds
+    """
+    layer_key = f'{layer_count}_layer'
+    if layer_key not in true_params_dict:
+        raise ValueError(f"No true parameters found for {layer_count} layer")
+    
+    true_params = true_params_dict[layer_key]['params']
+    param_names = get_parameter_names_for_layer_count(layer_count)
+    
+    # Model constraints and allowed widths (same as in narrow priors)
+    model_constraints = {
+        'thickness': (1.0, 1000.0),
+        'amb_rough': (0.0, 60.0),
+        'sub_rough': (0.0, 60.0),
+        'int_rough': (0.0, 60.0),  # for 2-layer
+        'layer_sld': (-8.0, 16.0),
+        'layer1_sld': (-8.0, 16.0),  # for 2-layer
+        'layer2_sld': (-8.0, 16.0),  # for 2-layer
+        'sub_sld': (-8.0, 16.0),
+        'thickness1': (1.0, 1000.0),  # for 2-layer
+        'thickness2': (1.0, 1000.0)   # for 2-layer
+    }
+    
+    allowed_widths = {
+        'thickness': (0.01, 1000.0),
+        'amb_rough': (0.01, 60.0),
+        'sub_rough': (0.01, 60.0),
+        'int_rough': (0.01, 60.0),  # for 2-layer
+        'layer_sld': (0.01, 5.0),
+        'layer1_sld': (0.01, 5.0),  # for 2-layer
+        'layer2_sld': (0.01, 5.0),  # for 2-layer
+        'sub_sld': (0.01, 5.0),
+        'thickness1': (0.01, 1000.0),  # for 2-layer
+        'thickness2': (0.01, 1000.0)   # for 2-layer
+    }
+    
+    bounds = []
+    
+    print(f"Generating constraint-based prior bounds ({constraint_percentage*100:.0f}% of constraint span)")
+    
+    for i, (param_name, param_value) in enumerate(zip(param_names, true_params)):
+        # Get constraints for this parameter
+        model_min, model_max = model_constraints.get(param_name, (-1e6, 1e6))
+        width_min, width_max = allowed_widths.get(param_name, (0.01, 1e6))
+        
+        # Calculate span of model constraints
+        constraint_span = model_max - model_min
+        
+        # Calculate width as percentage of constraint span
+        target_width = constraint_percentage * constraint_span
+        
+        # Clip to allowed widths
+        target_width = max(width_min, min(target_width, width_max))
+        
+        # Center around true value
+        half_width = target_width / 2
+        min_val = param_value - half_width
+        max_val = param_value + half_width
+        
+        # Adjust if bounds exceed model constraints
+        if max_val > model_max:
+            # Shift left
+            shift = max_val - model_max
+            max_val = model_max
+            min_val = max(min_val - shift, model_min)
+        
+        if min_val < model_min:
+            # Shift right  
+            shift = model_min - min_val
+            min_val = model_min
+            max_val = min(max_val + shift, model_max)
+        
+        # Final safety check - ensure bounds are within model constraints
+        min_val = max(min_val, model_min)
+        max_val = min(max_val, model_max)
+        
+        bounds.append((min_val, max_val))
+        
+        print(f"  {param_name}: true={param_value:.3f}, constraint_span={constraint_span:.1f}, "
+              f"target_width={target_width:.3f} -> [{min_val:.3f}, {max_val:.3f}]")
+    
+    return bounds
+
+
 def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None, 
                                    priors_type="broad", deviation=0.5, layer_count=1,
                                    fix_sld_mode="none"):
@@ -411,9 +505,10 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
     
     Args:
         experiment_id: Experiment identifier
-        true_params_dict: Dictionary with true parameters (for narrow priors)
-        priors_type: "broad" or "narrow"
-        deviation: Relative deviation for narrow priors (e.g., 0.5 for 50%)
+        true_params_dict: Dictionary with true parameters (for narrow/constraint_based priors)
+        priors_type: "broad", "narrow", or "constraint_based"
+        deviation: Relative deviation for narrow priors (e.g., 0.5 for 50%) or 
+                  constraint percentage for constraint_based priors (e.g., 0.3 for 30%)
         layer_count: Number of layers (1 or 2)
         fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
         
@@ -424,7 +519,17 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
     if fix_sld_mode != "none":
         print(f"SLD fixing mode: {fix_sld_mode}")
     
-    if priors_type == "narrow" and true_params_dict:
+    if priors_type == "constraint_based" and true_params_dict:
+        # Use constraint-based priors
+        bounds = get_constraint_based_prior_bounds(true_params_dict, layer_count, deviation)
+        
+        # Apply SLD fixing if requested
+        if fix_sld_mode != "none":
+            bounds = apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode)
+        
+        return bounds
+    
+    elif priors_type == "narrow" and true_params_dict:
         # Use true parameters to generate narrow priors
         layer_key = f'{layer_count}_layer'
         if layer_key in true_params_dict:

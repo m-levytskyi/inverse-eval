@@ -69,7 +69,7 @@ class BatchInferencePipeline:
                  enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, apply_constraints=DEFAULT_APPLY_CONSTRAINTS,
                  use_narrow_priors=USE_NARROW_PRIORS, narrow_priors_deviation=NARROW_PRIORS_DEVIATION, 
                  experiment_ids=None, fix_sld_mode=DEFAULT_FIX_SLD_MODE, 
-                 use_prominent_features=DEFAULT_USE_PROMINENT_FEATURES):
+                 use_prominent_features=DEFAULT_USE_PROMINENT_FEATURES, priors_type=None):
         """
         Initialize the batch inference pipeline.
         
@@ -81,10 +81,13 @@ class BatchInferencePipeline:
             enable_preprocessing: Whether to enable data preprocessing
             apply_constraints: Whether to apply physical constraints to parameters
             use_narrow_priors: Whether to use narrow priors (requires true parameters)
-            narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%)
+            narrow_priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%) or 
+                                     constraint percentage for constraint_based priors
             fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
             experiment_ids: List of specific experiment IDs to process (optional)
             use_prominent_features: Whether to use prominent features analysis
+            priors_type: Explicit priors type - "broad", "narrow", or "constraint_based" 
+                        (overrides use_narrow_priors if provided)
         """
         self.experiment_ids = experiment_ids
         self.num_experiments = len(experiment_ids) if experiment_ids else num_experiments
@@ -96,7 +99,13 @@ class BatchInferencePipeline:
         self.narrow_priors_deviation = narrow_priors_deviation
         self.fix_sld_mode = fix_sld_mode
         self.use_prominent_features = use_prominent_features
-        self.priors_type = "narrow" if use_narrow_priors else "broad"
+        
+        # Determine priors type - explicit parameter takes precedence
+        if priors_type is not None:
+            self.priors_type = priors_type
+            self.use_narrow_priors = (priors_type in ["narrow", "constraint_based"])
+        else:
+            self.priors_type = "narrow" if use_narrow_priors else "broad"
         
         # Create timestamped output directory in batch_inference_results
         timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
@@ -142,7 +151,11 @@ class BatchInferencePipeline:
     
     def _format_prior_info(self):
         """Format prior information for folder name."""
-        if self.use_narrow_priors:
+        if self.priors_type == "constraint_based":
+            # Convert deviation to percentage (e.g., 0.99 -> 99)
+            percentage = int(self.narrow_priors_deviation * 100)
+            return f"{percentage}constraint"
+        elif self.priors_type == "narrow":
             # Convert deviation to percentage (e.g., 0.99 -> 99)
             percentage = int(self.narrow_priors_deviation * 100)
             return f"{percentage}priors"
@@ -526,6 +539,8 @@ def parse_arguments():
                        help='Enable prominent features analysis')
     parser.add_argument('--priors-deviation', type=int, choices=[5, 30, 99], default=99,
                        help='Prior bounds deviation percentage: 5, 30, or 99 (default: 99)')
+    parser.add_argument('--priors-type', type=str, choices=['broad', 'narrow', 'constraint_based'], 
+                       help='Prior bounds type: broad, narrow, or constraint_based')
     
     return parser.parse_args()
 
@@ -545,7 +560,8 @@ def main():
         fix_sld_mode=args.fix_sld_mode,
         experiment_ids=args.experiment_ids,
         use_prominent_features=args.use_prominent_features,
-        narrow_priors_deviation=args.priors_deviation / 100.0  # Convert percentage to decimal
+        narrow_priors_deviation=args.priors_deviation / 100.0,  # Convert percentage to decimal
+        priors_type=args.priors_type
     )
     
     # Run the pipeline
