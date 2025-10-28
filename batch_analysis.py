@@ -26,12 +26,9 @@ def create_summary_statistics(successful_results, layer_count, enable_preprocess
             print(f"\nDEBUG - Experiment {exp_id}:")
             print(f"  param_metrics keys: {list(param_metrics.keys())}")
             
-            # Check for overall MAPE in different formats
+            # Get standard MAPE from param_metrics.overall.mape
             overall_mape = None
-            if 'overall_mape' in param_metrics:
-                overall_mape = param_metrics['overall_mape']
-                print(f"  Found overall_mape: {overall_mape:.2f}%")
-            elif 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
+            if 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
                 if 'mape' in param_metrics['overall']:
                     overall_mape = param_metrics['overall']['mape']
                     print(f"  Found overall.mape: {overall_mape:.2f}%")
@@ -57,9 +54,9 @@ def create_summary_statistics(successful_results, layer_count, enable_preprocess
                             rel_err = metrics.get('relative_error_percent', 'N/A')
                             print(f"    {param_name}: pred={pred}, true={true}, error={rel_err}%")
             
+            # Don't add redundant overall_mape - it's already in param_metrics['overall']['mape']
             debug_info.append({
                 'exp_id': exp_id,
-                'overall_mape': overall_mape,
                 'param_metrics': param_metrics
             })
     
@@ -124,11 +121,9 @@ def print_mape_distribution(successful_results):
         if 'param_metrics' in result and result['param_metrics']:
             param_metrics = result['param_metrics']
             
-            # Get real overall MAPE
+            # Get standard MAPE from param_metrics.overall.mape
             overall_mape = None
-            if 'overall_mape' in param_metrics:
-                overall_mape = param_metrics['overall_mape']
-            elif 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
+            if 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
                 if 'mape' in param_metrics['overall']:
                     overall_mape = param_metrics['overall']['mape']
             
