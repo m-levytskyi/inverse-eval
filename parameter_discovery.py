@@ -860,6 +860,63 @@ def experiment_exists(experiment_id, data_directory, layer_count=None):
     return False
 
 
+def check_experiment_within_constraints(experiment_id, true_params_dict, layer_count, 
+                                       constraint_percentage=0.99):
+    """
+    Check if an experiment's true parameters fall within the model constraint ranges.
+    
+    This function is used to detect outliers when constraint-based priors are enabled.
+    An experiment is considered an outlier if any of its true parameter values fall 
+    outside the MODEL CONSTRAINTS (e.g., thickness: 1-1000, roughness: 0-60, SLD: -8 to 16).
+    
+    NOTE: This checks against the constraint ranges themselves, NOT the prior bounds
+    that would be generated around the true values.
+    
+    Args:
+        experiment_id: Experiment identifier
+        true_params_dict: Dictionary with true parameters
+        layer_count: Number of layers (1 or 2)
+        constraint_percentage: Percentage of constraint span (not used for outlier detection)
+        
+    Returns:
+        Tuple of (is_within_constraints: bool, outlier_parameters: list)
+        - is_within_constraints: True if all parameters are within model constraints
+        - outlier_parameters: List of (param_name, value, constraint_min, constraint_max) for outliers
+    """
+    layer_key = f'{layer_count}_layer'
+    if layer_key not in true_params_dict:
+        return True, []  # Cannot check, assume valid
+    
+    true_params = true_params_dict[layer_key]['params']
+    param_names = get_parameter_names_for_layer_count(layer_count)
+    
+    # Define MODEL CONSTRAINTS (not prior bounds)
+    model_constraints = {
+        'thickness': (1.0, 1000.0),
+        'amb_rough': (0.0, 60.0),
+        'sub_rough': (0.0, 60.0),
+        'int_rough': (0.0, 60.0),
+        'layer_sld': (-8.0, 16.0),
+        'layer1_sld': (-8.0, 16.0),
+        'layer2_sld': (-8.0, 16.0),
+        'sub_sld': (-8.0, 16.0),
+        'thickness1': (1.0, 1000.0),
+        'thickness2': (1.0, 1000.0)
+    }
+    
+    # Check each parameter against model constraints
+    outlier_parameters = []
+    for param_name, param_value in zip(param_names, true_params):
+        constraint_min, constraint_max = model_constraints.get(param_name, (-1e6, 1e6))
+        
+        if param_value < constraint_min or param_value > constraint_max:
+            outlier_parameters.append((param_name, param_value, constraint_min, constraint_max))
+    
+    is_within_constraints = len(outlier_parameters) == 0
+    
+    return is_within_constraints, outlier_parameters
+
+
 if __name__ == "__main__":
     print("Parameter discovery module loaded successfully.")
     print("Available functions:")
@@ -870,3 +927,4 @@ if __name__ == "__main__":
     print("  - get_parameter_names_for_layer_count()")
     print("  - discover_batch_experiments()")
     print("  - experiment_exists()")
+    print("  - check_experiment_within_constraints()")
