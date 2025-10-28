@@ -316,56 +316,18 @@ class BatchInferencePipeline:
             print(f"  ✅ {experiment_id} completed successfully in {processing_time:.1f}s")
             return results
             
-        except Exception as primary_error:
-            primary_error_msg = str(primary_error)
-            print(f"  ❌ Failed with {self.priors_type} priors: {primary_error_msg}")
+        except Exception as error:
+            error_msg = str(error)
+            print(f"  ❌ Failed: {error_msg}")
             
-            # Check if it's a negative parameter error and we can fallback
-            if (self.use_narrow_priors and 
-                ("Negative roughness encountered" in primary_error_msg or 
-                 "Negative thickness encountered" in primary_error_msg)):
-                
-                print(f"  🔄 Detected negative parameter error - falling back to broad priors...")
-                
-                # Second attempt: Broad priors fallback
-                try:
-                    results = run_single_experiment(
-                        experiment_id=experiment_id,
-                        layer_count=self.layer_count,
-                        enable_preprocessing=self.enable_preprocessing,
-                        preprocessing_threshold=DEFAULT_PREPROCESSING_THRESHOLD,
-                        preprocessing_consecutive=DEFAULT_PREPROCESSING_CONSECUTIVE,
-                        preprocessing_remove_singles=DEFAULT_PREPROCESSING_REMOVE_SINGLES,
-                        apply_constraints=self.apply_constraints,
-                        priors_type="broad",
-                        priors_deviation=0.5,
-                        fix_sld_mode="none"  # Disable SLD fixing in fallback mode
-                    )
-                    
-                    # Success with broad priors fallback
-                    processing_time = time.time() - start_time
-                    results['experiment_id'] = experiment_id
-                    results['processing_time'] = processing_time
-                    results['success'] = True
-                    results['priors_used'] = "broad"
-                    results['fallback_applied'] = True
-                    results['primary_error'] = primary_error_msg
-                    
-                    print(f"  ✅ {experiment_id} completed with broad priors (fallback) in {processing_time:.1f}s")
-                    return results
-                    
-                except Exception as broad_error:
-                    print(f"  ❌ Failed with broad priors too: {str(broad_error)}")
-                    # Fall through to general error handling
-            
-            # Complete failure
+            # No fallback - fail immediately
             processing_time = time.time() - start_time
             return {
                 'experiment_id': experiment_id,
                 'processing_time': processing_time,
                 'success': False,
-                'error': primary_error_msg,
-                'error_type': type(primary_error).__name__
+                'error': error_msg,
+                'error_type': type(error).__name__
             }
     
     def process_experiments_sequential(self, experiments):

@@ -107,21 +107,25 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
     Returns:
         Figure path if saved, None otherwise
     """
+    
     # Collect experiment data and SLD fixing mode
     exp_data = {}
-    fix_sld_mode = "none"  # Default value
-    priors_type_used = "broad"  # Default value
+    fix_sld_mode = "none"
+    priors_type_used = None
     
     for exp_id, exp_result in batch_results.items():
         if exp_result.get('success', False) and 'param_metrics' in exp_result:
             param_metrics = exp_result['param_metrics']
             
             # Extract SLD fixing mode from first successful result
-            if fix_sld_mode == "none" and 'priors_config' in exp_result:
+            if priors_type_used is None and 'priors_config' in exp_result:
                 fix_sld_mode = exp_result['priors_config'].get('fix_sld_mode', 'none')
-                priors_type_used = exp_result['priors_config'].get('priors_type', 'broad')
+                priors_type_used = exp_result['priors_config'].get('priors_type')
+                if priors_type_used is None:
+                    raise ValueError(f"Missing priors_type in priors_config for experiment {exp_id}")
             
-            # Get the appropriate MAPE value based on priors type
+            if priors_type_used is None:
+                raise ValueError("Could not determine priors_type from any successful result")            # Get the appropriate MAPE value based on priors type
             overall_mape = None
             
             # For constraint-based priors, prefer constraint_mape if available
@@ -279,15 +283,20 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
     
     # Collect real overall MAPE values with debugging
     mape_data = {'narrow': []}
-    fix_sld_mode = "none"  # Default value
-    priors_type_used = "broad"  # Default value
+    fix_sld_mode = "none"
+    priors_type_used = None
     
     # Extract priors type from first successful result (all should have same config)
     for result in successful_results.values():
         if 'priors_config' in result:
-            priors_type_used = result['priors_config'].get('priors_type', 'broad')
+            priors_type_used = result['priors_config'].get('priors_type')
+            if priors_type_used is None:
+                raise ValueError(f"Missing priors_type in priors_config for experiment {list(successful_results.keys())[0]}")
             fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
             break
+    
+    if priors_type_used is None:
+        raise ValueError("Could not determine priors_type from any successful result")
     
     print(f"\nDEBUG - MAPE distribution collection:")
     print(f"Detected priors_type: {priors_type_used}")
@@ -454,13 +463,18 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
     }
     
     # Extract SLD fixing mode and priors type from results
-    fix_sld_mode = "none"  # Default value
-    priors_type_used = "broad"  # Default value
+    fix_sld_mode = "none"
+    priors_type_used = None
     for result in successful_results.values():
-        if 'priors_config' in result and fix_sld_mode == "none":
+        if 'priors_config' in result:
             fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
-            priors_type_used = result['priors_config'].get('priors_type', 'broad')
+            priors_type_used = result['priors_config'].get('priors_type')
+            if priors_type_used is None:
+                raise ValueError(f"Missing priors_type in priors_config")
             break
+    
+    if priors_type_used is None:
+        raise ValueError("Could not determine priors_type from any successful result")
     
     print("\nDEBUG - Parameter breakdown collection:")
     

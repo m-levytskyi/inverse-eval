@@ -654,43 +654,9 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
             
             return bounds
     
-    # Default broad priors for common structures - matched exactly to model constraints
-    # Model constraints: thickness [1.0, 1000.0], roughness [0.0, 60.0], sld [-8.0, 16.0]
-    if layer_count == 1:
-        broad_priors = [
-            (1.0, 1000.0),     # layer thickness (Å) - exact model limits
-            (0.0, 60.0),       # ambient roughness (Å) - exact model limits  
-            (0.0, 60.0),       # substrate roughness (Å) - exact model limits
-            (-8.0, 16.0),      # layer SLD (×10^-6 Å^-2) - exact model limits
-            (-8.0, 16.0)       # substrate SLD (×10^-6 Å^-2) - exact model limits
-        ]
-    elif layer_count == 2:
-        broad_priors = [
-            (1.0, 1000.0),     # layer1 thickness (Å) - exact model limits
-            (1.0, 1000.0),     # layer2 thickness (Å) - exact model limits
-            (0.0, 60.0),       # ambient roughness (Å) - exact model limits
-            (0.0, 60.0),       # interface roughness (Å) - exact model limits
-            (0.0, 60.0),       # substrate roughness (Å) - exact model limits
-            (-8.0, 16.0),      # layer1 SLD (×10^-6 Å^-2) - exact model limits
-            (-8.0, 16.0),      # layer2 SLD (×10^-6 Å^-2) - exact model limits
-            (-8.0, 16.0)       # substrate SLD (×10^-6 Å^-2) - exact model limits
-        ]
-    else:
-        raise ValueError(f"Unsupported layer count: {layer_count}")
-    
-    print(f"Using default broad {layer_count}-layer priors")
-    
-    # Apply SLD fixing if requested and true parameters are available
-    if fix_sld_mode != "none" and true_params_dict:
-        broad_priors = apply_sld_fixing(broad_priors, true_params_dict, layer_count, fix_sld_mode)
-    
-    # Log the detailed bounds for debugging
-    param_names = get_parameter_names_for_layer_count(layer_count)
-    print("Final prior bounds details:")
-    for i, (name, (min_val, max_val)) in enumerate(zip(param_names, broad_priors)):
-        print(f"  {name}: [{min_val:.3f}, {max_val:.3f}]")
-    
-    return broad_priors
+    # No fallback - if we reach here, raise an error
+    raise ValueError(f"Cannot generate priors: unsupported priors_type='{priors_type}' for layer_count={layer_count}. "
+                     f"Supported types: 'constraint_based', 'broad'. No default fallback is available.")
 
 
 def discover_batch_experiments(data_directory, layer_count=None, num_experiments=None, experiment_ids=None):
