@@ -90,7 +90,8 @@ def plot_simple_comparison(q_exp, curve_exp, sigmas_exp, q_model,
 
 
 
-def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".", save=True, use_prominent_features=False):
+def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".", save=True, 
+                                  use_prominent_features=False, failed_count=0, outlier_count=0):
     """
     Create edge case detection plot showing experiments with high MAPE values.
     
@@ -100,6 +101,8 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
         output_dir: Directory to save plot
         save: Whether to save the plot
         use_prominent_features: Whether prominent features filtering was used
+        failed_count: Number of failed experiments
+        outlier_count: Number of outlier experiments (excluded)
         
     Returns:
         Figure path if saved, None otherwise
@@ -107,15 +110,31 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
     # Collect experiment data and SLD fixing mode
     exp_data = {}
     fix_sld_mode = "none"  # Default value
+    priors_type_used = "broad"  # Default value
     
     for exp_id, exp_result in batch_results.items():
         if exp_result.get('success', False) and 'param_metrics' in exp_result:
             param_metrics = exp_result['param_metrics']
+            
             # Extract SLD fixing mode from first successful result
             if fix_sld_mode == "none" and 'priors_config' in exp_result:
                 fix_sld_mode = exp_result['priors_config'].get('fix_sld_mode', 'none')
-            if param_metrics and 'overall_mape' in param_metrics:
-                exp_data[exp_id] = param_metrics['overall_mape']
+                priors_type_used = exp_result['priors_config'].get('priors_type', 'broad')
+            
+            # Get the appropriate MAPE value based on priors type
+            overall_mape = None
+            
+            # For constraint-based priors, prefer constraint_mape if available
+            if priors_type_used == "constraint_based" and 'overall' in param_metrics:
+                if 'constraint_mape' in param_metrics['overall']:
+                    overall_mape = param_metrics['overall']['constraint_mape']
+            
+            # Fallback to regular MAPE
+            if overall_mape is None and 'overall_mape' in param_metrics:
+                overall_mape = param_metrics['overall_mape']
+            
+            if overall_mape is not None:
+                exp_data[exp_id] = overall_mape
     
     if not exp_data:
         print("No data available for edge case detection")
@@ -132,6 +151,15 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
     
     if use_prominent_features:
         title_parts.append("Prominent Features")
+    
+    # Add exclusion statistics to title if present
+    if outlier_count > 0 or failed_count > 0:
+        exclusion_info = []
+        if outlier_count > 0:
+            exclusion_info.append(f"{outlier_count} outliers")
+        if failed_count > 0:
+            exclusion_info.append(f"{failed_count} failed")
+        title_parts.append(f"Excluded: {', '.join(exclusion_info)}")
     
     title_suffix = f" ({', '.join(title_parts[1:])})" if len(title_parts) > 1 else ""
     
@@ -224,7 +252,8 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
 
 
 def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", save=True, 
-                                narrow_priors_deviation=0.99, use_prominent_features=False):
+                                narrow_priors_deviation=0.99, use_prominent_features=False,
+                                failed_count=0, outlier_count=0):
     """
     Create MAPE distribution plot showing how experiments are distributed across MAPE ranges.
     
@@ -235,6 +264,8 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
         save: Whether to save the plot
         narrow_priors_deviation: Deviation for narrow priors display in title
         use_prominent_features: Whether prominent features filtering was used
+        failed_count: Number of failed experiments
+        outlier_count: Number of outlier experiments (excluded)
         
     Returns:
         Figure path if saved, None otherwise
@@ -249,26 +280,37 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
     # Collect real overall MAPE values with debugging
     mape_data = {'narrow': []}
     fix_sld_mode = "none"  # Default value
+    priors_type_used = "broad"  # Default value
     
-    print("\nDEBUG - MAPE distribution collection:")
+    # Extract priors type from first successful result (all should have same config)
+    for result in successful_results.values():
+        if 'priors_config' in result:
+            priors_type_used = result['priors_config'].get('priors_type', 'broad')
+            fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
+            break
+    
+    print(f"\nDEBUG - MAPE distribution collection:")
+    print(f"Detected priors_type: {priors_type_used}")
+    print(f"Using MAPE field: {'constraint_mape' if priors_type_used == 'constraint_based' else 'mape'}")
     
     for exp_id, result in successful_results.items():
         if 'param_metrics' in result and result['param_metrics']:
             param_metrics = result['param_metrics']
             
-            # Extract SLD fixing mode from first successful result
-            if fix_sld_mode == "none" and 'priors_config' in result:
-                fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
-            
-            # Get the real overall MAPE - no artificial calculations
+            # Get the appropriate MAPE value based on priors type
             overall_mape = None
-            if 'overall_mape' in param_metrics:
-                overall_mape = param_metrics['overall_mape']
-                print(f"  {exp_id}: overall_mape = {overall_mape:.2f}%")
-            elif 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
-                if 'mape' in param_metrics['overall']:
-                    overall_mape = param_metrics['overall']['mape']
-                    print(f"  {exp_id}: overall.mape = {overall_mape:.2f}%")
+            
+            # For constraint-based priors, use constraint_mape field
+            if priors_type_used == "constraint_based":
+                if 'overall' in param_metrics and 'constraint_mape' in param_metrics['overall']:
+                    overall_mape = param_metrics['overall']['constraint_mape']
+                    print(f"  {exp_id}: constraint_mape = {overall_mape:.2f}%")
+            else:
+                # For non-constraint priors, use standard MAPE
+                if 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
+                    if 'mape' in param_metrics['overall']:
+                        overall_mape = param_metrics['overall']['mape']
+                        print(f"  {exp_id}: overall.mape = {overall_mape:.2f}%")
             
             if overall_mape is not None:
                 mape_data['narrow'].append(overall_mape)
@@ -290,11 +332,14 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
     if use_prominent_features:
         title_parts.append("Prominent Features")
     
+    # Add MAPE type indicator for constraint-based priors
+    mape_type_label = "Constraint-Based MAPE" if priors_type_used == "constraint_based" else "MAPE"
+    
     title_suffix = f" ({', '.join(title_parts)})" if title_parts else ""
     
     # Create distribution plot
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(f'MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{title_suffix}\n'
+    fig.suptitle(f'{mape_type_label} Distribution - {len(successful_results)} {layer_count}-Layer Experiments{title_suffix}\n'
                 f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
                 fontsize=16, fontweight='bold')
     
@@ -329,14 +374,25 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
     ax.set_xticklabels(range_labels, rotation=45, ha='right')
     ax.grid(True, alpha=0.3, axis='y')
     
-    # Add statistics text
+    # Determine MAPE label for statistics
+    mape_label = "Constraint MAPE" if priors_type_used == "constraint_based" else "MAPE"
+    
+    # Add statistics text with outlier and failure counts
     if mapes:
         stats_text = f'Total: {len(mapes)} experiments\n'
-        stats_text += f'Mean MAPE: {np.mean(mapes):.1f}%\n'
-        stats_text += f'Median MAPE: {np.median(mapes):.1f}%\n'
+        stats_text += f'Mean {mape_label}: {np.mean(mapes):.1f}%\n'
+        stats_text += f'Median {mape_label}: {np.median(mapes):.1f}%\n'
         stats_text += f'Std Dev: {np.std(mapes):.1f}%\n'
-        stats_text += f'Min MAPE: {np.min(mapes):.1f}%\n'
-        stats_text += f'Max MAPE: {np.max(mapes):.1f}%'
+        stats_text += f'Min {mape_label}: {np.min(mapes):.1f}%\n'
+        stats_text += f'Max {mape_label}: {np.max(mapes):.1f}%'
+        
+        # Add outlier and failure information if present
+        if outlier_count > 0 or failed_count > 0:
+            stats_text += f'\n\n--- Excluded ---'
+            if outlier_count > 0:
+                stats_text += f'\nOutliers: {outlier_count}'
+            if failed_count > 0:
+                stats_text += f'\nFailed: {failed_count}'
         
         ax.text(0.98, 0.98, stats_text, transform=ax.transAxes, 
                ha='right', va='top', fontsize=10, 
@@ -364,7 +420,8 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
 
 
 def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".", save=True, 
-                                  narrow_priors_deviation=0.99, use_prominent_features=False):
+                                  narrow_priors_deviation=0.99, use_prominent_features=False,
+                                  failed_count=0, outlier_count=0):
     """
     Create parameter-specific MAPE breakdown plot with detailed debugging.
     
@@ -375,6 +432,8 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
         save: Whether to save the plot
         narrow_priors_deviation: Deviation for narrow priors display in title
         use_prominent_features: Whether prominent features filtering was used
+        failed_count: Number of failed experiments
+        outlier_count: Number of outlier experiments (excluded)
         
     Returns:
         Figure path if saved, None otherwise
@@ -394,11 +453,13 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
         'overall': []
     }
     
-    # Extract SLD fixing mode from results
+    # Extract SLD fixing mode and priors type from results
     fix_sld_mode = "none"  # Default value
+    priors_type_used = "broad"  # Default value
     for result in successful_results.values():
         if 'priors_config' in result and fix_sld_mode == "none":
             fix_sld_mode = result['priors_config'].get('fix_sld_mode', 'none')
+            priors_type_used = result['priors_config'].get('priors_type', 'broad')
             break
     
     print("\nDEBUG - Parameter breakdown collection:")
@@ -409,16 +470,27 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
             
             print(f"\nExperiment {exp_id}:")
             
-            # Overall MAPE
-            if 'overall_mape' in param_metrics:
-                overall_mape = param_metrics['overall_mape']
-                param_mapes['overall'].append(overall_mape)
-                print(f"  Overall MAPE: {overall_mape:.2f}%")
-            elif 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
-                if 'mape' in param_metrics['overall']:
-                    overall_mape = param_metrics['overall']['mape']
+            # Overall MAPE - prefer constraint_mape for constraint-based priors
+            overall_mape = None
+            
+            # For constraint-based priors, prefer constraint_mape if available
+            if priors_type_used == "constraint_based" and 'overall' in param_metrics:
+                if 'constraint_mape' in param_metrics['overall']:
+                    overall_mape = param_metrics['overall']['constraint_mape']
+                    param_mapes['overall'].append(overall_mape)
+                    print(f"  Overall Constraint MAPE: {overall_mape:.2f}%")
+            
+            # Fallback to regular MAPE
+            if overall_mape is None:
+                if 'overall_mape' in param_metrics:
+                    overall_mape = param_metrics['overall_mape']
                     param_mapes['overall'].append(overall_mape)
                     print(f"  Overall MAPE: {overall_mape:.2f}%")
+                elif 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
+                    if 'mape' in param_metrics['overall']:
+                        overall_mape = param_metrics['overall']['mape']
+                        param_mapes['overall'].append(overall_mape)
+                        print(f"  Overall MAPE: {overall_mape:.2f}%")
             
             # Individual parameter MAPEs from by_type structure
             if 'by_type' in param_metrics:
@@ -426,10 +498,17 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
                 print(f"  by_type data:")
                 for param_type in ['thickness', 'roughness', 'sld']:
                     if param_type in by_type and isinstance(by_type[param_type], dict):
-                        if 'mape' in by_type[param_type]:
+                        # For constraint-based priors, prefer constraint_mape if available
+                        mape_val = None
+                        if priors_type_used == "constraint_based" and 'constraint_mape' in by_type[param_type]:
+                            mape_val = by_type[param_type]['constraint_mape']
+                            print(f"    {param_type}: {mape_val:.2f}% (constraint)")
+                        elif 'mape' in by_type[param_type]:
                             mape_val = by_type[param_type]['mape']
-                            param_mapes[param_type].append(mape_val)
                             print(f"    {param_type}: {mape_val:.2f}%")
+                        
+                        if mape_val is not None:
+                            param_mapes[param_type].append(mape_val)
                         else:
                             print(f"    {param_type}: no MAPE data")
                     else:
@@ -479,7 +558,10 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
     # Set fixed scale from 0-100%
     ax.set_ylim(0, 100)
     ax.set_xlabel('Parameter Type', fontsize=12)
-    ax.set_ylabel('MAPE (%)', fontsize=12)
+    
+    # Determine MAPE label based on priors type
+    mape_label = "Constraint-Based MAPE" if priors_type_used == "constraint_based" else "MAPE"
+    ax.set_ylabel(f'{mape_label} (%)', fontsize=12)
     
     # Create title with all configuration information
     title_parts = []
@@ -488,9 +570,18 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
     if use_prominent_features:
         title_parts.append("Prominent Features")
     
+    # Add exclusion statistics if present
+    if outlier_count > 0 or failed_count > 0:
+        exclusion_info = []
+        if outlier_count > 0:
+            exclusion_info.append(f"{outlier_count} outliers")
+        if failed_count > 0:
+            exclusion_info.append(f"{failed_count} failed")
+        title_parts.append(f"Excluded: {', '.join(exclusion_info)}")
+    
     title_suffix = f" ({', '.join(title_parts)})" if title_parts else ""
     
-    ax.set_title(f'Parameter-Specific MAPE Distribution - {len(successful_results)} {layer_count}-Layer Experiments{title_suffix}\n'
+    ax.set_title(f'Parameter-Specific {mape_label} Distribution - {len(successful_results)} {layer_count}-Layer Experiments{title_suffix}\n'
                 f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
                 fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
@@ -551,7 +642,8 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
 
 
 def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", save=True, 
-                               use_prominent_features=False, narrow_priors_deviation=0.99):
+                               use_prominent_features=False, narrow_priors_deviation=0.99,
+                               failed_count=0, outlier_count=0):
     """
     Create all batch analysis plots (MAPE distribution, edge case detection, parameter breakdown).
     
@@ -562,6 +654,8 @@ def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", sa
         save: Whether to save the plots
         use_prominent_features: Whether prominent features filtering was used
         narrow_priors_deviation: Deviation for narrow priors display in titles
+        failed_count: Number of failed experiments
+        outlier_count: Number of outlier experiments (excluded)
         
     Returns:
         Dictionary with paths to saved plots
@@ -572,17 +666,20 @@ def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", sa
     
     # Create MAPE distribution plot
     plot_paths['mape_distribution'] = plot_batch_mape_distribution(
-        batch_results, layer_count, output_dir, save, narrow_priors_deviation, use_prominent_features
+        batch_results, layer_count, output_dir, save, narrow_priors_deviation, 
+        use_prominent_features, failed_count, outlier_count
     )
     
     # Create edge case detection plot
     plot_paths['edge_case_detection'] = plot_batch_edge_case_detection(
-        batch_results, layer_count, output_dir, save, use_prominent_features
+        batch_results, layer_count, output_dir, save, use_prominent_features,
+        failed_count, outlier_count
     )
     
     # Create parameter breakdown plot
     plot_paths['parameter_breakdown'] = plot_batch_parameter_breakdown(
-        batch_results, layer_count, output_dir, save, narrow_priors_deviation, use_prominent_features
+        batch_results, layer_count, output_dir, save, narrow_priors_deviation, 
+        use_prominent_features, failed_count, outlier_count
     )
     
     print("Batch analysis plots completed!")
