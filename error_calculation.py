@@ -63,14 +63,20 @@ def calculate_fit_metrics(y_exp, y_pred, sigma_exp, q_exp, q_model):
     return metrics
 
 
-def calculate_parameter_metrics(pred_params, true_params, param_names):
+def calculate_parameter_metrics(pred_params, true_params, param_names, prior_bounds=None, priors_type=None):
     """
     Calculate parameter metrics: MAPE and MSE for different parameter types.
+    
+    For constraint-based priors, also calculates constraint-based MAPE which normalizes
+    errors by the prior interval width instead of the true value. This provides a more
+    appropriate error measure that accounts for the actual search space.
     
     Args:
         pred_params: Predicted parameter values
         true_params: True parameter values
         param_names: List of parameter names
+        prior_bounds: Optional prior bounds array (for constraint-based MAPE calculation)
+        priors_type: Optional priors type string ("constraint_based", "narrow", "broad")
         
     Returns:
         Dictionary with calculated parameter metrics
@@ -130,6 +136,30 @@ def calculate_parameter_metrics(pred_params, true_params, param_names):
     overall_mape = np.mean(percentage_errors)
     overall_mse = np.mean(squared_errors)
     
+    # Calculate constraint-based MAPE if using constraint-based priors
+    constraint_based_percentage_errors = None
+    overall_constraint_mape = None
+    
+    if priors_type == "constraint_based" and prior_bounds is not None:
+        print("Calculating constraint-based MAPE (normalized by prior interval width)")
+        constraint_based_percentage_errors = np.zeros_like(errors)
+        
+        for i in range(len(errors)):
+            # Prior interval width = upper_bound - lower_bound
+            prior_width = prior_bounds[i][1] - prior_bounds[i][0]
+            
+            # Constraint-based percentage error = |error| / prior_width * 100
+            # This normalizes error by the search space width rather than true value
+            if prior_width > 0:
+                constraint_based_percentage_errors[i] = np.abs(errors[i]) / prior_width * 100
+            else:
+                # Fallback to regular percentage error if prior width is zero (shouldn't happen)
+                constraint_based_percentage_errors[i] = percentage_errors[i]
+                print(f"WARNING: Zero prior width for parameter {param_names[i]}")
+        
+        overall_constraint_mape = np.mean(constraint_based_percentage_errors)
+        print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
+    
     # Metrics by parameter type
     by_type = {}
     thickness_indices = [i for i, name in enumerate(param_names) if 'thickness' in name.lower()]
@@ -137,33 +167,50 @@ def calculate_parameter_metrics(pred_params, true_params, param_names):
     sld_indices = [i for i, name in enumerate(param_names) if 'sld' in name.lower()]
     
     if thickness_indices:
-        by_type['thickness'] = {
+        type_metrics = {
             'mape': float(np.mean(percentage_errors[thickness_indices])),
             'mse': float(np.mean(squared_errors[thickness_indices]))
         }
+        if constraint_based_percentage_errors is not None:
+            type_metrics['constraint_mape'] = float(np.mean(constraint_based_percentage_errors[thickness_indices]))
+        by_type['thickness'] = type_metrics
     
     if roughness_indices:
-        by_type['roughness'] = {
+        type_metrics = {
             'mape': float(np.mean(percentage_errors[roughness_indices])),
             'mse': float(np.mean(squared_errors[roughness_indices]))
         }
+        if constraint_based_percentage_errors is not None:
+            type_metrics['constraint_mape'] = float(np.mean(constraint_based_percentage_errors[roughness_indices]))
+        by_type['roughness'] = type_metrics
     
     if sld_indices:
-        by_type['sld'] = {
+        type_metrics = {
             'mape': float(np.mean(percentage_errors[sld_indices])),
             'mse': float(np.mean(squared_errors[sld_indices]))
         }
+        if constraint_based_percentage_errors is not None:
+            type_metrics['constraint_mape'] = float(np.mean(constraint_based_percentage_errors[sld_indices]))
+        by_type['sld'] = type_metrics
     
     # Metrics by individual parameter
     by_parameter = {}
     for i, param_name in enumerate(param_names):
-        by_parameter[param_name] = {
+        param_metrics = {
             'predicted': float(pred_params_converted[i]),
             'true': float(true_params_converted[i]),
             'error': float(errors[i]),
             'percentage_error': float(percentage_errors[i]),
             'squared_error': float(squared_errors[i])
         }
+        
+        # Add constraint-based metrics if available
+        if constraint_based_percentage_errors is not None:
+            param_metrics['constraint_percentage_error'] = float(constraint_based_percentage_errors[i])
+            param_metrics['prior_bounds'] = [float(prior_bounds[i][0]), float(prior_bounds[i][1])]
+            param_metrics['prior_width'] = float(prior_bounds[i][1] - prior_bounds[i][0])
+        
+        by_parameter[param_name] = param_metrics
     
     metrics = {
         'overall': {
@@ -174,8 +221,15 @@ def calculate_parameter_metrics(pred_params, true_params, param_names):
         'by_parameter': by_parameter
     }
     
+    # Add constraint-based overall MAPE if calculated
+    if overall_constraint_mape is not None:
+        metrics['overall']['constraint_mape'] = float(overall_constraint_mape)
+        metrics['priors_type'] = priors_type
+    
     print(f"Parameter metrics calculated:")
     print(f"  - Overall MAPE: {overall_mape:.2f}%")
+    if overall_constraint_mape is not None:
+        print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
     print(f"  - Overall MSE: {overall_mse:.6f}")
     
     return metrics

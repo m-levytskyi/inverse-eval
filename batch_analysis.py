@@ -115,8 +115,10 @@ def print_summary_statistics(summary):
 
 def print_mape_distribution(successful_results):
     """Print MAPE distribution summary using real overall MAPE values."""
-    # Collect real overall MAPE values
+    # Collect real overall MAPE values and constraint-based MAPE if available
     mape_values = []
+    constraint_mape_values = []
+    has_constraint_mape = False
     
     for result in successful_results.values():
         if 'param_metrics' in result and result['param_metrics']:
@@ -132,6 +134,16 @@ def print_mape_distribution(successful_results):
             
             if overall_mape is not None:
                 mape_values.append(overall_mape)
+            
+            # Get constraint-based MAPE if available
+            constraint_mape = None
+            if 'overall' in param_metrics and isinstance(param_metrics['overall'], dict):
+                if 'constraint_mape' in param_metrics['overall']:
+                    constraint_mape = param_metrics['overall']['constraint_mape']
+                    has_constraint_mape = True
+            
+            if constraint_mape is not None:
+                constraint_mape_values.append(constraint_mape)
     
     if not mape_values:
         print("\nNo MAPE data available")
@@ -156,6 +168,28 @@ def print_mape_distribution(successful_results):
     print(f"Mean: {np.mean(mape_values):.1f}% ± {np.std(mape_values):.1f}%")
     print(f"Median: {np.median(mape_values):.1f}%")
     print(f"Range: {np.min(mape_values):.1f}% - {np.max(mape_values):.1f}%")
+    
+    # Print constraint-based MAPE distribution if available
+    if has_constraint_mape and constraint_mape_values:
+        print("\nCONSTRAINT-BASED MAPE DISTRIBUTION:")
+        print("-" * 35)
+        
+        # Count experiments in quality ranges (using same thresholds for comparison)
+        c_excellent = sum(1 for mape in constraint_mape_values if mape < 5)
+        c_good = sum(1 for mape in constraint_mape_values if 5 <= mape < 10)
+        c_acceptable = sum(1 for mape in constraint_mape_values if 10 <= mape < 20)
+        c_poor = sum(1 for mape in constraint_mape_values if mape >= 20)
+        
+        c_total = len(constraint_mape_values)
+        print(f"Excellent (< 5%): {c_excellent} ({100*c_excellent/c_total:.1f}%)")
+        print(f"Good (5-10%): {c_good} ({100*c_good/c_total:.1f}%)")
+        print(f"Acceptable (10-20%): {c_acceptable} ({100*c_acceptable/c_total:.1f}%)")
+        print(f"Poor (≥ 20%): {c_poor} ({100*c_poor/c_total:.1f}%)")
+        
+        print("\nStatistics:")
+        print(f"Mean: {np.mean(constraint_mape_values):.1f}% ± {np.std(constraint_mape_values):.1f}%")
+        print(f"Median: {np.median(constraint_mape_values):.1f}%")
+        print(f"Range: {np.min(constraint_mape_values):.1f}% - {np.max(constraint_mape_values):.1f}%")
 
 
 

@@ -194,7 +194,9 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         param_metrics = calculate_parameter_metrics(
             prediction_dict['polished_params_array'],
             true_params_dict[f'{final_layer_count}_layer']['params'],
-            true_params_dict[f'{final_layer_count}_layer']['param_names']
+            true_params_dict[f'{final_layer_count}_layer']['param_names'],
+            prior_bounds=prior_bounds,
+            priors_type=priors_type
         )
     
     # Prepare results dictionary
@@ -311,7 +313,9 @@ def main():
         param_metrics = calculate_parameter_metrics(
             prediction_dict['polished_params_array'],
             true_params_dict[f'{final_layer_count}_layer']['params'],
-            true_params_dict[f'{final_layer_count}_layer']['param_names']
+            true_params_dict[f'{final_layer_count}_layer']['param_names'],
+            prior_bounds=prior_bounds,
+            priors_type="broad"  # Main function uses broad priors
         )
     
     # Print metrics report
