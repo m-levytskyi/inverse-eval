@@ -7,6 +7,7 @@ goodness-of-fit measures for comparing predicted and experimental data.
 """
 
 import numpy as np
+from constraints_utils import get_constraint_width
 
 
 def calculate_fit_metrics(y_exp, y_pred, sigma_exp, q_exp, q_model):
@@ -68,8 +69,9 @@ def calculate_parameter_metrics(pred_params, true_params, param_names, prior_bou
     Calculate parameter metrics: MAPE and MSE for different parameter types.
     
     For constraint-based priors, also calculates constraint-based MAPE which normalizes
-    errors by the prior interval width instead of the true value. This provides a more
-    appropriate error measure that accounts for the actual search space.
+    errors by the constraint interval width instead of the prior interval width. This 
+    provides an error metric that is bounded by the prior deviation percentage (e.g., 
+    30% for 30% constraint-based priors, 99% for 99% constraint-based priors).
     
     Args:
         pred_params: Predicted parameter values
@@ -141,21 +143,24 @@ def calculate_parameter_metrics(pred_params, true_params, param_names, prior_bou
     overall_constraint_mape = None
     
     if priors_type == "constraint_based" and prior_bounds is not None:
-        print("Calculating constraint-based MAPE (normalized by prior interval width)")
+        print("Calculating constraint-based MAPE (normalized by constraint interval width)")
+        
         constraint_based_percentage_errors = np.zeros_like(errors)
         
         for i in range(len(errors)):
-            # Prior interval width = upper_bound - lower_bound
-            prior_width = prior_bounds[i][1] - prior_bounds[i][0]
+            param_name = param_names[i]
             
-            # Constraint-based percentage error = |error| / prior_width * 100
-            # This normalizes error by the search space width rather than true value
-            if prior_width > 0:
-                constraint_based_percentage_errors[i] = np.abs(errors[i]) / prior_width * 100
-            else:
-                # Fallback to regular percentage error if prior width is zero (shouldn't happen)
-                constraint_based_percentage_errors[i] = percentage_errors[i]
-                print(f"WARNING: Zero prior width for parameter {param_names[i]}")
+            # Get constraint width from centralized definition
+            try:
+                constraint_width = get_constraint_width(param_name)
+            except KeyError:
+                raise ValueError(f"Unknown parameter type: {param_name}. "
+                               f"Please add to model_constraints.json")
+            
+            # Constraint-based percentage error = |error| / constraint_width * 100
+            # This normalizes error by the full constraint space, so max error is bounded
+            # by the prior deviation percentage (e.g., 30% for 30% constraint-based priors)
+            constraint_based_percentage_errors[i] = np.abs(errors[i]) / constraint_width * 100
         
         overall_constraint_mape = np.mean(constraint_based_percentage_errors)
         print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
@@ -209,6 +214,12 @@ def calculate_parameter_metrics(pred_params, true_params, param_names, prior_bou
             param_metrics['constraint_percentage_error'] = float(constraint_based_percentage_errors[i])
             param_metrics['prior_bounds'] = [float(prior_bounds[i][0]), float(prior_bounds[i][1])]
             param_metrics['prior_width'] = float(prior_bounds[i][1] - prior_bounds[i][0])
+            
+            # Add constraint width from centralized definition
+            try:
+                param_metrics['constraint_width'] = get_constraint_width(param_name)
+            except KeyError:
+                pass  # Skip if parameter not found
         
         by_parameter[param_name] = param_metrics
     

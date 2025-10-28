@@ -1,0 +1,78 @@
+{
+  "description": "Physical constraints for reflectometry parameters as defined by the Reflectorch model",
+  "version": "1.0",
+  "constraints": {
+    "thickness": {
+      "min": 1.0,
+      "max": 1000.0,
+      "unit": "Angstrom",
+      "description": "Layer thickness"
+    },
+    "thickness1": {
+      "min": 1.0,
+      "max": 1000.0,
+      "unit": "Angstrom",
+      "description": "First layer thickness (2-layer model)"
+    },
+    "thickness2": {
+      "min": 1.0,
+      "max": 1000.0,
+      "unit": "Angstrom",
+      "description": "Second layer thickness (2-layer model)"
+    },
+    "amb_rough": {
+      "min": 0.0,
+      "max": 60.0,
+      "unit": "Angstrom",
+      "description": "Ambient/fronting roughness"
+    },
+    "sub_rough": {
+      "min": 0.0,
+      "max": 60.0,
+      "unit": "Angstrom",
+      "description": "Substrate/backing roughness"
+    },
+    "int_rough": {
+      "min": 0.0,
+      "max": 60.0,
+      "unit": "Angstrom",
+      "description": "Interface roughness (2-layer model)"
+    },
+    "layer_sld": {
+      "min": -8.0,
+      "max": 16.0,
+      "unit": "1e-6 Angstrom^-2",
+      "description": "Layer scattering length density"
+    },
+    "layer1_sld": {
+      "min": -8.0,
+      "max": 16.0,
+      "unit": "1e-6 Angstrom^-2",
+      "description": "First layer SLD (2-layer model)"
+    },
+    "layer2_sld": {
+      "min": -8.0,
+      "max": 16.0,
+      "unit": "1e-6 Angstrom^-2",
+      "description": "Second layer SLD (2-layer model)"
+    },
+    "sub_sld": {
+      "min": -8.0,
+      "max": 16.0,
+      "unit": "1e-6 Angstrom^-2",
+      "description": "Substrate/backing SLD"
+    }
+  },
+  "constraint_widths": {
+    "thickness": 999.0,
+    "thickness1": 999.0,
+    "thickness2": 999.0,
+    "amb_rough": 60.0,
+    "sub_rough": 60.0,
+    "int_rough": 60.0,
+    "layer_sld": 24.0,
+    "layer1_sld": 24.0,
+    "layer2_sld": 24.0,
+    "sub_sld": 24.0
+  }
+}

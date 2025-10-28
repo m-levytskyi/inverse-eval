@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Parameter discovery utilities for reflectometry analysis.
+Parameter discovery and prior generation utilities.
 
-This module contains functions to discover and parse true parameters from 
-experimental data files and model files, as well as discover available experiments.
+This module provides functions for discovering experiment files, parsing true parameters,
+and generating various types of prior bounds for reflectometry inference.
 """
 
+import os
+import re
 import numpy as np
 from pathlib import Path
+from constraints_utils import get_constraint_ranges, get_constraint_range
 
 
 def discover_experiment_files(experiment_id, data_directory, layer_count=None):
@@ -422,20 +425,10 @@ def get_constraint_based_prior_bounds(true_params_dict, layer_count, constraint_
     true_params = true_params_dict[layer_key]['params']
     param_names = get_parameter_names_for_layer_count(layer_count)
     
-    # Model constraints and allowed widths (same as in narrow priors)
-    model_constraints = {
-        'thickness': (1.0, 1000.0),
-        'amb_rough': (0.0, 60.0),
-        'sub_rough': (0.0, 60.0),
-        'int_rough': (0.0, 60.0),  # for 2-layer
-        'layer_sld': (-8.0, 16.0),
-        'layer1_sld': (-8.0, 16.0),  # for 2-layer
-        'layer2_sld': (-8.0, 16.0),  # for 2-layer
-        'sub_sld': (-8.0, 16.0),
-        'thickness1': (1.0, 1000.0),  # for 2-layer
-        'thickness2': (1.0, 1000.0)   # for 2-layer
-    }
+    # Load model constraints from centralized definition
+    model_constraints = get_constraint_ranges()
     
+    # Allowed widths (same as in narrow priors)
     allowed_widths = {
         'thickness': (0.01, 1000.0),
         'amb_rough': (0.01, 60.0),
@@ -537,19 +530,8 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
             param_names = get_parameter_names_for_layer_count(layer_count)
             bounds = []
             
-            # Model constraints and allowed widths
-            model_constraints = {
-                'thickness': (1.0, 1000.0),
-                'amb_rough': (0.0, 60.0),
-                'sub_rough': (0.0, 60.0),
-                'int_rough': (0.0, 60.0),  # for 2-layer
-                'layer_sld': (-8.0, 16.0),
-                'layer1_sld': (-8.0, 16.0),  # for 2-layer
-                'layer2_sld': (-8.0, 16.0),  # for 2-layer
-                'sub_sld': (-8.0, 16.0),
-                'thickness1': (1.0, 1000.0),  # for 2-layer
-                'thickness2': (1.0, 1000.0)   # for 2-layer
-            }
+            # Load model constraints from centralized definition
+            model_constraints = get_constraint_ranges()
             
             allowed_widths = {
                 'thickness': (0.01, 1000.0),
@@ -856,27 +838,20 @@ def check_experiment_within_constraints(experiment_id, true_params_dict, layer_c
     true_params = true_params_dict[layer_key]['params']
     param_names = get_parameter_names_for_layer_count(layer_count)
     
-    # Define MODEL CONSTRAINTS (not prior bounds)
-    model_constraints = {
-        'thickness': (1.0, 1000.0),
-        'amb_rough': (0.0, 60.0),
-        'sub_rough': (0.0, 60.0),
-        'int_rough': (0.0, 60.0),
-        'layer_sld': (-8.0, 16.0),
-        'layer1_sld': (-8.0, 16.0),
-        'layer2_sld': (-8.0, 16.0),
-        'sub_sld': (-8.0, 16.0),
-        'thickness1': (1.0, 1000.0),
-        'thickness2': (1.0, 1000.0)
-    }
+    # Load model constraints from centralized definition
+    model_constraints = get_constraint_ranges()
     
     # Check each parameter against model constraints
     outlier_parameters = []
     for param_name, param_value in zip(param_names, true_params):
-        constraint_min, constraint_max = model_constraints.get(param_name, (-1e6, 1e6))
-        
-        if param_value < constraint_min or param_value > constraint_max:
-            outlier_parameters.append((param_name, param_value, constraint_min, constraint_max))
+        try:
+            constraint_min, constraint_max = get_constraint_range(param_name)
+            
+            if param_value < constraint_min or param_value > constraint_max:
+                outlier_parameters.append((param_name, param_value, constraint_min, constraint_max))
+        except KeyError:
+            # Unknown parameter type, skip constraint check
+            pass
     
     is_within_constraints = len(outlier_parameters) == 0
     
