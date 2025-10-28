@@ -15,7 +15,12 @@ from datetime import datetime
 
 # Import core functionality
 from simple_pipeline import run_single_experiment
-from parameter_discovery import discover_batch_experiments
+from parameter_discovery import (
+    discover_batch_experiments,
+    parse_true_parameters_from_model_file,
+    discover_experiment_files,
+    check_experiment_within_constraints
+)
 from batch_analysis import (
     create_summary_statistics, 
     print_summary_statistics, 
@@ -365,7 +370,7 @@ class BatchInferencePipeline:
     
     def process_experiments_sequential(self, experiments):
         """
-        Process experiments sequentially.
+        Process experiments sequentially with outlier detection for constraint-based priors.
         
         Args:
             experiments: List of experiment IDs
@@ -378,11 +383,58 @@ class BatchInferencePipeline:
         all_results = {}
         successful_count = 0
         failed_count = 0
+        outlier_count = 0
         start_time = time.time()
         
         for i, exp_id in enumerate(experiments, 1):
             print(f"\nProgress: {i}/{len(experiments)} experiments")
             
+            # Check for outliers if using constraint-based priors
+            if self.priors_type == "constraint_based":
+                # Try to get true parameters for outlier checking
+                try:
+                    data_file, model_file, _ = discover_experiment_files(
+                        exp_id, str(self.data_directory), self.layer_count
+                    )
+                    
+                    if model_file:
+                        true_params_dict = parse_true_parameters_from_model_file(str(model_file))
+                        
+                        # Check if experiment is within constraints
+                        is_within, outlier_params = check_experiment_within_constraints(
+                            exp_id, true_params_dict, self.layer_count, self.narrow_priors_deviation
+                        )
+                        
+                        if not is_within:
+                            print(f"  OUTLIER DETECTED: {exp_id}")
+                            print(f"  True parameters outside constraint bounds:")
+                            for param_name, value, min_bound, max_bound in outlier_params:
+                                print(f"    {param_name}: {value:.3f} not in [{min_bound:.3f}, {max_bound:.3f}]")
+                            
+                            # Record as outlier
+                            all_results[exp_id] = {
+                                'experiment_id': exp_id,
+                                'success': False,
+                                'excluded_as_outlier': True,
+                                'outlier_parameters': [
+                                    {
+                                        'parameter': param_name,
+                                        'true_value': float(value),
+                                        'constraint_min': float(min_bound),
+                                        'constraint_max': float(max_bound)
+                                    }
+                                    for param_name, value, min_bound, max_bound in outlier_params
+                                ],
+                                'processing_time': 0
+                            }
+                            outlier_count += 1
+                            continue  # Skip processing this experiment
+                    
+                except Exception as e:
+                    print(f"  Warning: Could not check for outliers: {e}")
+                    # Continue with normal processing if outlier check fails
+            
+            # Process experiment normally
             result = self.process_single_experiment_wrapper(exp_id)
             all_results[exp_id] = result
             
@@ -398,6 +450,8 @@ class BatchInferencePipeline:
         print(f"  Total time: {total_time:.1f} seconds")
         print(f"  Successful: {successful_count}")
         print(f"  Failed: {failed_count}")
+        if outlier_count > 0:
+            print(f"  Excluded as outliers: {outlier_count}")
         print(f"  Average time per experiment: {total_time/len(experiments):.1f} seconds")
         
         return all_results
@@ -417,9 +471,13 @@ class BatchInferencePipeline:
         
         print(f"  Detailed results saved to: {results_file}")
         
-        # Save failed experiments to separate file
-        failed_results = {k: v for k, v in all_results.items() if not v.get('success', False)}
+        # Separate failed experiments and outliers
+        failed_results = {k: v for k, v in all_results.items() 
+                         if not v.get('success', False) and not v.get('excluded_as_outlier', False)}
+        outlier_results = {k: v for k, v in all_results.items() 
+                          if v.get('excluded_as_outlier', False)}
         
+        # Save failed experiments (excluding outliers) to separate file
         if failed_results:
             failed_file = self.output_dir / "failed_experiments.json"
             failed_json_results = convert_to_json_serializable(failed_results)
@@ -431,6 +489,17 @@ class BatchInferencePipeline:
             print(f"  Total failed experiments: {len(failed_results)}")
         else:
             print("  No failed experiments to save")
+        
+        # Save outliers to separate file
+        if outlier_results:
+            outlier_file = self.output_dir / "outlier_experiments.json"
+            outlier_json_results = convert_to_json_serializable(outlier_results)
+            
+            with open(outlier_file, 'w', encoding='utf-8') as f:
+                json.dump(outlier_json_results, f, indent=2)
+            
+            print(f"  Outlier experiments saved to: {outlier_file}")
+            print(f"  Total outlier experiments: {len(outlier_results)}")
         
         # Create and save summary statistics
         successful_results = {k: v for k, v in all_results.items() if v.get('success', False)}
@@ -457,7 +526,7 @@ class BatchInferencePipeline:
             # Print MAPE distribution
             print_mape_distribution(successful_results)
         
-        return results_file, len(successful_results), len(all_results)
+        return results_file, len(successful_results), len(all_results), len(failed_results), len(outlier_results)
     
     def run(self):
         """Run the complete batch processing pipeline."""
@@ -477,14 +546,14 @@ class BatchInferencePipeline:
         all_results = self.process_experiments_sequential(experiments)
         
         # Save results
-        _, successful_count, total_count = self.save_results(all_results)
+        _, successful_count, total_count, failed_count, outlier_count = self.save_results(all_results)
         
         # Detect edge cases
         successful_results = {k: v for k, v in all_results.items() if v.get('success', False)}
         if successful_results:
             detect_edge_cases(successful_results)
         
-        # Create plots
+        # Create plots with outlier and failure statistics
         if successful_results:
             try:
                 print(f"\nCreating analysis plots...")
@@ -494,7 +563,9 @@ class BatchInferencePipeline:
                     output_dir=str(self.output_dir), 
                     save=True,
                     use_prominent_features=self.use_prominent_features,
-                    narrow_priors_deviation=self.narrow_priors_deviation if self.use_narrow_priors else 0.5
+                    narrow_priors_deviation=self.narrow_priors_deviation if self.use_narrow_priors else 0.5,
+                    failed_count=failed_count,
+                    outlier_count=outlier_count
                 )
                 print(f"Analysis plots completed")
             except Exception as e:
@@ -509,6 +580,10 @@ class BatchInferencePipeline:
         print(f"{'='*60}")
         print(f"Total time: {total_pipeline_time:.1f} seconds")
         print(f"Successful experiments: {successful_count}/{total_count}")
+        if outlier_count > 0:
+            print(f"Excluded as outliers: {outlier_count}")
+        if failed_count > 0:
+            print(f"Failed experiments: {failed_count}")
         print(f"Success rate: {successful_count/total_count*100:.1f}%")
         print(f"Results saved to: {self.output_dir}")
         
