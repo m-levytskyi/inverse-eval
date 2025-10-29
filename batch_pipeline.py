@@ -118,10 +118,6 @@ class BatchInferencePipeline:
         self.output_dir = Path("batch_inference_results") / folder_name
         ensure_directory_exists(self.output_dir)
         
-        # Create organized output directories
-        self.plots_dir = self.output_dir / "plots"
-        ensure_directory_exists(self.plots_dir)
-        
         print(f"Output directory: {self.output_dir}")
         print(f"Layer count: {self.layer_count}")
         if experiment_ids:
