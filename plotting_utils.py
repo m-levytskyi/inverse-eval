@@ -101,7 +101,7 @@ def plot_batch_edge_case_detection(batch_results, layer_count=1, output_dir=".",
         output_dir: Directory to save plot
         save: Whether to save the plot
         use_prominent_features: Whether prominent features filtering was used
-        failed_count: Number of failed experiments
+        failed_count: Number of failed experiments (excluding outliers)
         outlier_count: Number of outlier experiments (excluded)
         
     Returns:
@@ -268,7 +268,7 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
         save: Whether to save the plot
         narrow_priors_deviation: Deviation for narrow priors display in title
         use_prominent_features: Whether prominent features filtering was used
-        failed_count: Number of failed experiments
+        failed_count: Number of failed experiments (excluding outliers)
         outlier_count: Number of outlier experiments (excluded)
         
     Returns:
@@ -352,18 +352,15 @@ def plot_batch_mape_distribution(batch_results, layer_count=1, output_dir=".", s
                 f'(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)', 
                 fontsize=16, fontweight='bold')
     
-    # Define MAPE ranges
-    mape_ranges = [0, 5, 10, 15, 20, 25, 30, 40, 50, 100]
-    range_labels = ['0-5%', '5-10%', '10-15%', '15-20%', '20-25%', '25-30%', '30-40%', '40-50%', '50%+']
+    # Define MAPE ranges - fixed 5% bins from 0-100%
+    mape_ranges = list(range(0, 105, 5))  # [0, 5, 10, 15, ..., 95, 100]
+    range_labels = [f'{i}-{i+5}%' for i in range(0, 100, 5)]
     
     # Count experiments in each MAPE range
     counts = []
     for i in range(len(mape_ranges) - 1):
         count = sum(1 for mape in mapes if mape_ranges[i] <= mape < mape_ranges[i+1])
         counts.append(count)
-    
-    # Add count for 50%+ range
-    counts.append(sum(1 for mape in mapes if mape >= 50))
     
     # Create bar chart
     colors = plt.cm.RdYlGn_r(np.linspace(0.2, 0.8, len(counts)))
@@ -441,7 +438,7 @@ def plot_batch_parameter_breakdown(batch_results, layer_count=1, output_dir=".",
         save: Whether to save the plot
         narrow_priors_deviation: Deviation for narrow priors display in title
         use_prominent_features: Whether prominent features filtering was used
-        failed_count: Number of failed experiments
+        failed_count: Number of failed experiments (excluding outliers)
         outlier_count: Number of outlier experiments (excluded)
         
     Returns:
@@ -668,7 +665,7 @@ def create_batch_analysis_plots(batch_results, layer_count=1, output_dir=".", sa
         save: Whether to save the plots
         use_prominent_features: Whether prominent features filtering was used
         narrow_priors_deviation: Deviation for narrow priors display in titles
-        failed_count: Number of failed experiments
+        failed_count: Number of failed experiments (excluding outliers)
         outlier_count: Number of outlier experiments (excluded)
         
     Returns:
