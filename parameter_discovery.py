@@ -13,7 +13,7 @@ from pathlib import Path
 from constraints_utils import get_constraint_ranges, get_constraint_range
 
 
-def discover_experiment_files(experiment_id, data_directory, layer_count=None):
+def discover_experiment_files(experiment_id, data_directory, layer_count=None, use_theoretical=False):
     """
     Discover experimental data and model files for a given experiment ID.
     
@@ -21,6 +21,7 @@ def discover_experiment_files(experiment_id, data_directory, layer_count=None):
         experiment_id: Experiment identifier (e.g., 's000000')
         data_directory: Base data directory to search
         layer_count: Number of layers (1 or 2). If None, searches both
+        use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
         
     Returns:
         Tuple of (data_file_path, model_file_path, detected_layer_count) or (None, None, None) if not found
@@ -35,11 +36,13 @@ def discover_experiment_files(experiment_id, data_directory, layer_count=None):
     if layer_count:
         print(f"Looking specifically for {layer_count}-layer data")
     
-    # Define search patterns
-    data_patterns = [
-        f"{experiment_id}_theoretical_curve.dat",
-        f"{experiment_id}_experimental_curve.dat"
-    ]
+    # Define search patterns - choose based on use_theoretical flag
+    if use_theoretical:
+        data_patterns = [f"{experiment_id}_theoretical_curve.dat"]
+        print("Using THEORETICAL curves")
+    else:
+        data_patterns = [f"{experiment_id}_experimental_curve.dat"]
+        print("Using EXPERIMENTAL curves")
     
     model_patterns = [
         f"{experiment_id}_model.txt",

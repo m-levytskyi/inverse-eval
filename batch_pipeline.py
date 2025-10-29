@@ -74,7 +74,8 @@ class BatchInferencePipeline:
                  enable_preprocessing=DEFAULT_ENABLE_PREPROCESSING, apply_constraints=DEFAULT_APPLY_CONSTRAINTS,
                  use_narrow_priors=USE_NARROW_PRIORS, narrow_priors_deviation=NARROW_PRIORS_DEVIATION, 
                  experiment_ids=None, fix_sld_mode=DEFAULT_FIX_SLD_MODE, 
-                 use_prominent_features=DEFAULT_USE_PROMINENT_FEATURES, priors_type=None):
+                 use_prominent_features=DEFAULT_USE_PROMINENT_FEATURES, priors_type=None,
+                 use_theoretical=False):
         """
         Initialize the batch inference pipeline.
         
@@ -93,6 +94,7 @@ class BatchInferencePipeline:
             use_prominent_features: Whether to use prominent features analysis
             priors_type: Explicit priors type - "broad", "narrow", or "constraint_based" 
                         (overrides use_narrow_priors if provided)
+            use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
         """
         self.experiment_ids = experiment_ids
         self.num_experiments = len(experiment_ids) if experiment_ids else num_experiments
@@ -104,6 +106,7 @@ class BatchInferencePipeline:
         self.narrow_priors_deviation = narrow_priors_deviation
         self.fix_sld_mode = fix_sld_mode
         self.use_prominent_features = use_prominent_features
+        self.use_theoretical = use_theoretical
         
         # Determine priors type - explicit parameter takes precedence
         if priors_type is not None:
@@ -127,6 +130,7 @@ class BatchInferencePipeline:
         print(f"Preprocessing: {'enabled' if self.enable_preprocessing else 'disabled'}")
         print(f"Physical constraints: {'enabled' if self.apply_constraints else 'disabled'}")
         print(f"Prior bounds: {self.priors_type}")
+        print(f"Data source: {'THEORETICAL curves' if self.use_theoretical else 'EXPERIMENTAL curves'}")
         print(f"SLD fixing mode: {self.fix_sld_mode}")
         if self.use_narrow_priors:
             print(f"Narrow priors deviation: ±{self.narrow_priors_deviation*100:.1f}%")
@@ -298,7 +302,8 @@ class BatchInferencePipeline:
                 apply_constraints=self.apply_constraints,
                 priors_type=self.priors_type,
                 priors_deviation=self.narrow_priors_deviation if self.use_narrow_priors else 0.5,
-                fix_sld_mode=self.fix_sld_mode
+                fix_sld_mode=self.fix_sld_mode,
+                use_theoretical=self.use_theoretical
             )
             
             # Success with primary priors

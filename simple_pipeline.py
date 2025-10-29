@@ -115,7 +115,8 @@ def display_results(prediction_dict):
 def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=True,
                          preprocessing_threshold=0.5, preprocessing_consecutive=3,
                          preprocessing_remove_singles=False, apply_constraints=True,
-                         priors_type="broad", priors_deviation=0.5, fix_sld_mode="none"):
+                         priors_type="broad", priors_deviation=0.5, fix_sld_mode="none",
+                         use_theoretical=False):
     """
     Run a single experiment inference with configurable options.
     
@@ -131,6 +132,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
         priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%) or 
                          constraint percentage for constraint_based priors
         fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
+        use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
     
     Returns:
         Dictionary with results including parameters and metrics
@@ -139,7 +141,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
     
     # Discover experiment files
     data_file, model_file, detected_layer_count = discover_experiment_files(
-        experiment_id, data_directory, layer_count
+        experiment_id, data_directory, layer_count, use_theoretical=use_theoretical
     )
     if not data_file:
         raise FileNotFoundError(f"Could not find data file for {experiment_id}")
