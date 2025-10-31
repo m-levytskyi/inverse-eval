@@ -13,6 +13,8 @@ sld_plots/
 sweep_results/
 constraint_visualization_plots/
 constraint_prior_tests/
+md_report_plots/
+random_guessing_evaluation/
 
 
 # Development directories (keep these ignored)
