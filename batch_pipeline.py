@@ -575,8 +575,8 @@ def parse_arguments():
                        help=f'SLD fixing mode: none, backing, or all (default: {DEFAULT_FIX_SLD_MODE})')
     parser.add_argument('--use-prominent-features', action='store_true',
                        help='Enable prominent features analysis')
-    parser.add_argument('--priors-deviation', type=int, choices=[5, 30, 99], default=99,
-                       help='Prior bounds deviation percentage: 5, 30, or 99 (default: 99)')
+    parser.add_argument('--priors-deviation', type=int, choices=[5, 30, 60, 99], default=99,
+                       help='Prior bounds deviation percentage: 5, 30, 60, or 99 (default: 99)')
     parser.add_argument('--priors-type', type=str, choices=['broad', 'narrow', 'constraint_based'], 
                        help='Prior bounds type: broad, narrow, or constraint_based')
     

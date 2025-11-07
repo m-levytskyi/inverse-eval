@@ -224,104 +224,41 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
     return results
 
 def main():
+    """Main function to run a single experiment with specific settings."""
     # Experiment configuration
-    experiment_name = "s005063"
-    data_directory = "data"
-    layer_count = 1  # This experiment has 1 layer
-    
-    # Preprocessing configuration
-    preprocessing_config = {
-        'enable_preprocessing': True,
-        'threshold': 0.75,          # Relative error threshold (50%)
-        'consecutive': 5,          # Number of consecutive bad points to trigger truncation
-        'remove_singles': False    # Remove isolated high-error points
-    }
+    experiment_name = "s007384"
+    layer_count = 1
     
     print(f"Running inference for experiment: {experiment_name}")
     print(f"Layer count: {layer_count}")
-    print(f"Preprocessing enabled: {preprocessing_config['enable_preprocessing']}")
-    if preprocessing_config['enable_preprocessing']:
-        print(f"  Threshold: {preprocessing_config['threshold']}")
-        print(f"  Consecutive points: {preprocessing_config['consecutive']}")
-        print(f"  Remove singles: {preprocessing_config['remove_singles']}")
+    print("Running with 99% constraint-based priors and preprocessing OFF.")
     print("="*60)
-    
-    # Discover experiment files
-    data_file, model_file, detected_layer_count = discover_experiment_files(
-        experiment_name, data_directory, layer_count
+
+    # Run the experiment with specified settings
+    results = run_single_experiment(
+        experiment_id=experiment_name,
+        layer_count=layer_count,
+        enable_preprocessing=False,
+        priors_type="constraint_based",
+        priors_deviation=0.99,  # 99% constraint
+        use_theoretical=False
     )
-    if not data_file:
-        print(f"ERROR: Could not find data file for {experiment_name}")
-        return
-    
-    # Use detected layer count if available, otherwise use specified
-    final_layer_count = detected_layer_count if detected_layer_count else layer_count
-    print(f"Using layer count: {final_layer_count}")
-    
-    # Load experimental data with preprocessing
-    q_exp, curve_exp, sigmas_exp = load_experimental_data(
-        data_file, 
-        enable_preprocessing=preprocessing_config['enable_preprocessing'],
-        threshold=preprocessing_config['threshold'],
-        consecutive=preprocessing_config['consecutive'],
-        remove_singles=preprocessing_config['remove_singles']
-    )
-    
-    # Load true parameters if available
-    true_params_dict = None
-    if model_file:
-        true_params_dict = parse_true_parameters_from_model_file(str(model_file))
-        print(f"Loaded true parameters: {true_params_dict}")
-    
-    # Get prior bounds
-    prior_bounds = get_prior_bounds_for_experiment(
-        experiment_name, 
-        true_params_dict, 
-        priors_type="broad",
-        layer_count=final_layer_count,
-        fix_sld_mode="none"  # Default for main function
-    )
-    
-    print("\nPrior bounds:")
-    param_names = get_parameter_names_for_layer_count(final_layer_count)
-    for name, bounds in zip(param_names, prior_bounds):
-        print(f"  {name}: {bounds}")
-    
-    # Initialize inference model
-    config_name = 'b_mc_point_neutron_conv_standard_L1_InputQDq'
-    print(f"\nInitializing model: {config_name}")
-    
-    inference_model = EasyInferenceModel(config_name=config_name, device='cpu')
-    
-    # Run inference
-    q_model, prediction_dict = run_inference(
-        inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1, apply_constraints=True
-    )
-    
+
+    # Unpack results for clarity
+    prediction_dict = results['prediction_dict']
+    fit_metrics = results['fit_metrics']
+    param_metrics = results['param_metrics']
+    true_params_dict = results['true_params_dict']
+    q_exp = results['q_exp']
+    curve_exp = results['curve_exp']
+    sigmas_exp = results['sigmas_exp']
+    q_model = results['q_model']
+
     # Display results
     display_results(prediction_dict)
     
-    # Calculate error metrics
-    fit_metrics = calculate_fit_metrics(
-        curve_exp, 
-        prediction_dict['polished_curve'], 
-        sigmas_exp, 
-        q_exp, 
-        q_model
-    )
-    
-    param_metrics = None
-    if true_params_dict and f'{final_layer_count}_layer' in true_params_dict:
-        param_metrics = calculate_parameter_metrics(
-            prediction_dict['polished_params_array'],
-            true_params_dict[f'{final_layer_count}_layer']['params'],
-            true_params_dict[f'{final_layer_count}_layer']['param_names'],
-            prior_bounds=prior_bounds,
-            priors_type="broad"  # Main function uses broad priors
-        )
-    
     # Print metrics report
-    print_metrics_report(fit_metrics, param_metrics, config_name)
+    print_metrics_report(fit_metrics, param_metrics, "b_mc_point_neutron_conv_standard_L1_InputQDq")
     
     # Generate true SLD profile for plotting
     if true_params_dict:
