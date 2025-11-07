@@ -362,12 +362,16 @@ def summary_statistics(fit_metrics, param_metrics=None):
     }
     
     if param_metrics:
+        # Use constraint-based MAPE for assessment if available, otherwise traditional MAPE
+        mape_for_assessment = param_metrics.get('overall', {}).get('constraint_mape', 
+                                                                     param_metrics.get('overall', {}).get('mape', float('inf')))
+        
         summary['parameter_accuracy'] = {
-            'overall_mape': param_metrics.get('overall', {}).get('mape', float('inf')),
-            'excellent': param_metrics.get('overall', {}).get('mape', float('inf')) < 5,
-            'good': param_metrics.get('overall', {}).get('mape', float('inf')) < 10,
-            'acceptable': param_metrics.get('overall', {}).get('mape', float('inf')) < 20,
-            'poor': param_metrics.get('overall', {}).get('mape', float('inf')) >= 20
+            'overall_mape': mape_for_assessment,
+            'excellent': mape_for_assessment < 5,
+            'good': mape_for_assessment < 10,
+            'acceptable': mape_for_assessment < 20,
+            'poor': mape_for_assessment >= 20
         }
     
     return summary
@@ -397,18 +401,36 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
     
     if param_metrics:
         print(f"\nPARAMETER ACCURACY:")
-        print(f"  Overall MAPE:           {param_metrics.get('overall', {}).get('mape', 'N/A'):.2f}%")
+        
+        # Use constraint-based MAPE as primary metric when using constraint-based priors
+        priors_type = param_metrics.get('priors_type', 'unknown')
+        use_constraint_mape = 'constraint_mape' in param_metrics.get('overall', {})
+        
+        if use_constraint_mape:
+            print(f"  Overall Constraint-based MAPE: {param_metrics['overall']['constraint_mape']:.2f}%")
+            print(f"  (Traditional MAPE:             {param_metrics.get('overall', {}).get('mape', 'N/A'):.2f}%)")
+        else:
+            print(f"  Overall MAPE:           {param_metrics.get('overall', {}).get('mape', 'N/A'):.2f}%")
+        
         print(f"  Overall MSE:            {param_metrics.get('overall', {}).get('mse', 'N/A'):.6f}")
         
         if 'by_type' in param_metrics:
             print(f"\n  By Parameter Type:")
             for param_type, metrics in param_metrics['by_type'].items():
                 print(f"    {param_type.capitalize()}:")
-                print(f"      MAPE: {metrics.get('mape', 'N/A'):.2f}%")
+                if use_constraint_mape and 'constraint_mape' in metrics:
+                    print(f"      Constraint-based MAPE: {metrics.get('constraint_mape', 'N/A'):.2f}%")
+                    print(f"      (Traditional MAPE:     {metrics.get('mape', 'N/A'):.2f}%)")
+                else:
+                    print(f"      MAPE: {metrics.get('mape', 'N/A'):.2f}%")
                 print(f"      MSE:  {metrics.get('mse', 'N/A'):.6f}")
     
     # Generate quality assessment
     summary = summary_statistics(fit_metrics, param_metrics)
+    
+    # Determine which MAPE metric is being used for assessment
+    use_constraint_mape = param_metrics and 'constraint_mape' in param_metrics.get('overall', {})
+    mape_type = "Constraint-based MAPE" if use_constraint_mape else "MAPE"
     
     print(f"\nQUALITY ASSESSMENT:")
     if summary['fit_quality']['excellent']:
@@ -422,12 +444,12 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
     
     if param_metrics:
         if summary['parameter_accuracy']['excellent']:
-            print(f"  Parameter Accuracy: EXCELLENT (MAPE < 5%)")
+            print(f"  Parameter Accuracy: EXCELLENT ({mape_type} < 5%)")
         elif summary['parameter_accuracy']['good']:
-            print(f"  Parameter Accuracy: GOOD (MAPE < 10%)")
+            print(f"  Parameter Accuracy: GOOD ({mape_type} < 10%)")
         elif summary['parameter_accuracy']['acceptable']:
-            print(f"  Parameter Accuracy: ACCEPTABLE (MAPE < 20%)")
+            print(f"  Parameter Accuracy: ACCEPTABLE ({mape_type} < 20%)")
         else:
-            print(f"  Parameter Accuracy: POOR (MAPE ≥ 20%)")
+            print(f"  Parameter Accuracy: POOR ({mape_type} ≥ 20%)")
     
     print(f"{'='*60}\n")
