@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-Automated batch pipeline parameter sweep script.
+Automated batch pipeline parameter sweep script - CONSTRAINT-BASED PRIORS SWEEP.
 
-This script runs the batch pipeline with different parameter combinations:
-- Prior deviations: 5%, 30%, 99%
+This script runs the batch pipeline with the new constraint-based prior bounds method
+across all available experiments in the dataset, testing different parameter combinations:
+
+- Priors type: constraint_based (NEW METHOD)
+- Prior deviations: 5%, 30%, 99% (constraint percentage spans)
 - SLD fixing modes: none, backing, all
-- With and without prominent features
-- Results stored in dedicated sweep_results folder
+- Prominent features: disabled, enabled
+- Dataset: ALL available experiments
+
+Results stored in dedicated sweep_results folder with comprehensive analysis.
 """
 
 import subprocess
@@ -21,9 +26,10 @@ import json
 # =============================================================================
 
 # Parameter combinations to test
-PRIOR_DEVIATIONS = [5, 30, 99]
-SLD_MODES = ["none", "backing", "all"]
-PROMINENT_FEATURES = [False, True]
+PRIOR_DEVIATIONS = [5, 30, 99] # 5, 30, 99
+SLD_MODES = ["none", "backing", "all"] # "none", "backing", "all"
+PROMINENT_FEATURES = [False, True] # False, True
+PRIORS_TYPE = "constraint_based"  # Use the new constraint-based priors
 
 # Experiment configuration
 NUM_EXPERIMENTS = None  # None means use all available experiments
@@ -69,14 +75,18 @@ class BatchPipelineSweep:
         self.total_runs = len(PRIOR_DEVIATIONS) * len(SLD_MODES) * len(PROMINENT_FEATURES)
         self.current_run = 0
         
-        print(f"🚀 BATCH PIPELINE PARAMETER SWEEP")
-        print(f"=" * 60)
+        print(f"🚀 BATCH PIPELINE PARAMETER SWEEP - CONSTRAINT-BASED PRIORS")
+        print(f"=" * 70)
         print(f"Sweep directory: {self.sweep_dir}")
         print(f"Total parameter combinations: {self.total_runs}")
         print(f"Experiments per run: {self.num_experiments}")
         print(f"Layer count: {self.layer_count}")
         print(f"Data directory: {self.data_directory}")
-        print(f"=" * 60)
+        print(f"Priors type: {PRIORS_TYPE}")
+        print(f"Prior deviations: {PRIOR_DEVIATIONS}%")
+        print(f"SLD modes: {SLD_MODES}")
+        print(f"Prominent features: {PROMINENT_FEATURES}")
+        print(f"=" * 70)
     
     def run_single_configuration(self, prior_deviation, sld_mode, use_prominent):
         """Run batch pipeline with specific parameter configuration."""
@@ -84,6 +94,7 @@ class BatchPipelineSweep:
         
         print(f"\n{'='*80}")
         print(f"RUN {self.current_run}/{self.total_runs}")
+        print(f"Priors type: {PRIORS_TYPE}")
         print(f"Prior deviation: {prior_deviation}%")
         print(f"SLD mode: {sld_mode}")
         print(f"Prominent features: {'enabled' if use_prominent else 'disabled'}")
@@ -95,6 +106,7 @@ class BatchPipelineSweep:
             "--num-experiments", str(self.num_experiments),
             "--layer-count", str(self.layer_count),
             "--data-directory", self.data_directory,
+            "--priors-type", PRIORS_TYPE,
             "--priors-deviation", str(prior_deviation),
             "--fix-sld-mode", sld_mode
         ]
@@ -127,6 +139,7 @@ class BatchPipelineSweep:
             # Record results
             run_summary = {
                 "run_number": self.current_run,
+                "priors_type": PRIORS_TYPE,
                 "prior_deviation": prior_deviation,
                 "sld_mode": sld_mode,
                 "use_prominent_features": use_prominent,
@@ -157,6 +170,7 @@ class BatchPipelineSweep:
             # Record timeout
             run_summary = {
                 "run_number": self.current_run,
+                "priors_type": PRIORS_TYPE,
                 "prior_deviation": prior_deviation,
                 "sld_mode": sld_mode,
                 "use_prominent_features": use_prominent,
@@ -181,6 +195,7 @@ class BatchPipelineSweep:
             # Record exception
             run_summary = {
                 "run_number": self.current_run,
+                "priors_type": PRIORS_TYPE,
                 "prior_deviation": prior_deviation,
                 "sld_mode": sld_mode,
                 "use_prominent_features": use_prominent,
@@ -266,7 +281,7 @@ class BatchPipelineSweep:
         """Create a comprehensive final report."""
         report_file = self.sweep_dir / "sweep_report.md"
         
-        report_content = f"""# Batch Pipeline Parameter Sweep Report
+        report_content = f"""# Batch Pipeline Parameter Sweep Report - Constraint-Based Priors
 
 **Sweep Date:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 **Sweep Directory:** `{self.sweep_dir}`
@@ -275,6 +290,7 @@ class BatchPipelineSweep:
 - **Experiments per run:** {self.num_experiments}
 - **Layer count:** {self.layer_count}
 - **Data directory:** {self.data_directory}
+- **Priors type:** {PRIORS_TYPE}
 
 ## Parameter Combinations Tested
 - **Prior deviations:** {PRIOR_DEVIATIONS}% 
