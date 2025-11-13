@@ -238,7 +238,7 @@ def main():
     results = run_single_experiment(
         experiment_id=experiment_name,
         layer_count=layer_count,
-        enable_preprocessing=False,
+        enable_preprocessing=True,
         priors_type="constraint_based",
         priors_deviation=0.99,  # 99% constraint
         use_theoretical=False
