@@ -41,13 +41,12 @@ def replot_batch_results(results_dir, output_dir=None):
     with open(batch_results_file, 'r') as f:
         batch_results = json.load(f)
     
-    # Determine output directory
+    # Determine output directory - save directly to batch directory
     if output_dir is None:
-        output_dir = results_dir / "plots_regenerated"
+        output_dir = results_dir  # Save directly to batch directory, not subdirectory
     else:
         output_dir = Path(output_dir)
     
-    output_dir.mkdir(exist_ok=True)
     print(f"Saving plots to: {output_dir}")
     
     # Extract layer count from directory name
@@ -69,6 +68,16 @@ def replot_batch_results(results_dir, output_dir=None):
     successful_results = {k: v for k, v in batch_results.items() if v.get('success', False)}
     print(f"Found {len(successful_results)} successful experiments")
     
+    # Count failed and outlier experiments
+    # Outliers are a subset of failed, so we separate them
+    outlier_count = sum(1 for v in batch_results.values() if v.get('excluded_as_outlier', False))
+    total_failed = sum(1 for v in batch_results.values() if not v.get('success', False))
+    failed_count = total_failed - outlier_count  # Failed by other reasons
+    
+    print(f"Failed experiments (excluding outliers): {failed_count}")
+    print(f"Outlier experiments: {outlier_count}")
+    print(f"Total failed (failed + outliers): {total_failed}")
+    
     # Generate all plots
     plot_files = []
     
@@ -80,7 +89,9 @@ def replot_batch_results(results_dir, output_dir=None):
             layer_count=layer_count, 
             output_dir=output_dir,
             save=True,
-            narrow_priors_deviation=narrow_priors_deviation
+            narrow_priors_deviation=narrow_priors_deviation,
+            failed_count=failed_count,
+            outlier_count=outlier_count
         )
         if mape_plot:
             plot_files.append(mape_plot)
@@ -93,7 +104,9 @@ def replot_batch_results(results_dir, output_dir=None):
             layer_count=layer_count, 
             output_dir=output_dir,
             save=True,
-            narrow_priors_deviation=narrow_priors_deviation
+            narrow_priors_deviation=narrow_priors_deviation,
+            failed_count=failed_count,
+            outlier_count=outlier_count
         )
         if param_plot:
             plot_files.append(param_plot)
@@ -102,7 +115,9 @@ def replot_batch_results(results_dir, output_dir=None):
         # 3. Edge Case Detection Plot (from plotting_utils)
         print("\n3. Creating edge case detection plot...")
         edge_plot = plot_batch_edge_case_detection(
-            batch_results, layer_count, output_dir, save=True
+            batch_results, layer_count, output_dir, save=True,
+            failed_count=failed_count,
+            outlier_count=outlier_count
         )
         if edge_plot:
             plot_files.append(edge_plot)
