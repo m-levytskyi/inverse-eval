@@ -42,8 +42,12 @@ def load_experimental_data(data_file_path, enable_preprocessing=True,
     q_exp = data[..., 0]
     curve_exp = data[..., 1]
     
-    # Handle both theoretical (3 columns) and experimental (4 columns) data
-    if data.shape[1] == 3:
+    # Handle different data formats
+    if data.shape[1] == 2:
+        # Simple 2-column data (Q, R): create minimal dummy error bars
+        sigmas_exp = np.full_like(curve_exp, 1e-6)
+        print("Detected 2-column data (Q, R) - using minimal dummy errors")
+    elif data.shape[1] == 3:
         # Theoretical data: create minimal dummy error bars
         sigmas_exp = np.full_like(curve_exp, 1e-6)
         print("Detected theoretical data (3 columns) - using minimal dummy errors")
@@ -70,7 +74,8 @@ def load_experimental_data(data_file_path, enable_preprocessing=True,
     
     return q_exp, curve_exp, sigmas_exp
 
-def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1, apply_constraints=True):
+def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1, apply_constraints=True, 
+                 clip_prediction=False, use_q_shift=True, polish_prediction=True):
     """Run the inference prediction."""
     print("Performing inference prediction...")
     
@@ -85,7 +90,9 @@ def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=
         prior_bounds=prior_bounds,
         q_values=q_model,
         q_resolution=q_resolution,
-        polish_prediction=True,
+        clip_prediction=clip_prediction,
+        polish_prediction=polish_prediction,
+        use_q_shift=use_q_shift,
         calc_pred_curve=True,
         calc_pred_sld_profile=True,
         calc_polished_sld_profile=True,
