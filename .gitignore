@@ -32,3 +32,6 @@ deprecated/
 # Demo / example scripts
 demo_*.py
 example_*.py
+
+# NF model checkpoints
+saved_models/model_example_nf_config_reflectorch.pt
