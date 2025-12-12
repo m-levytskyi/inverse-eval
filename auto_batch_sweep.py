@@ -31,13 +31,19 @@ SLD_MODES = ["none", "backing", "all"] # "none", "backing", "all"
 PROMINENT_FEATURES = [False, True] # False, True
 PRIORS_TYPE = "constraint_based"  # Use the new constraint-based priors
 
+# Inference backend configuration
+INFERENCE_BACKEND = "nf"  # "predict" or "nf"
+NF_CONFIG_NAME = "example_nf_config_reflectorch.yaml"  # used when INFERENCE_BACKEND == "nf"
+NF_NUM_SAMPLES = 1000
+NF_DISABLE_IMPORTANCE_SAMPLING = False
+
 # Experiment configuration
 NUM_EXPERIMENTS = None  # None means use all available experiments
 LAYER_COUNT = 1
 DATA_DIRECTORY = "data"
 
 # Output configuration
-SWEEP_RESULTS_DIR = "sweep_results"
+SWEEP_RESULTS_DIR = "sweep_results_nf"
 
 # =============================================================================
 
@@ -83,6 +89,11 @@ class BatchPipelineSweep:
         print(f"Layer count: {self.layer_count}")
         print(f"Data directory: {self.data_directory}")
         print(f"Priors type: {PRIORS_TYPE}")
+        print(f"Inference backend: {INFERENCE_BACKEND}")
+        if INFERENCE_BACKEND == "nf":
+            print(f"NF config: {NF_CONFIG_NAME}")
+            print(f"NF num samples: {NF_NUM_SAMPLES}")
+            print(f"NF importance sampling: {'disabled' if NF_DISABLE_IMPORTANCE_SAMPLING else 'enabled'}")
         print(f"Prior deviations: {PRIOR_DEVIATIONS}%")
         print(f"SLD modes: {SLD_MODES}")
         print(f"Prominent features: {PROMINENT_FEATURES}")
@@ -110,6 +121,16 @@ class BatchPipelineSweep:
             "--priors-deviation", str(prior_deviation),
             "--fix-sld-mode", sld_mode
         ]
+
+        # Inference backend flags
+        if INFERENCE_BACKEND != "predict":
+            cmd.extend(["--inference-backend", INFERENCE_BACKEND])
+        if INFERENCE_BACKEND == "nf":
+            if NF_CONFIG_NAME:
+                cmd.extend(["--config-name", NF_CONFIG_NAME])
+            cmd.extend(["--nf-num-samples", str(NF_NUM_SAMPLES)])
+            if NF_DISABLE_IMPORTANCE_SAMPLING:
+                cmd.append("--nf-disable-importance-sampling")
         
         if use_prominent:
             cmd.append("--use-prominent-features")

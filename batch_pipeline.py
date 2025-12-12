@@ -75,7 +75,11 @@ class BatchInferencePipeline:
                  use_narrow_priors=USE_NARROW_PRIORS, narrow_priors_deviation=NARROW_PRIORS_DEVIATION, 
                  experiment_ids=None, fix_sld_mode=DEFAULT_FIX_SLD_MODE, 
                  use_prominent_features=DEFAULT_USE_PROMINENT_FEATURES, priors_type=None,
-                 use_theoretical=False):
+                 use_theoretical=False,
+                 inference_backend='predict',
+                 config_name=None,
+                 nf_num_samples=1000,
+                 nf_enable_importance_sampling=True):
         """
         Initialize the batch inference pipeline.
         
@@ -95,6 +99,10 @@ class BatchInferencePipeline:
             priors_type: Explicit priors type - "broad", "narrow", or "constraint_based" 
                         (overrides use_narrow_priors if provided)
             use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
+            inference_backend: Inference backend: "predict" (default) or "nf"
+            config_name: Optional reflectorch config name (overrides backend default)
+            nf_num_samples: NF backend only: number of samples
+            nf_enable_importance_sampling: NF backend only: importance sampling toggle
         """
         self.experiment_ids = experiment_ids
         self.num_experiments = len(experiment_ids) if experiment_ids else num_experiments
@@ -107,6 +115,10 @@ class BatchInferencePipeline:
         self.fix_sld_mode = fix_sld_mode
         self.use_prominent_features = use_prominent_features
         self.use_theoretical = use_theoretical
+        self.inference_backend = inference_backend
+        self.config_name = config_name
+        self.nf_num_samples = nf_num_samples
+        self.nf_enable_importance_sampling = nf_enable_importance_sampling
         
         # Determine priors type - explicit parameter takes precedence
         if priors_type is not None:
@@ -130,6 +142,12 @@ class BatchInferencePipeline:
         print(f"Preprocessing: {'enabled' if self.enable_preprocessing else 'disabled'}")
         print(f"Physical constraints: {'enabled' if self.apply_constraints else 'disabled'}")
         print(f"Prior bounds: {self.priors_type}")
+        print(f"Inference backend: {self.inference_backend}")
+        if self.config_name:
+            print(f"Model config: {self.config_name}")
+        if self.inference_backend == 'nf':
+            print(f"NF num samples: {self.nf_num_samples}")
+            print(f"NF importance sampling: {'enabled' if self.nf_enable_importance_sampling else 'disabled'}")
         print(f"Data source: {'THEORETICAL curves' if self.use_theoretical else 'EXPERIMENTAL curves'}")
         print(f"SLD fixing mode: {self.fix_sld_mode}")
         if self.use_narrow_priors:
@@ -303,7 +321,11 @@ class BatchInferencePipeline:
                 priors_type=self.priors_type,
                 priors_deviation=self.narrow_priors_deviation if self.use_narrow_priors else 0.5,
                 fix_sld_mode=self.fix_sld_mode,
-                use_theoretical=self.use_theoretical
+                use_theoretical=self.use_theoretical,
+                inference_backend=self.inference_backend,
+                config_name=self.config_name,
+                nf_num_samples=self.nf_num_samples,
+                nf_enable_importance_sampling=self.nf_enable_importance_sampling
             )
             
             # Success with primary priors
@@ -579,6 +601,15 @@ def parse_arguments():
                        help='Prior bounds deviation percentage: 5, 30, 60, or 99 (default: 99)')
     parser.add_argument('--priors-type', type=str, choices=['broad', 'narrow', 'constraint_based'], 
                        help='Prior bounds type: broad, narrow, or constraint_based')
+
+    parser.add_argument('--inference-backend', type=str, choices=['predict', 'nf'], default='predict',
+                       help='Inference backend: predict (default) or nf')
+    parser.add_argument('--config-name', type=str, default=None,
+                       help='Optional reflectorch config name (overrides backend default)')
+    parser.add_argument('--nf-num-samples', type=int, default=1000,
+                       help='NF backend: number of samples (default: 1000)')
+    parser.add_argument('--nf-disable-importance-sampling', action='store_true',
+                       help='NF backend: disable importance sampling')
     
     return parser.parse_args()
 
@@ -599,7 +630,11 @@ def main():
         experiment_ids=args.experiment_ids,
         use_prominent_features=args.use_prominent_features,
         narrow_priors_deviation=args.priors_deviation / 100.0,  # Convert percentage to decimal
-        priors_type=args.priors_type
+        priors_type=args.priors_type,
+        inference_backend=args.inference_backend,
+        config_name=args.config_name,
+        nf_num_samples=args.nf_num_samples,
+        nf_enable_importance_sampling=not args.nf_disable_importance_sampling
     )
     
     # Run the pipeline

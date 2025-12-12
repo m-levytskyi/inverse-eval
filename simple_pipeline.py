@@ -8,6 +8,7 @@ the core workflow for analyzing a single reflectometry experiment.
 
 import torch
 import numpy as np
+from typing import Literal
 from reflectorch import EasyInferenceModel
 
 # Import our modular utilities
@@ -107,6 +108,187 @@ def run_inference(inference_model, q_exp, curve_exp, prior_bounds, q_resolution=
     
     return q_model, prediction_dict
 
+
+def _nf_prediction_to_single_prediction_dict(nf_prediction_dict):
+    """Adapt NF `preprocess_and_sample` output into the existing single-prediction schema.
+
+    This selects the single best sample by max log-likelihood and maps it onto keys
+    expected elsewhere in the pipeline.
+    """
+    if 'log_likelihoods' not in nf_prediction_dict or nf_prediction_dict['log_likelihoods'] is None:
+        raise ValueError("NF prediction_dict is missing required 'log_likelihoods' (calc_log_likelihoods=True)")
+
+    log_likelihoods = np.asarray(nf_prediction_dict['log_likelihoods'])
+    if log_likelihoods.ndim != 1 or log_likelihoods.size == 0:
+        raise ValueError("NF 'log_likelihoods' must be a non-empty 1D array")
+
+    best_idx = int(np.argmax(log_likelihoods))
+
+    if 'predicted_params_array' not in nf_prediction_dict:
+        raise ValueError("NF prediction_dict is missing 'predicted_params_array'")
+    pred_params_all = np.asarray(nf_prediction_dict['predicted_params_array'])
+    if pred_params_all.ndim != 2:
+        raise ValueError("NF 'predicted_params_array' must be a 2D array (num_samples, num_params)")
+    pred_params = pred_params_all[best_idx]
+
+    if 'sampled_curves' not in nf_prediction_dict:
+        raise ValueError("NF prediction_dict is missing 'sampled_curves' (calc_sampled_curves=True)")
+    sampled_curves = np.asarray(nf_prediction_dict['sampled_curves'])
+    if sampled_curves.ndim != 2:
+        raise ValueError("NF 'sampled_curves' must be a 2D array (num_samples, n_q)")
+    predicted_curve = sampled_curves[best_idx]
+
+    if 'q_plot_pred' not in nf_prediction_dict:
+        raise ValueError("NF prediction_dict is missing 'q_plot_pred'")
+
+    if 'sampled_sld_profiles' not in nf_prediction_dict:
+        raise ValueError("NF prediction_dict is missing 'sampled_sld_profiles' (calc_sampled_sld_profiles=True)")
+    sampled_sld_profiles = np.asarray(nf_prediction_dict['sampled_sld_profiles'])
+    if sampled_sld_profiles.ndim != 2:
+        raise ValueError("NF 'sampled_sld_profiles' must be a 2D array (num_samples, n_z)")
+    predicted_sld_profile = sampled_sld_profiles[best_idx]
+
+    if 'sampled_sld_xaxis' not in nf_prediction_dict:
+        raise ValueError("NF prediction_dict is missing 'sampled_sld_xaxis'")
+    predicted_sld_xaxis = np.asarray(nf_prediction_dict['sampled_sld_xaxis'])
+
+    param_names = nf_prediction_dict.get('param_names')
+    if param_names is None:
+        raise ValueError("NF prediction_dict is missing 'param_names'")
+
+    return {
+        # parameters
+        'param_names': param_names,
+        'predicted_params_array': pred_params,
+        'polished_params_array': pred_params,
+        # curves
+        'q_plot_pred': np.asarray(nf_prediction_dict['q_plot_pred']),
+        'predicted_curve': predicted_curve,
+        'polished_curve': predicted_curve,
+        # sld
+        'predicted_sld_xaxis': predicted_sld_xaxis,
+        'predicted_sld_profile': predicted_sld_profile,
+        'sld_profile_polished': predicted_sld_profile,
+        # minimal NF metadata
+        'nf_best_idx': best_idx,
+        'nf_best_log_likelihood': float(log_likelihoods[best_idx]),
+    }
+
+
+def _extend_prior_bounds_for_nf(prior_bounds):
+    """Extend standard prior bounds with NF nuisance-parameter bounds when needed.
+
+    The example NF config expects two additional parameters beyond the standard
+    geometry/SLD parameters: r_scale and log10_background.
+    """
+    prior_bounds_list = list(prior_bounds)
+
+    if len(prior_bounds_list) in (5, 8):
+        # Append nuisance bounds in the expected order.
+        # r_scale: [0.9, 1.1]
+        # log10_background: [-10, -4]
+        prior_bounds_list.extend([(0.9, 1.1), (-10.0, -4.0)])
+        return prior_bounds_list
+
+    if len(prior_bounds_list) in (7, 10):
+        return prior_bounds_list
+
+    raise ValueError(
+        f"Unsupported NF prior_bounds length={len(prior_bounds_list)}. "
+        "Expected 5/7 (1-layer) or 8/10 (2-layer), depending on whether nuisance "
+        "parameters (r_scale, log10_background) are included."
+    )
+
+
+def _map_pred_param_name_to_canonical_true_name(pred_param_name: str, layer_count: int) -> str:
+    """Map reflectorch param labels to this repo's canonical parameter names."""
+    n = (pred_param_name or '').strip().lower()
+    if not n:
+        return ''
+
+    # Nuisance parameters used by NF configs
+    if n in {'r_scale', 'log10_background', 'q_shift'}:
+        return n
+
+    # Normalize common formatting
+    n = n.replace('-', ' ')
+    n = ' '.join(n.split())
+
+    if 'thickness' in n:
+        if layer_count == 1:
+            return 'thickness'
+        if 'l1' in n or 'layer1' in n:
+            return 'thickness1'
+        if 'l2' in n or 'layer2' in n:
+            return 'thickness2'
+
+    if 'rough' in n:
+        if 'sub' in n:
+            return 'sub_rough'
+        if layer_count == 1:
+            if 'l1' in n or 'layer1' in n:
+                return 'amb_rough'
+        if layer_count == 2:
+            if 'l1' in n or 'layer1' in n:
+                return 'amb_rough'
+            if 'l2' in n or 'layer2' in n:
+                return 'int_rough'
+
+    if 'sld' in n:
+        if 'sub' in n:
+            return 'sub_sld'
+        if layer_count == 1:
+            if 'l1' in n or 'layer1' in n:
+                return 'layer_sld'
+        if layer_count == 2:
+            if 'l1' in n or 'layer1' in n:
+                return 'layer1_sld'
+            if 'l2' in n or 'layer2' in n:
+                return 'layer2_sld'
+
+    return n.replace(' ', '_')
+
+
+def run_nf_inference(
+    inference_model,
+    q_exp,
+    curve_exp,
+    prior_bounds,
+    q_resolution=0.1,
+    apply_constraints=True,
+    nf_num_samples=1000,
+    nf_enable_importance_sampling=True,
+):
+    """Run NF inference via `preprocess_and_sample` and adapt to the standard schema."""
+    print("Performing NF inference (preprocess_and_sample)...")
+
+    q_model, exp_curve_interp = inference_model.interpolate_data_to_model_q(q_exp, curve_exp)
+    print(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
+    print(f"Interpolated curve shape: {exp_curve_interp.shape}")
+
+    nf_prediction_dict = inference_model.preprocess_and_sample(
+        reflectivity_curve=exp_curve_interp,
+        q_values=q_model,
+        num_samples=nf_num_samples,
+        prior_bounds=_extend_prior_bounds_for_nf(prior_bounds),
+        q_resolution=q_resolution,
+        calc_sampled_curves=True,
+        calc_sampled_sld_profiles=True,
+        calc_log_likelihoods=True,
+        enable_importance_sampling=nf_enable_importance_sampling,
+    )
+
+    prediction_dict = _nf_prediction_to_single_prediction_dict(nf_prediction_dict)
+
+    if apply_constraints:
+        print("Applying physical constraints...")
+        prediction_dict = apply_physical_constraints(prediction_dict)
+    else:
+        print("Physical constraints disabled - skipping constraint application")
+
+    q_pred = np.asarray(prediction_dict['q_plot_pred'])
+    return q_pred, prediction_dict
+
 def display_results(prediction_dict):
     """Display prediction results in a formatted way."""
     print("\nPrediction Results:")
@@ -123,7 +305,11 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
                          preprocessing_threshold=0.5, preprocessing_consecutive=3,
                          preprocessing_remove_singles=False, apply_constraints=True,
                          priors_type="broad", priors_deviation=0.5, fix_sld_mode="none",
-                         use_theoretical=False):
+                         use_theoretical=False,
+                         inference_backend: Literal['predict', 'nf'] = 'predict',
+                         config_name: str | None = None,
+                         nf_num_samples: int = 1000,
+                         nf_enable_importance_sampling: bool = True):
     """
     Run a single experiment inference with configurable options.
     
@@ -181,13 +367,39 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
     )
     
     # Initialize inference model
-    config_name = 'b_mc_point_neutron_conv_standard_L1_InputQDq'
+    if config_name is None:
+        if inference_backend == 'nf':
+            if final_layer_count != 1:
+                raise ValueError(
+                    "Default NF config 'example_nf_config_reflectorch.yaml' is a 1-layer model. "
+                    "Provide --config-name for an NF model matching the requested layer_count."
+                )
+            config_name = 'example_nf_config_reflectorch.yaml'
+        else:
+            config_name = 'b_mc_point_neutron_conv_standard_L1_InputQDq'
     inference_model = EasyInferenceModel(config_name=config_name, device='cpu')
-    
+
     # Run inference
-    q_model, prediction_dict = run_inference(
-        inference_model, q_exp, curve_exp, prior_bounds, q_resolution=0.1, apply_constraints=apply_constraints
-    )
+    if inference_backend == 'nf':
+        q_model, prediction_dict = run_nf_inference(
+            inference_model,
+            q_exp,
+            curve_exp,
+            prior_bounds,
+            q_resolution=0.1,
+            apply_constraints=apply_constraints,
+            nf_num_samples=nf_num_samples,
+            nf_enable_importance_sampling=nf_enable_importance_sampling,
+        )
+    else:
+        q_model, prediction_dict = run_inference(
+            inference_model,
+            q_exp,
+            curve_exp,
+            prior_bounds,
+            q_resolution=0.1,
+            apply_constraints=apply_constraints,
+        )
     
     # Calculate metrics
     fit_metrics = calculate_fit_metrics(
@@ -200,10 +412,41 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
     
     param_metrics = None
     if true_params_dict and f'{final_layer_count}_layer' in true_params_dict:
+        true_param_block = true_params_dict[f'{final_layer_count}_layer']
+        true_params = true_param_block['params']
+        true_param_names = true_param_block['param_names']
+
+        pred_params_for_metrics = prediction_dict['polished_params_array']
+        pred_param_names = prediction_dict.get('param_names', [])
+
+        # NF models can include nuisance parameters (e.g., r_scale, log10_background) and
+        # can label standard parameters differently (e.g., "Thickness L1").
+        # Align predicted parameters to the true parameter set by name.
+        if len(pred_params_for_metrics) != len(true_params) and pred_param_names:
+            canonical_to_index: dict[str, int] = {}
+            for i, pred_name in enumerate(pred_param_names):
+                canonical = _map_pred_param_name_to_canonical_true_name(pred_name, final_layer_count)
+                if canonical and canonical not in canonical_to_index:
+                    canonical_to_index[canonical] = i
+
+            missing = [
+                true_name
+                for true_name in true_param_names
+                if true_name not in canonical_to_index
+            ]
+            if missing:
+                raise ValueError(
+                    f"Predicted param_names missing required true params: {missing}. "
+                    f"Predicted names: {pred_param_names}"
+                )
+
+            indices = [canonical_to_index[true_name] for true_name in true_param_names]
+            pred_params_for_metrics = np.asarray(pred_params_for_metrics)[indices]
+
         param_metrics = calculate_parameter_metrics(
-            prediction_dict['polished_params_array'],
-            true_params_dict[f'{final_layer_count}_layer']['params'],
-            true_params_dict[f'{final_layer_count}_layer']['param_names'],
+            pred_params_for_metrics,
+            true_params,
+            true_param_names,
             prior_bounds=prior_bounds,
             priors_type=priors_type
         )
