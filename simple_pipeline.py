@@ -258,12 +258,17 @@ def run_nf_inference(
     apply_constraints=True,
     nf_num_samples=1000,
     nf_enable_importance_sampling=True,
+    clip_prediction=True,
 ):
     """Run NF inference via `preprocess_and_sample` and adapt to the standard schema."""
     print("Performing NF inference (preprocess_and_sample)...")
 
     q_model, exp_curve_interp = inference_model.interpolate_data_to_model_q(q_exp, curve_exp)
     print(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
+    
+    if q_model.max() < 0.05:
+        print(f"⚠️  WARNING: Model Q max ({q_model.max():.4f}) is very low! Inference may be unreliable.")
+        
     print(f"Interpolated curve shape: {exp_curve_interp.shape}")
 
     nf_prediction_dict = inference_model.preprocess_and_sample(
@@ -276,10 +281,11 @@ def run_nf_inference(
         calc_sampled_sld_profiles=True,
         calc_log_likelihoods=True,
         enable_importance_sampling=nf_enable_importance_sampling,
+        clip_prediction=clip_prediction,
     )
 
     prediction_dict = _nf_prediction_to_single_prediction_dict(nf_prediction_dict)
-
+    
     if apply_constraints:
         print("Applying physical constraints...")
         prediction_dict = apply_physical_constraints(prediction_dict)
@@ -309,7 +315,8 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
                          inference_backend: Literal['predict', 'nf'] = 'predict',
                          config_name: str | None = None,
                          nf_num_samples: int = 1000,
-                         nf_enable_importance_sampling: bool = True):
+                         nf_enable_importance_sampling: bool = True,
+                         clip_prediction: bool = True):
     """
     Run a single experiment inference with configurable options.
     
@@ -326,6 +333,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
                          constraint percentage for constraint_based priors
         fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
         use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
+        clip_prediction: Whether to clip predicted parameters to prior bounds (default: True)
     
     Returns:
         Dictionary with results including parameters and metrics
@@ -390,6 +398,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
             apply_constraints=apply_constraints,
             nf_num_samples=nf_num_samples,
             nf_enable_importance_sampling=nf_enable_importance_sampling,
+            clip_prediction=clip_prediction,
         )
     else:
         q_model, prediction_dict = run_inference(
@@ -399,6 +408,7 @@ def run_single_experiment(experiment_id, layer_count=1, enable_preprocessing=Tru
             prior_bounds,
             q_resolution=0.1,
             apply_constraints=apply_constraints,
+            clip_prediction=clip_prediction,
         )
     
     # Calculate metrics
