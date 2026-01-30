@@ -639,9 +639,7 @@ def get_prior_bounds_for_experiment(experiment_id, true_params_dict=None,
             
             return bounds
     
-    # No fallback - if we reach here, raise an error
-    raise ValueError(f"Cannot generate priors: unsupported priors_type='{priors_type}' for layer_count={layer_count}. "
-                     f"Supported types: 'constraint_based', 'broad'. No default fallback is available.")
+    raise ValueError(f"Unsupported priors_type='{priors_type}' for layer_count={layer_count}")
 
 
 def discover_batch_experiments(data_directory, layer_count=None, num_experiments=None, experiment_ids=None):
@@ -660,22 +658,8 @@ def discover_batch_experiments(data_directory, layer_count=None, num_experiments
     data_dir = Path(data_directory)
     
     if experiment_ids:
-        print(f"\nValidating provided experiment IDs: {experiment_ids}")
-        
-        # Validate that the experiments exist
-        validated_experiments = []
-        for exp_id in experiment_ids:
-            if experiment_exists(exp_id, data_directory, layer_count):
-                validated_experiments.append(exp_id)
-                print(f"  ✓ {exp_id}: found")
-            else:
-                print(f"  ✗ {exp_id}: not found - skipping")
-        
-        if not validated_experiments:
-            raise FileNotFoundError("None of the provided experiment IDs were found")
-        
-        print(f"Validated {len(validated_experiments)}/{len(experiment_ids)} experiments")
-        return validated_experiments
+        print(f"\nValidating {len(experiment_ids)} provided experiment IDs")
+        return experiment_ids
     
     # Original discovery logic
     print(f"\nDiscovering experiments in {data_dir}")
@@ -746,6 +730,18 @@ def discover_batch_experiments(data_directory, layer_count=None, num_experiments
                             experiments.append(exp_id)
         else:
             print(f"  Directory not found: {test_data_path}")
+            
+            # Fallback: Search directly in data_directory
+            print(f"  Searching directly in: {data_dir}")
+            exp_files = list(data_dir.glob("s*_experimental_curve.dat"))
+            
+            if exp_files:
+                print(f"  Found {len(exp_files)} experiment files in root directory")
+                for exp_file in exp_files:
+                    exp_id = exp_file.name.replace('_experimental_curve.dat', '')
+                    experiments.append(exp_id)
+            else:
+                print(f"  No experiment files found in root directory")
     
     print(f"Found {len(experiments)} experiments")
     
@@ -757,77 +753,18 @@ def discover_batch_experiments(data_directory, layer_count=None, num_experiments
     return experiments
 
 
-def experiment_exists(experiment_id, data_directory, layer_count=None):
-    """
-    Check if an experiment exists in the data directory.
-    
-    Args:
-        experiment_id: Experiment identifier
-        data_directory: Base data directory to search
-        layer_count: Number of layers to check for (optional)
-        
-    Returns:
-        bool: True if experiment files exist
-    """
-    data_dir = Path(data_directory)
-    
-    # Check MARIA dataset structure
-    maria_dataset_path = data_dir / "MARIA_VIPR_dataset"
-    if maria_dataset_path.exists():
-        layer_dirs_to_search = []
-        if layer_count is not None:
-            layer_dirs_to_search = [str(layer_count)]
-        else:
-            layer_dirs_to_search = ['0', '1', '2']
-        
-        for layer_dir_name in layer_dirs_to_search:
-            layer_dir = maria_dataset_path / layer_dir_name
-            if layer_dir.is_dir():
-                exp_data_file = layer_dir / f"{experiment_id}_experimental_curve.dat"
-                if exp_data_file.exists():
-                    # Check for model file too
-                    model_file = layer_dir / f"{experiment_id}_model.txt"
-                    if not model_file.exists():
-                        model_file = layer_dir / f"{experiment_id}_model.dat"
-                    if model_file.exists():
-                        return True
-    
-    # Check test data structure
-    test_data_path = data_dir / "test_data"
-    if test_data_path.exists():
-        if layer_count is not None:
-            layer_test_dir = test_data_path / str(layer_count)
-            if layer_test_dir.exists():
-                exp_data_file = layer_test_dir / f"{experiment_id}_experimental_curve.dat"
-                return exp_data_file.exists()
-        else:
-            # Search all layer directories
-            for layer_dir in test_data_path.iterdir():
-                if layer_dir.is_dir() and layer_dir.name.isdigit():
-                    exp_data_file = layer_dir / f"{experiment_id}_experimental_curve.dat"
-                    if exp_data_file.exists():
-                        return True
-    
-    return False
 
-
-def check_experiment_within_constraints(experiment_id, true_params_dict, layer_count, 
-                                       constraint_percentage=0.99):
+def check_experiment_within_constraints(experiment_id, true_params_dict, layer_count):
     """
     Check if an experiment's true parameters fall within the model constraint ranges.
     
-    This function is used to detect outliers when constraint-based priors are enabled.
     An experiment is considered an outlier if any of its true parameter values fall 
     outside the MODEL CONSTRAINTS (e.g., thickness: 1-1000, roughness: 0-60, SLD: -8 to 16).
-    
-    NOTE: This checks against the constraint ranges themselves, NOT the prior bounds
-    that would be generated around the true values.
     
     Args:
         experiment_id: Experiment identifier
         true_params_dict: Dictionary with true parameters
         layer_count: Number of layers (1 or 2)
-        constraint_percentage: Percentage of constraint span (not used for outlier detection)
         
     Returns:
         Tuple of (is_within_constraints: bool, outlier_parameters: list)
@@ -836,39 +773,26 @@ def check_experiment_within_constraints(experiment_id, true_params_dict, layer_c
     """
     layer_key = f'{layer_count}_layer'
     if layer_key not in true_params_dict:
-        return True, []  # Cannot check, assume valid
+        return True, []
     
     true_params = true_params_dict[layer_key]['params']
     param_names = get_parameter_names_for_layer_count(layer_count)
     
-    # Load model constraints from centralized definition
-    model_constraints = get_constraint_ranges()
-    
-    # Check each parameter against model constraints
     outlier_parameters = []
     for param_name, param_value in zip(param_names, true_params):
         try:
             constraint_min, constraint_max = get_constraint_range(param_name)
-            
             if param_value < constraint_min or param_value > constraint_max:
                 outlier_parameters.append((param_name, param_value, constraint_min, constraint_max))
         except KeyError:
-            # Unknown parameter type, skip constraint check
             pass
     
-    is_within_constraints = len(outlier_parameters) == 0
-    
-    return is_within_constraints, outlier_parameters
+    return len(outlier_parameters) == 0, outlier_parameters
 
 
 if __name__ == "__main__":
-    print("Parameter discovery module loaded successfully.")
-    print("Available functions:")
-    print("  - discover_experiment_files()")
-    print("  - parse_true_parameters_from_model_file()")
-    print("  - generate_true_sld_profile()")
-    print("  - get_prior_bounds_for_experiment()")
-    print("  - get_parameter_names_for_layer_count()")
-    print("  - discover_batch_experiments()")
-    print("  - experiment_exists()")
-    print("  - check_experiment_within_constraints()")
+    print("Parameter discovery module")
+    print("Functions: discover_experiment_files, parse_true_parameters_from_model_file, ")
+    print("           generate_true_sld_profile, get_prior_bounds_for_experiment, ")
+    print("           get_parameter_names_for_layer_count, discover_batch_experiments, ")
+    print("           check_experiment_within_constraints")
