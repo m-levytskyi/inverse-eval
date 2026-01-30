@@ -3,6 +3,7 @@ __pycache__/
 # Large data directories (keep these ignored)
 data/MARIA_VIPR_dataset/
 data/Experimental/
+dataset/
 
 # Generated results (keep these ignored)
 inference_results/
@@ -11,10 +12,12 @@ synthetic_data/
 peaks_plots/
 sld_plots/
 sweep_results/
+sweep_results_*/
 constraint_visualization_plots/
 constraint_prior_tests/
 md_report_plots/
 random_guessing_evaluation/
+model_comparison_plots/
 
 
 # Development directories (keep these ignored)
