@@ -70,7 +70,25 @@ def find_experiments_with_prominent_peaks(layer_count, data_directory="data",
     Returns:
         List of experiment IDs that have prominent peaks
     """
-    filepaths = sorted(glob.glob(f'{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_theoretical_curve.dat'))
+    # Search patterns to try (prioritizing theoretical curves, then experimental)
+    # Also checking different directory structures
+    patterns = [
+        f'{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_theoretical_curve.dat',
+        f'{data_directory}/test_data/{layer_count}/s*_theoretical_curve.dat',
+        f'{data_directory}/s*_theoretical_curve.dat',
+        f'{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_experimental_curve.dat',
+        f'{data_directory}/test_data/{layer_count}/s*_experimental_curve.dat',
+        f'{data_directory}/s*_experimental_curve.dat'
+    ]
+    
+    filepaths = []
+    for pattern in patterns:
+        found = sorted(glob.glob(pattern))
+        if found:
+            filepaths = found
+            if verbose:
+                print(f"Found {len(filepaths)} files using pattern: {pattern}")
+            break
     
     if verbose:
         print(f"Scanning {len(filepaths)} experiments for prominent peaks...")
