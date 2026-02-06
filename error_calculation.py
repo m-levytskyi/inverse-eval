@@ -2,7 +2,7 @@
 """
 Error calculation utilities for reflectometry analysis.
 
-This module contains functions to calculate various error metrics and 
+This module contains functions to calculate various error metrics and
 goodness-of-fit measures for comparing predicted and experimental data.
 """
 
@@ -13,73 +13,79 @@ from constraints_utils import get_constraint_width
 def calculate_fit_metrics(y_exp, y_pred, sigma_exp, q_exp, q_model):
     """
     Calculate fit quality metrics including R-squared, MSE, and L1 loss.
-    
+
     Args:
         y_exp: Experimental reflectivity values
         y_pred: Predicted reflectivity values
-        sigma_exp: Experimental uncertainties  
+        sigma_exp: Experimental uncertainties
         q_exp: Experimental Q values
         q_model: Model Q values
-        
+
     Returns:
         Dictionary with calculated metrics
     """
     print("Calculating fit metrics (R-squared, MSE, L1 loss)")
-    
+
     # Interpolate predicted curve to experimental Q points for comparison
-    print(f"Interpolating predicted curve ({len(y_pred)} pts) to experimental Q points ({len(q_exp)} pts)")
+    print(
+        f"Interpolating predicted curve ({len(y_pred)} pts) to experimental Q points ({len(q_exp)} pts)"
+    )
     y_pred_interp = np.interp(q_exp, q_model, y_pred)
-    
+
     # R-squared
     ss_res = np.sum((y_exp - y_pred_interp) ** 2)
     ss_tot = np.sum((y_exp - np.mean(y_exp)) ** 2)
     r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
-    
+
     # MSE (Mean Squared Error)
     mse = np.mean((y_exp - y_pred_interp) ** 2)
-    
+
     # L1 Loss (Mean Absolute Error)
     l1_loss = np.mean(np.abs(y_exp - y_pred_interp))
-    
+
     # Weighted chi-squared
     chi_squared = np.sum(((y_exp - y_pred_interp) / sigma_exp) ** 2)
-    reduced_chi_squared = chi_squared / (len(y_exp) - 1) if len(y_exp) > 1 else chi_squared
-    
+    reduced_chi_squared = (
+        chi_squared / (len(y_exp) - 1) if len(y_exp) > 1 else chi_squared
+    )
+
     # Relative errors
     relative_errors = np.abs((y_exp - y_pred_interp) / y_exp)
     mean_relative_error = np.mean(relative_errors)
     max_relative_error = np.max(relative_errors)
-    
+
     metrics = {
-        'r_squared': float(r_squared),
-        'mse': float(mse),
-        'l1_loss': float(l1_loss),
-        'chi_squared': float(chi_squared),
-        'reduced_chi_squared': float(reduced_chi_squared),
-        'mean_relative_error': float(mean_relative_error),
-        'max_relative_error': float(max_relative_error)
+        "r_squared": float(r_squared),
+        "mse": float(mse),
+        "l1_loss": float(l1_loss),
+        "chi_squared": float(chi_squared),
+        "reduced_chi_squared": float(reduced_chi_squared),
+        "mean_relative_error": float(mean_relative_error),
+        "max_relative_error": float(max_relative_error),
     }
-    
+
     print(f"Calculated fit metrics: {metrics}")
     return metrics
 
 
-def calculate_parameter_metrics(pred_params, true_params, param_names, prior_bounds=None, priors_type=None):
+def calculate_parameter_metrics(
+    pred_params, true_params, param_names, prior_bounds=None, priors_type=None
+):
     """
     Calculate parameter metrics: MAPE and MSE for different parameter types.
-    
+
     For constraint-based priors, also calculates constraint-based MAPE which normalizes
-    errors by the constraint interval width instead of the prior interval width. This 
-    provides an error metric that is bounded by the prior deviation percentage (e.g., 
+    errors by the constraint interval width instead of the prior interval width. This
+    provides an error metric that is bounded by the prior deviation percentage (e.g.,
     30% for 30% constraint-based priors, 99% for 99% constraint-based priors).
-    
+
     Args:
         pred_params: Predicted parameter values
         true_params: True parameter values
         param_names: List of parameter names
         prior_bounds: Optional prior bounds array (for constraint-based MAPE calculation)
         priors_type: Optional priors type string ("constraint_based", "narrow", "broad")
-        
+
     Returns:
         Dictionary with calculated parameter metrics
     """
@@ -89,367 +95,417 @@ def calculate_parameter_metrics(pred_params, true_params, param_names, prior_bou
     print(f"  - Param names: {param_names}")
 
     if len(pred_params) != len(true_params):
-        print(f"WARNING: Parameter count mismatch. Predicted: {len(pred_params)}, True: {len(true_params)}")
-        return {
-            'overall': {'mape': -1, 'mse': -1},
-            'by_type': {},
-            'by_parameter': {}
-        }
+        print(
+            f"WARNING: Parameter count mismatch. Predicted: {len(pred_params)}, True: {len(true_params)}"
+        )
+        return {"overall": {"mape": -1, "mse": -1}, "by_type": {}, "by_parameter": {}}
 
     # Convert arrays and handle unit conversions for SLD parameters
     pred_params_converted = []
     true_params_converted = []
-    
+
     for i, param_name in enumerate(param_names):
         pred_val = pred_params[i]
         true_val = true_params[i]
-        
+
         # No unit conversion needed - both predicted and true values are already in consistent units
         # The parsing process has already converted true SLD values to the same scale as predictions
         pred_converted = pred_val
         true_converted = true_val
-        
-        if 'sld' in param_name.lower():
-            print(f"SLD comparison for {param_name} - Pred: {pred_val:.6f}, True: {true_val:.6f} (no conversion needed)")
-        
+
+        if "sld" in param_name.lower():
+            print(
+                f"SLD comparison for {param_name} - Pred: {pred_val:.6f}, True: {true_val:.6f} (no conversion needed)"
+            )
+
         pred_params_converted.append(pred_converted)
         true_params_converted.append(true_converted)
 
     pred_array = np.array(pred_params_converted)
     true_array = np.array(true_params_converted)
-    
+
     errors = pred_array - true_array
-    squared_errors = errors ** 2
-    
+    squared_errors = errors**2
+
     # Calculate percentage errors, handling true zeros
     true_params_mape = np.array(true_params_converted)
     zero_mask = np.abs(true_params_mape) < 1e-10
-    
+
     # For zero true values, use absolute error instead of percentage
     percentage_errors = np.zeros_like(errors)
     nonzero_mask = ~zero_mask
     if np.any(nonzero_mask):
-        percentage_errors[nonzero_mask] = np.abs(errors[nonzero_mask] / true_params_mape[nonzero_mask]) * 100
+        percentage_errors[nonzero_mask] = (
+            np.abs(errors[nonzero_mask] / true_params_mape[nonzero_mask]) * 100
+        )
     if np.any(zero_mask):
-        percentage_errors[zero_mask] = np.abs(errors[zero_mask])  # Absolute error for zeros
-        print(f"WARNING: Zero true values found for parameters: {[param_names[i] for i in np.where(zero_mask)[0]]}")
+        percentage_errors[zero_mask] = np.abs(
+            errors[zero_mask]
+        )  # Absolute error for zeros
+        print(
+            f"WARNING: Zero true values found for parameters: {[param_names[i] for i in np.where(zero_mask)[0]]}"
+        )
 
     # Overall metrics
     overall_mape = np.mean(percentage_errors)
     overall_mse = np.mean(squared_errors)
-    
+
     # Calculate constraint-based MAPE if using constraint-based priors
     constraint_based_percentage_errors = None
     overall_constraint_mape = None
-    
+
     if priors_type == "constraint_based" and prior_bounds is not None:
-        print("Calculating constraint-based MAPE (normalized by constraint interval width)")
-        
+        print(
+            "Calculating constraint-based MAPE (normalized by constraint interval width)"
+        )
+
         constraint_based_percentage_errors = np.zeros_like(errors)
-        
+
         for i in range(len(errors)):
             param_name = param_names[i]
-            
+
             # Get constraint width from centralized definition
             try:
                 constraint_width = get_constraint_width(param_name)
             except KeyError:
-                raise ValueError(f"Unknown parameter type: {param_name}. "
-                               f"Please add to model_constraints.json")
-            
+                raise ValueError(
+                    f"Unknown parameter type: {param_name}. "
+                    f"Please add to model_constraints.json"
+                )
+
             # Constraint-based percentage error = |error| / constraint_width * 100
             # This normalizes error by the full constraint space, so max error is bounded
             # by the prior deviation percentage (e.g., 30% for 30% constraint-based priors)
-            constraint_based_percentage_errors[i] = np.abs(errors[i]) / constraint_width * 100
-        
+            constraint_based_percentage_errors[i] = (
+                np.abs(errors[i]) / constraint_width * 100
+            )
+
         overall_constraint_mape = np.mean(constraint_based_percentage_errors)
         print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
-    
+
     # Metrics by parameter type
     by_type = {}
-    thickness_indices = [i for i, name in enumerate(param_names) if 'thickness' in name.lower()]
-    roughness_indices = [i for i, name in enumerate(param_names) if 'rough' in name.lower()]
-    sld_indices = [i for i, name in enumerate(param_names) if 'sld' in name.lower()]
-    
+    thickness_indices = [
+        i for i, name in enumerate(param_names) if "thickness" in name.lower()
+    ]
+    roughness_indices = [
+        i for i, name in enumerate(param_names) if "rough" in name.lower()
+    ]
+    sld_indices = [i for i, name in enumerate(param_names) if "sld" in name.lower()]
+
     if thickness_indices:
         type_metrics = {
-            'mape': float(np.mean(percentage_errors[thickness_indices])),
-            'mse': float(np.mean(squared_errors[thickness_indices]))
+            "mape": float(np.mean(percentage_errors[thickness_indices])),
+            "mse": float(np.mean(squared_errors[thickness_indices])),
         }
         if constraint_based_percentage_errors is not None:
-            type_metrics['constraint_mape'] = float(np.mean(constraint_based_percentage_errors[thickness_indices]))
-        by_type['thickness'] = type_metrics
-    
+            type_metrics["constraint_mape"] = float(
+                np.mean(constraint_based_percentage_errors[thickness_indices])
+            )
+        by_type["thickness"] = type_metrics
+
     if roughness_indices:
         type_metrics = {
-            'mape': float(np.mean(percentage_errors[roughness_indices])),
-            'mse': float(np.mean(squared_errors[roughness_indices]))
+            "mape": float(np.mean(percentage_errors[roughness_indices])),
+            "mse": float(np.mean(squared_errors[roughness_indices])),
         }
         if constraint_based_percentage_errors is not None:
-            type_metrics['constraint_mape'] = float(np.mean(constraint_based_percentage_errors[roughness_indices]))
-        by_type['roughness'] = type_metrics
-    
+            type_metrics["constraint_mape"] = float(
+                np.mean(constraint_based_percentage_errors[roughness_indices])
+            )
+        by_type["roughness"] = type_metrics
+
     if sld_indices:
         type_metrics = {
-            'mape': float(np.mean(percentage_errors[sld_indices])),
-            'mse': float(np.mean(squared_errors[sld_indices]))
+            "mape": float(np.mean(percentage_errors[sld_indices])),
+            "mse": float(np.mean(squared_errors[sld_indices])),
         }
         if constraint_based_percentage_errors is not None:
-            type_metrics['constraint_mape'] = float(np.mean(constraint_based_percentage_errors[sld_indices]))
-        by_type['sld'] = type_metrics
-    
+            type_metrics["constraint_mape"] = float(
+                np.mean(constraint_based_percentage_errors[sld_indices])
+            )
+        by_type["sld"] = type_metrics
+
     # Metrics by individual parameter
     by_parameter = {}
     for i, param_name in enumerate(param_names):
         param_metrics = {
-            'predicted': float(pred_params_converted[i]),
-            'true': float(true_params_converted[i]),
-            'error': float(errors[i]),
-            'percentage_error': float(percentage_errors[i]),
-            'squared_error': float(squared_errors[i])
+            "predicted": float(pred_params_converted[i]),
+            "true": float(true_params_converted[i]),
+            "error": float(errors[i]),
+            "percentage_error": float(percentage_errors[i]),
+            "squared_error": float(squared_errors[i]),
         }
-        
+
         # Add constraint-based metrics if available
         if constraint_based_percentage_errors is not None:
-            param_metrics['constraint_percentage_error'] = float(constraint_based_percentage_errors[i])
-            param_metrics['prior_bounds'] = [float(prior_bounds[i][0]), float(prior_bounds[i][1])]
-            param_metrics['prior_width'] = float(prior_bounds[i][1] - prior_bounds[i][0])
-            
+            param_metrics["constraint_percentage_error"] = float(
+                constraint_based_percentage_errors[i]
+            )
+            param_metrics["prior_bounds"] = [
+                float(prior_bounds[i][0]),
+                float(prior_bounds[i][1]),
+            ]
+            param_metrics["prior_width"] = float(
+                prior_bounds[i][1] - prior_bounds[i][0]
+            )
+
             # Add constraint width from centralized definition
             try:
-                param_metrics['constraint_width'] = get_constraint_width(param_name)
+                param_metrics["constraint_width"] = get_constraint_width(param_name)
             except KeyError:
                 pass  # Skip if parameter not found
-        
+
         by_parameter[param_name] = param_metrics
-    
+
     metrics = {
-        'overall': {
-            'mape': float(overall_mape),
-            'mse': float(overall_mse)
-        },
-        'by_type': by_type,
-        'by_parameter': by_parameter
+        "overall": {"mape": float(overall_mape), "mse": float(overall_mse)},
+        "by_type": by_type,
+        "by_parameter": by_parameter,
     }
-    
+
     # Add constraint-based overall MAPE if calculated
     if overall_constraint_mape is not None:
-        metrics['overall']['constraint_mape'] = float(overall_constraint_mape)
-        metrics['priors_type'] = priors_type
-    
+        metrics["overall"]["constraint_mape"] = float(overall_constraint_mape)
+        metrics["priors_type"] = priors_type
+
     print(f"Parameter metrics calculated:")
     print(f"  - Overall MAPE: {overall_mape:.2f}%")
     if overall_constraint_mape is not None:
         print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
     print(f"  - Overall MSE: {overall_mse:.6f}")
-    
+
     return metrics
 
 
 def calculate_residuals(y_exp, y_pred, sigma_exp, q_exp, q_model):
     """
     Calculate residuals between experimental and predicted data.
-    
+
     Args:
         y_exp: Experimental reflectivity values
         y_pred: Predicted reflectivity values
         sigma_exp: Experimental uncertainties
         q_exp: Experimental Q values
         q_model: Model Q values
-        
+
     Returns:
         Dictionary with residual data
     """
     # Interpolate predicted curve to experimental Q points
     y_pred_interp = np.interp(q_exp, q_model, y_pred)
-    
+
     # Calculate residuals
     residuals = y_exp - y_pred_interp
     standardized_residuals = residuals / sigma_exp
-    
+
     # Calculate statistics
     residual_stats = {
-        'mean': float(np.mean(residuals)),
-        'std': float(np.std(residuals)),
-        'max_abs': float(np.max(np.abs(residuals))),
-        'rms': float(np.sqrt(np.mean(residuals**2)))
+        "mean": float(np.mean(residuals)),
+        "std": float(np.std(residuals)),
+        "max_abs": float(np.max(np.abs(residuals))),
+        "rms": float(np.sqrt(np.mean(residuals**2))),
     }
-    
+
     standardized_stats = {
-        'mean': float(np.mean(standardized_residuals)),
-        'std': float(np.std(standardized_residuals)),
-        'max_abs': float(np.max(np.abs(standardized_residuals))),
-        'rms': float(np.sqrt(np.mean(standardized_residuals**2)))
+        "mean": float(np.mean(standardized_residuals)),
+        "std": float(np.std(standardized_residuals)),
+        "max_abs": float(np.max(np.abs(standardized_residuals))),
+        "rms": float(np.sqrt(np.mean(standardized_residuals**2))),
     }
-    
+
     return {
-        'q_exp': q_exp,
-        'residuals': residuals,
-        'standardized_residuals': standardized_residuals,
-        'residual_stats': residual_stats,
-        'standardized_stats': standardized_stats
+        "q_exp": q_exp,
+        "residuals": residuals,
+        "standardized_residuals": standardized_residuals,
+        "residual_stats": residual_stats,
+        "standardized_stats": standardized_stats,
     }
 
 
-def calculate_confidence_intervals(pred_params, true_params=None, confidence_level=0.95):
+def calculate_confidence_intervals(
+    pred_params, true_params=None, confidence_level=0.95
+):
     """
     Calculate confidence intervals for predicted parameters.
-    
+
     This is a simplified implementation. In practice, you might want to use
     bootstrap methods or uncertainty propagation from the model.
-    
+
     Args:
         pred_params: Predicted parameter values
         true_params: True parameter values (optional, for validation)
         confidence_level: Confidence level (default: 0.95)
-        
+
     Returns:
         Dictionary with confidence interval information
     """
     # This is a placeholder implementation
     # In practice, you would need uncertainty estimates from the model
-    
+
     alpha = 1 - confidence_level
     z_score = 1.96  # For 95% confidence interval
-    
+
     # Assume 10% uncertainty as a rough estimate
     # This should be replaced with actual uncertainty estimates
     uncertainties = np.array(pred_params) * 0.1
-    
+
     lower_bounds = np.array(pred_params) - z_score * uncertainties
     upper_bounds = np.array(pred_params) + z_score * uncertainties
-    
+
     intervals = {
-        'confidence_level': confidence_level,
-        'lower_bounds': lower_bounds.tolist(),
-        'upper_bounds': upper_bounds.tolist(),
-        'uncertainties': uncertainties.tolist()
+        "confidence_level": confidence_level,
+        "lower_bounds": lower_bounds.tolist(),
+        "upper_bounds": upper_bounds.tolist(),
+        "uncertainties": uncertainties.tolist(),
     }
-    
+
     if true_params is not None:
         # Check if true values fall within confidence intervals
         true_array = np.array(true_params)
         within_ci = (true_array >= lower_bounds) & (true_array <= upper_bounds)
-        intervals['true_within_ci'] = within_ci.tolist()
-        intervals['coverage'] = float(np.mean(within_ci))
-    
+        intervals["true_within_ci"] = within_ci.tolist()
+        intervals["coverage"] = float(np.mean(within_ci))
+
     return intervals
 
 
 def summary_statistics(fit_metrics, param_metrics=None):
     """
     Generate summary statistics for model performance.
-    
+
     Args:
         fit_metrics: Dictionary of fit metrics
         param_metrics: Dictionary of parameter metrics (optional)
-        
+
     Returns:
         Dictionary with summary statistics
     """
     summary = {
-        'fit_quality': {
-            'excellent': fit_metrics.get('r_squared', 0) > 0.95,
-            'good': fit_metrics.get('r_squared', 0) > 0.90,
-            'acceptable': fit_metrics.get('r_squared', 0) > 0.80,
-            'poor': fit_metrics.get('r_squared', 0) <= 0.80
+        "fit_quality": {
+            "excellent": fit_metrics.get("r_squared", 0) > 0.95,
+            "good": fit_metrics.get("r_squared", 0) > 0.90,
+            "acceptable": fit_metrics.get("r_squared", 0) > 0.80,
+            "poor": fit_metrics.get("r_squared", 0) <= 0.80,
         },
-        'primary_metrics': {
-            'r_squared': fit_metrics.get('r_squared', 0),
-            'reduced_chi_squared': fit_metrics.get('reduced_chi_squared', float('inf')),
-            'mean_relative_error': fit_metrics.get('mean_relative_error', float('inf'))
-        }
+        "primary_metrics": {
+            "r_squared": fit_metrics.get("r_squared", 0),
+            "reduced_chi_squared": fit_metrics.get("reduced_chi_squared", float("inf")),
+            "mean_relative_error": fit_metrics.get("mean_relative_error", float("inf")),
+        },
     }
-    
+
     if param_metrics:
         # Use constraint-based MAPE for assessment if available, otherwise traditional MAPE
-        mape_for_assessment = param_metrics.get('overall', {}).get('constraint_mape', 
-                                                                     param_metrics.get('overall', {}).get('mape', float('inf')))
-        
-        summary['parameter_accuracy'] = {
-            'overall_mape': mape_for_assessment,
-            'excellent': mape_for_assessment < 5,
-            'good': mape_for_assessment < 10,
-            'acceptable': mape_for_assessment < 20,
-            'poor': mape_for_assessment >= 20
+        mape_for_assessment = param_metrics.get("overall", {}).get(
+            "constraint_mape",
+            param_metrics.get("overall", {}).get("mape", float("inf")),
+        )
+
+        summary["parameter_accuracy"] = {
+            "overall_mape": mape_for_assessment,
+            "excellent": mape_for_assessment < 5,
+            "good": mape_for_assessment < 10,
+            "acceptable": mape_for_assessment < 20,
+            "poor": mape_for_assessment >= 20,
         }
-    
+
     return summary
 
 
 def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
     """
     Print a formatted report of all calculated metrics.
-    
+
     Args:
         fit_metrics: Dictionary of fit metrics
         param_metrics: Dictionary of parameter metrics (optional)
         model_name: Name of the model for the report
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"METRICS REPORT: {model_name}")
-    print(f"{'='*60}")
-    
+    print(f"{'=' * 60}")
+
     print(f"\nFIT QUALITY METRICS:")
     print(f"  R-squared:              {fit_metrics.get('r_squared', 'N/A'):.6f}")
     print(f"  MSE:                    {fit_metrics.get('mse', 'N/A'):.6e}")
     print(f"  L1 Loss:                {fit_metrics.get('l1_loss', 'N/A'):.6e}")
     print(f"  Chi-squared:            {fit_metrics.get('chi_squared', 'N/A'):.6f}")
-    print(f"  Reduced Chi-squared:    {fit_metrics.get('reduced_chi_squared', 'N/A'):.6f}")
-    print(f"  Mean Relative Error:    {fit_metrics.get('mean_relative_error', 'N/A'):.4f}")
-    print(f"  Max Relative Error:     {fit_metrics.get('max_relative_error', 'N/A'):.4f}")
-    
+    print(
+        f"  Reduced Chi-squared:    {fit_metrics.get('reduced_chi_squared', 'N/A'):.6f}"
+    )
+    print(
+        f"  Mean Relative Error:    {fit_metrics.get('mean_relative_error', 'N/A'):.4f}"
+    )
+    print(
+        f"  Max Relative Error:     {fit_metrics.get('max_relative_error', 'N/A'):.4f}"
+    )
+
     if param_metrics:
         print(f"\nPARAMETER ACCURACY:")
-        
+
         # Use constraint-based MAPE as primary metric when using constraint-based priors
-        priors_type = param_metrics.get('priors_type', 'unknown')
-        use_constraint_mape = 'constraint_mape' in param_metrics.get('overall', {})
-        
+        priors_type = param_metrics.get("priors_type", "unknown")
+        use_constraint_mape = "constraint_mape" in param_metrics.get("overall", {})
+
         if use_constraint_mape:
-            print(f"  Overall Constraint-based MAPE: {param_metrics['overall']['constraint_mape']:.2f}%")
-            print(f"  (Traditional MAPE:             {param_metrics.get('overall', {}).get('mape', 'N/A'):.2f}%)")
+            print(
+                f"  Overall Constraint-based MAPE: {param_metrics['overall']['constraint_mape']:.2f}%"
+            )
+            print(
+                f"  (Traditional MAPE:             {param_metrics.get('overall', {}).get('mape', 'N/A'):.2f}%)"
+            )
         else:
-            print(f"  Overall MAPE:           {param_metrics.get('overall', {}).get('mape', 'N/A'):.2f}%")
-        
-        print(f"  Overall MSE:            {param_metrics.get('overall', {}).get('mse', 'N/A'):.6f}")
-        
-        if 'by_type' in param_metrics:
+            print(
+                f"  Overall MAPE:           {param_metrics.get('overall', {}).get('mape', 'N/A'):.2f}%"
+            )
+
+        print(
+            f"  Overall MSE:            {param_metrics.get('overall', {}).get('mse', 'N/A'):.6f}"
+        )
+
+        if "by_type" in param_metrics:
             print(f"\n  By Parameter Type:")
-            for param_type, metrics in param_metrics['by_type'].items():
+            for param_type, metrics in param_metrics["by_type"].items():
                 print(f"    {param_type.capitalize()}:")
-                if use_constraint_mape and 'constraint_mape' in metrics:
-                    print(f"      Constraint-based MAPE: {metrics.get('constraint_mape', 'N/A'):.2f}%")
-                    print(f"      (Traditional MAPE:     {metrics.get('mape', 'N/A'):.2f}%)")
+                if use_constraint_mape and "constraint_mape" in metrics:
+                    print(
+                        f"      Constraint-based MAPE: {metrics.get('constraint_mape', 'N/A'):.2f}%"
+                    )
+                    print(
+                        f"      (Traditional MAPE:     {metrics.get('mape', 'N/A'):.2f}%)"
+                    )
                 else:
                     print(f"      MAPE: {metrics.get('mape', 'N/A'):.2f}%")
                 print(f"      MSE:  {metrics.get('mse', 'N/A'):.6f}")
-    
+
     # Generate quality assessment
     summary = summary_statistics(fit_metrics, param_metrics)
-    
+
     # Determine which MAPE metric is being used for assessment
-    use_constraint_mape = param_metrics and 'constraint_mape' in param_metrics.get('overall', {})
+    use_constraint_mape = param_metrics and "constraint_mape" in param_metrics.get(
+        "overall", {}
+    )
     mape_type = "Constraint-based MAPE" if use_constraint_mape else "MAPE"
-    
+
     print(f"\nQUALITY ASSESSMENT:")
-    if summary['fit_quality']['excellent']:
+    if summary["fit_quality"]["excellent"]:
         print(f"  Fit Quality: EXCELLENT (R² > 0.95)")
-    elif summary['fit_quality']['good']:
+    elif summary["fit_quality"]["good"]:
         print(f"  Fit Quality: GOOD (R² > 0.90)")
-    elif summary['fit_quality']['acceptable']:
+    elif summary["fit_quality"]["acceptable"]:
         print(f"  Fit Quality: ACCEPTABLE (R² > 0.80)")
     else:
         print(f"  Fit Quality: POOR (R² ≤ 0.80)")
-    
+
     if param_metrics:
-        if summary['parameter_accuracy']['excellent']:
+        if summary["parameter_accuracy"]["excellent"]:
             print(f"  Parameter Accuracy: EXCELLENT ({mape_type} < 5%)")
-        elif summary['parameter_accuracy']['good']:
+        elif summary["parameter_accuracy"]["good"]:
             print(f"  Parameter Accuracy: GOOD ({mape_type} < 10%)")
-        elif summary['parameter_accuracy']['acceptable']:
+        elif summary["parameter_accuracy"]["acceptable"]:
             print(f"  Parameter Accuracy: ACCEPTABLE ({mape_type} < 20%)")
         else:
             print(f"  Parameter Accuracy: POOR ({mape_type} ≥ 20%)")
-    
-    print(f"{'='*60}\n")
+
+    print(f"{'=' * 60}\n")

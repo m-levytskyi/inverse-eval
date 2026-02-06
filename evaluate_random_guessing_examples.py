@@ -20,16 +20,20 @@ functionality.
 from evaluate_random_guessing import (
     evaluate_batch_against_random,
     plot_comparison_histogram,
-    process_batches
+    process_batches,
 )
 from pathlib import Path
 
 # Example 1: Evaluate a single batch
 # ------------------------------------
-batch_dir = Path("batch_inference_results/102_3169exps_1layers_5constraint_29october2025_12_25")
-model_mapes, random_mapes = evaluate_batch_against_random(batch_dir, num_random_samples=100)
-print(f"Model mean MAPE: {sum(model_mapes)/len(model_mapes):.2f}%")
-print(f"Random mean MAPE: {sum(random_mapes)/len(random_mapes):.2f}%")
+batch_dir = Path(
+    "batch_inference_results/102_3169exps_1layers_5constraint_29october2025_12_25"
+)
+model_mapes, random_mapes = evaluate_batch_against_random(
+    batch_dir, num_random_samples=100
+)
+print(f"Model mean MAPE: {sum(model_mapes) / len(model_mapes):.2f}%")
+print(f"Random mean MAPE: {sum(random_mapes) / len(random_mapes):.2f}%")
 
 # Example 2: Process specific batches
 # ------------------------------------

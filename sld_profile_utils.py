@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.special import erf
 
+
 def sld_profile(z, slds, interfaces, roughnesses):
     """
     Calculate SLD profile for multilayer system with error-function interfaces.
@@ -17,7 +18,7 @@ def sld_profile(z, slds, interfaces, roughnesses):
         z0 = interfaces[i]
         sigma = roughnesses[i]
         erf_arg = (z - z0) / (np.sqrt(2) * sigma)
-        step = (slds[i+1] - slds[i]) / 2 * (1 + erf(erf_arg))
+        step = (slds[i + 1] - slds[i]) / 2 * (1 + erf(erf_arg))
         profile += step
     profile += slds[0]
     return profile

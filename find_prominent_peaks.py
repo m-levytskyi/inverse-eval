@@ -9,14 +9,17 @@ import matplotlib.pyplot as plt
 
 from plot_experimental_reflectivity import load_experimental_data, plot_reflectivity
 
-def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=10, analyze_first_half=True):
+
+def detect_peaks(
+    y, min_prominence=0.2, min_rise=0.05, min_width=10, analyze_first_half=True
+):
     y = np.log10(np.asarray(y))
     n = len(y)
-    
+
     # If analyze_first_half is True, only analyze the first half of the data
     if analyze_first_half:
         n = n // 2
-    
+
     peaks = []
 
     i = 1
@@ -37,50 +40,70 @@ def detect_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=10, analyze_fir
                 prominence = y_peak - max(y_before, y_after)
                 width = (peak_idx - start) * 2
                 if prominence >= min_prominence:
-                    peaks.append({'index': peak_idx, 'prominence': prominence, 'width': width})
+                    peaks.append(
+                        {"index": peak_idx, "prominence": prominence, "width": width}
+                    )
         else:
             i += 1
 
     return peaks
 
-def has_significant_peaks(y, min_prominence=0.2, min_rise=0.05, min_width=3, analyze_first_half=True):
-    return len(detect_peaks(y, min_prominence, min_rise, min_width, analyze_first_half)) > 0
 
-def count_curves_with_peaks(y, min_prominence=0.05, min_rise=0.02, min_width=3, analyze_first_half=True):
+def has_significant_peaks(
+    y, min_prominence=0.2, min_rise=0.05, min_width=3, analyze_first_half=True
+):
+    return (
+        len(detect_peaks(y, min_prominence, min_rise, min_width, analyze_first_half))
+        > 0
+    )
+
+
+def count_curves_with_peaks(
+    y, min_prominence=0.05, min_rise=0.02, min_width=3, analyze_first_half=True
+):
     count = 0
-    if has_significant_peaks(y, min_prominence, min_rise, min_width, analyze_first_half):
+    if has_significant_peaks(
+        y, min_prominence, min_rise, min_width, analyze_first_half
+    ):
         count += 1
     return count
 
-def find_experiments_with_prominent_peaks(layer_count, data_directory="data", 
-                                        min_prominence=0.2, min_rise=0.05, min_width=10, 
-                                        analyze_first_half=True, verbose=True):
+
+def find_experiments_with_prominent_peaks(
+    layer_count,
+    data_directory="data",
+    min_prominence=0.2,
+    min_rise=0.05,
+    min_width=10,
+    analyze_first_half=True,
+    verbose=True,
+):
     """
     Find experiments that have prominent peaks in their reflectivity curves.
-    
+
     Args:
         layer_count: Number of layers (1 or 2)
         data_directory: Path to the data directory
         min_prominence: Minimum prominence for peak detection
-        min_rise: Minimum rise for peak detection  
+        min_rise: Minimum rise for peak detection
         min_width: Minimum width for peak detection
         analyze_first_half: Whether to analyze only the first half of the data
         verbose: Whether to print progress and statistics
-        
+
     Returns:
         List of experiment IDs that have prominent peaks
     """
     # Search patterns to try (prioritizing theoretical curves, then experimental)
     # Also checking different directory structures
     patterns = [
-        f'{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_theoretical_curve.dat',
-        f'{data_directory}/test_data/{layer_count}/s*_theoretical_curve.dat',
-        f'{data_directory}/s*_theoretical_curve.dat',
-        f'{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_experimental_curve.dat',
-        f'{data_directory}/test_data/{layer_count}/s*_experimental_curve.dat',
-        f'{data_directory}/s*_experimental_curve.dat'
+        f"{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_theoretical_curve.dat",
+        f"{data_directory}/test_data/{layer_count}/s*_theoretical_curve.dat",
+        f"{data_directory}/s*_theoretical_curve.dat",
+        f"{data_directory}/MARIA_VIPR_dataset/{layer_count}/s*_experimental_curve.dat",
+        f"{data_directory}/test_data/{layer_count}/s*_experimental_curve.dat",
+        f"{data_directory}/s*_experimental_curve.dat",
     ]
-    
+
     filepaths = []
     for pattern in patterns:
         found = sorted(glob.glob(pattern))
@@ -89,24 +112,28 @@ def find_experiments_with_prominent_peaks(layer_count, data_directory="data",
             if verbose:
                 print(f"Found {len(filepaths)} files using pattern: {pattern}")
             break
-    
+
     if verbose:
         print(f"Scanning {len(filepaths)} experiments for prominent peaks...")
         print(f"Layer count: {layer_count}")
-        print(f"Parameters: prominence≥{min_prominence}, rise≥{min_rise}, width≥{min_width}")
+        print(
+            f"Parameters: prominence≥{min_prominence}, rise≥{min_rise}, width≥{min_width}"
+        )
         print(f"Analyzing: {'first half' if analyze_first_half else 'full curve'}")
-    
+
     experiments_with_peaks = []
     experiments_without_peaks = []
     all_peaks = []
 
     iterator = tqdm.tqdm(filepaths) if verbose else filepaths
-    
+
     for path in iterator:
-        exp_id = Path(path).stem.split('_')[0]
+        exp_id = Path(path).stem.split("_")[0]
         try:
             q, r, dr, dq = load_experimental_data(path)
-            peaks = detect_peaks(r, min_prominence, min_rise, min_width, analyze_first_half)
+            peaks = detect_peaks(
+                r, min_prominence, min_rise, min_width, analyze_first_half
+            )
 
             if peaks:
                 experiments_with_peaks.append(exp_id)
@@ -117,68 +144,120 @@ def find_experiments_with_prominent_peaks(layer_count, data_directory="data",
             if verbose:
                 print(f"Warning: Failed to process {exp_id}: {e}")
             experiments_without_peaks.append(exp_id)
-            
+
     if verbose:
         print(f"\nResults:")
         print(f"  Experiments with prominent peaks: {len(experiments_with_peaks)}")
-        print(f"  Experiments without prominent peaks: {len(experiments_without_peaks)}")
+        print(
+            f"  Experiments without prominent peaks: {len(experiments_without_peaks)}"
+        )
         print(f"  Examples with peaks: {experiments_with_peaks[:5]}")
-        
+
         if all_peaks:
-            prominences = [p['prominence'] for p in all_peaks]
+            prominences = [p["prominence"] for p in all_peaks]
             print(f"  Peak statistics: {len(all_peaks)} total peaks")
-            print(f"    Prominence range: {np.min(prominences):.3f} - {np.max(prominences):.3f}")
+            print(
+                f"    Prominence range: {np.min(prominences):.3f} - {np.max(prominences):.3f}"
+            )
             print(f"    Mean prominence: {np.mean(prominences):.3f}")
 
     return experiments_with_peaks
 
-def plot_and_save_peaks(q, r, peaks, exp_id, output_dir, analyze_first_half=True):
+
+def plot_and_save_peaks(
+    q, r, peaks, exp_id, output_dir, analyze_first_half=True, thesis_mode=False
+):
+    """
+    Plot and save peak detection visualization.
+
+    Args:
+        q: Q values
+        r: Reflectivity values
+        peaks: List of detected peaks
+        exp_id: Experiment ID
+        output_dir: Output directory
+        analyze_first_half: Whether only first half was analyzed
+        thesis_mode: Use thesis styling if True
+    """
     title = f"Reflectivity: {exp_id}"
+
+    if thesis_mode:
+        from thesis_plotting_utils import thesis_style
+
+        with thesis_style():
+            fig = _create_peaks_plot(
+                q, r, peaks, exp_id, title, analyze_first_half, thesis_mode=True
+            )
+            output_path = Path(output_dir) / f"{exp_id}_peaks.pdf"
+            plt.savefig(output_path)
+            plt.close(fig)
+    else:
+        fig = _create_peaks_plot(
+            q, r, peaks, exp_id, title, analyze_first_half, thesis_mode=False
+        )
+        output_path = Path(output_dir) / f"{exp_id}_peaks.png"
+        plt.savefig(output_path)
+        plt.close(fig)
+
+    return output_path
+
+
+def _create_peaks_plot(
+    q, r, peaks, exp_id, title, analyze_first_half, thesis_mode=False
+):
+    """Internal function to create peaks plot."""
     fig, ax = plt.subplots(figsize=(7, 5))
-    
+
     # If analyzing first half, only plot the first half
     if analyze_first_half:
         half_idx = len(q) // 2
         q_plot = q[:half_idx]
         r_plot = r[:half_idx]
-        title += " (First Half)"
+        if not thesis_mode:
+            title += " (First Half)"
     else:
         q_plot = q
         r_plot = r
-    
-    ax.errorbar(q_plot, r_plot, fmt='o', markersize=3, color='black', label='Experimental')
-    ax.set_yscale('log')
-    ax.set_xlabel('$Q$)')
-    ax.set_ylabel('Reflectivity $R$')
-    ax.set_title(title)
 
-    for i, peak in enumerate(peaks):
-        peak_q = q[peak['index']]
-        peak_r = r[peak['index']]
-        ax.axvline(x=peak_q, color='r', linestyle='--')
-        
-        text_label = (
-            f"Peak {i+1}:\n"
-            f"  Q = {peak_q:.4f}\n"
-            f"  Prominence = {peak['prominence']:.2f}\n"
-            f"  Width (interp.) = {peak['width']}"
+    ax.errorbar(q_plot, r_plot, fmt="o", markersize=3, label="Experimental")
+    ax.set_yscale("log")
+    ax.set_xlabel("$Q$)")
+    ax.set_ylabel("Reflectivity $R$")
+    if not thesis_mode:
+        ax.set_title(title)
+
+    # Only highlight the first peak (if any exist)
+    if peaks:
+        peak = peaks[0]
+        peak_q = q[peak["index"]]
+        peak_r = r[peak["index"]]
+
+        # More subtle highlighting: scatter point with subtle color
+        ax.scatter(
+            [peak_q],
+            [peak_r],
+            s=80,
+            alpha=0.6,
+            zorder=5,
+            edgecolors="darkred",
+            linewidths=1.5,
         )
-        
-        ax.text(peak_q, peak_r, text_label, fontsize=8, verticalalignment='bottom', horizontalalignment='left', bbox=dict(facecolor='white', alpha=0.5))
 
-    ax.legend(["Experimental", "Detected Peaks"])
-    ax.grid(True, which='both', ls='--', alpha=0.5)
+    # Fixed legend (black is experimental, not "detected peaks")
+    if not thesis_mode:
+        ax.legend(loc="best")
+    ax.grid(True, which="both", ls="--", alpha=0.5)
     plt.tight_layout()
-    
-    output_path = Path(output_dir) / f"{exp_id}_peaks.png"
-    plt.savefig(output_path)
-    plt.close(fig)
+
+    return fig
+
 
 def main():
-    
 
     layers_count = 2
-    filepaths = sorted(glob.glob(f'data/MARIA_VIPR_dataset/{layers_count}/s*_theoretical_curve.dat'))
+    filepaths = sorted(
+        glob.glob(f"data/MARIA_VIPR_dataset/{layers_count}/s*_theoretical_curve.dat")
+    )
 
     output_dir = f"peaks_plots/{layers_count}/positive"
     os.makedirs(output_dir, exist_ok=True)
@@ -188,23 +267,29 @@ def main():
     all_peaks = []
 
     for path in tqdm.tqdm(filepaths):
-        exp_id = Path(path).stem.split('_')[0]
+        exp_id = Path(path).stem.split("_")[0]
         q, r, dr, dq = load_experimental_data(path)
         peaks = detect_peaks(r, analyze_first_half=True)
 
         if peaks:
             positive_curves.append((exp_id, r))
             all_peaks.extend(peaks)
-            plot_and_save_peaks(q, r, peaks, exp_id, output_dir, analyze_first_half=True)
+            plot_and_save_peaks(
+                q, r, peaks, exp_id, output_dir, analyze_first_half=True
+            )
         else:
             negative_curves.append((exp_id, r))
-            
-    print(f"Positive curves: {len(positive_curves)}, e.g {[exp_id for exp_id, _ in positive_curves[:5]]}")
-    print(f"Negative curves: {len(negative_curves)}, e.g {[exp_id for exp_id, _ in negative_curves[:5]]}")
+
+    print(
+        f"Positive curves: {len(positive_curves)}, e.g {[exp_id for exp_id, _ in positive_curves[:5]]}"
+    )
+    print(
+        f"Negative curves: {len(negative_curves)}, e.g {[exp_id for exp_id, _ in negative_curves[:5]]}"
+    )
 
     if all_peaks:
-        prominences = [p['prominence'] for p in all_peaks]
-        widths = [p['width'] for p in all_peaks]
+        prominences = [p["prominence"] for p in all_peaks]
+        widths = [p["width"] for p in all_peaks]
 
         print("\n--- Peak Statistics ---")
         print("\nProminence:")
@@ -220,6 +305,7 @@ def main():
         print(f"  Mean: {np.mean(widths):.4f}")
         print(f"  Std Dev: {np.std(widths):.4f}")
         print(f"  Median: {np.median(widths)}")
+
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def filter_and_truncate(Q, R, dR, threshold=0.5, consecutive=3, remove_singles=False):
     """
     Filters and/or truncates neutron reflectivity data without modifying inputs.
