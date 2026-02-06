@@ -27,6 +27,7 @@ from error_calculation import (
 )
 from data_preprocessing import preprocess_experimental_data
 from parameter_constraints import apply_physical_constraints
+from nf_statistics import compute_nf_sample_statistics
 
 # Set seed for reproducibility
 torch.manual_seed(42)
@@ -364,7 +365,17 @@ def run_nf_inference(
 
     nf_prediction_dict = inference_model.preprocess_and_sample(**preprocess_kwargs)
 
+    # Compute NF sample statistics before selecting best sample
+    print("Computing NF sample statistics...")
+    nf_stats = compute_nf_sample_statistics(
+        predicted_params_array=nf_prediction_dict["predicted_params_array"],
+        log_prob=nf_prediction_dict["log_likelihoods"],
+    )
+
     prediction_dict = _nf_prediction_to_single_prediction_dict(nf_prediction_dict)
+
+    # Merge NF statistics into prediction_dict
+    prediction_dict.update(nf_stats)
 
     if apply_constraints:
         print("Applying physical constraints...")
