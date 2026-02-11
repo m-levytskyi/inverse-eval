@@ -1,0 +1,61 @@
+# Paper-specific matplotlib style overrides
+# Use with: plt.style.use(['science', 'paper'])
+
+# Match document typographic scale (12pt report)
+font.size: 12
+axes.labelsize: 12
+axes.titlesize: 12
+xtick.labelsize: 10
+ytick.labelsize: 10
+legend.fontsize: 10
+legend.frameon: False
+legend.fancybox: False
+legend.framealpha: 0.0
+legend.edgecolor: none
+legend.facecolor: none
+
+# Remove tick marks (keep labels)
+xtick.major.size: 0
+xtick.minor.size: 0
+ytick.major.size: 0
+ytick.minor.size: 0
+
+# Physical size: full \linewidth (390pt = 5.40in)
+# Height uses golden ratio approximation (0.62)
+figure.figsize: 5.40, 3.35
+figure.constrained_layout.use: True
+
+# Print-friendly strokes
+lines.linewidth: 1.2
+lines.markersize: 5
+
+# Export quality settings
+savefig.format: pdf
+savefig.bbox: tight
+savefig.dpi: 300
+pdf.fonttype: 42
+ps.fonttype: 42
+
+# LaTeX text rendering
+text.usetex: True
+text.latex.preamble: \usepackage{amsmath}
+axes.unicode_minus: False
+
+# Professional grid and spine appearance
+axes.grid: False
+grid.alpha: 0.3
+grid.linewidth: 0.6
+grid.linestyle: --
+axes.linewidth: 0.8
+
+# Remove top and right spines by default
+axes.spines.top: False
+axes.spines.right: False
+
+# Bar and scatter plot defaults
+patch.linewidth: 0.5
+scatter.marker: o
+
+# Errorbar defaults
+errorbar.capsize: 0
+lines.markeredgewidth: 0.5
