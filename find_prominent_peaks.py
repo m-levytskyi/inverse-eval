@@ -165,7 +165,7 @@ def find_experiments_with_prominent_peaks(
 
 
 def plot_and_save_peaks(
-    q, r, peaks, exp_id, output_dir, analyze_first_half=True, thesis_mode=False
+    q, r, peaks, exp_id, output_dir, analyze_first_half=True, paper_mode=False
 ):
     """
     Plot and save peak detection visualization.
@@ -177,33 +177,27 @@ def plot_and_save_peaks(
         exp_id: Experiment ID
         output_dir: Output directory
         analyze_first_half: Whether only first half was analyzed
-        thesis_mode: Use thesis styling if True
+        paper_mode: Use paper styling if True
     """
     title = f"Reflectivity: {exp_id}"
 
-    if thesis_mode:
-        from thesis_plotting_utils import thesis_style
-
-        with thesis_style():
-            fig = _create_peaks_plot(
-                q, r, peaks, exp_id, title, analyze_first_half, thesis_mode=True
-            )
-            output_path = Path(output_dir) / f"{exp_id}_peaks.pdf"
-            plt.savefig(output_path)
-            plt.close(fig)
+    fig = _create_peaks_plot(
+        q, r, peaks, exp_id, title, analyze_first_half, paper_mode=paper_mode
+    )
+    
+    if paper_mode:
+        output_path = Path(output_dir) / f"{exp_id}_peaks.pdf"
     else:
-        fig = _create_peaks_plot(
-            q, r, peaks, exp_id, title, analyze_first_half, thesis_mode=False
-        )
         output_path = Path(output_dir) / f"{exp_id}_peaks.png"
-        plt.savefig(output_path)
-        plt.close(fig)
+    
+    plt.savefig(output_path)
+    plt.close(fig)
 
     return output_path
 
 
 def _create_peaks_plot(
-    q, r, peaks, exp_id, title, analyze_first_half, thesis_mode=False
+    q, r, peaks, exp_id, title, analyze_first_half, paper_mode=False
 ):
     """Internal function to create peaks plot."""
     fig, ax = plt.subplots(figsize=(7, 5))
@@ -213,7 +207,7 @@ def _create_peaks_plot(
         half_idx = len(q) // 2
         q_plot = q[:half_idx]
         r_plot = r[:half_idx]
-        if not thesis_mode:
+        if not paper_mode:
             title += " (First Half)"
     else:
         q_plot = q
@@ -221,9 +215,9 @@ def _create_peaks_plot(
 
     ax.errorbar(q_plot, r_plot, fmt="o", markersize=3, label="Experimental")
     ax.set_yscale("log")
-    ax.set_xlabel("$Q$)")
-    ax.set_ylabel("Reflectivity $R$")
-    if not thesis_mode:
+    ax.set_xlabel("$Q$ [Å$^{-1}$]")
+    ax.set_ylabel("$R$")
+    if not paper_mode:
         ax.set_title(title)
 
     # Only highlight the first peak (if any exist)
@@ -232,21 +226,24 @@ def _create_peaks_plot(
         peak_q = q[peak["index"]]
         peak_r = r[peak["index"]]
 
-        # More subtle highlighting: scatter point with subtle color
+        # More visible highlighting: hollow circle with red contour, 2x bigger
         ax.scatter(
             [peak_q],
             [peak_r],
-            s=80,
-            alpha=0.6,
+            s=300,
+            facecolors='none',
+            edgecolors='red',
             zorder=5,
-            edgecolors="darkred",
-            linewidths=1.5,
+            linewidths=2.5,
         )
 
     # Fixed legend (black is experimental, not "detected peaks")
-    if not thesis_mode:
+    if not paper_mode:
         ax.legend(loc="best")
-    ax.grid(True, which="both", ls="--", alpha=0.5)
+    
+    # Remove ticks
+    ax.tick_params(axis="both", which="both", length=0)
+    
     plt.tight_layout()
 
     return fig

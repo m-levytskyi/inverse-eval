@@ -265,7 +265,7 @@ def plot_comparison_histogram(
     fix_sld_mode: str = "none",
     failed_count: int = 0,
     outlier_count: int = 0,
-    thesis_mode: bool = False,
+    paper_mode: bool = False,
 ):
     """
     Create comparison histogram with model and random-guess MAPEs.
@@ -282,27 +282,26 @@ def plot_comparison_histogram(
         fix_sld_mode: SLD fixing mode
         failed_count: Number of failed experiments
         outlier_count: Number of outlier experiments
-        thesis_mode: Use thesis styling if True
+        paper_mode: Use paper styling if True
     """
-    if thesis_mode:
-        from thesis_plotting_utils import thesis_style
-
-        with thesis_style():
-            fig = _create_comparison_histogram(
-                model_mapes,
-                random_mapes,
-                batch_name,
-                priors_type,
-                layer_count,
-                narrow_priors_deviation,
-                use_prominent_features,
-                fix_sld_mode,
-                failed_count,
-                outlier_count,
-            )
-            output_path = Path(output_path).with_suffix(".pdf")
-            plt.savefig(output_path)
-            plt.close()
+    fig = _create_comparison_histogram(
+        model_mapes,
+        random_mapes,
+        batch_name,
+        priors_type,
+        layer_count,
+        narrow_priors_deviation,
+        use_prominent_features,
+        fix_sld_mode,
+        failed_count,
+        outlier_count,
+    )
+    
+    if paper_mode:
+        output_path = Path(output_path).with_suffix(".pdf")
+    
+    plt.savefig(output_path)
+    plt.close()
     else:
         fig = _create_comparison_histogram(
             model_mapes,
@@ -341,27 +340,12 @@ def _create_comparison_histogram(
     )
     mape_label = "Constraint MAPE" if priors_type == "constraint_based" else "MAPE"
 
-    # Create title with all configuration information (matching original)
-    title_parts = []
-    if fix_sld_mode != "none":
-        title_parts.append(f"SLD fix: {fix_sld_mode}")
-    if use_prominent_features:
-        title_parts.append("Prominent Features")
-
-    title_suffix = f" ({', '.join(title_parts)})" if title_parts else ""
-
-    # Create distribution plot (matching original layout)
+    # Create distribution plot
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(
-        f"{mape_type_label} Distribution - {len(model_mapes)} {layer_count}-Layer Experiments{title_suffix}\n"
-        f"(Narrow Priors ±{int(narrow_priors_deviation * 100)}%)",
-        fontsize=16,
-        fontweight="bold",
-    )
 
-    # Define MAPE ranges - fixed 5% bins from 0-100% (matching original)
+    # Define MAPE ranges - fixed 5% bins from 0-100%
     mape_ranges = list(range(0, 105, 5))
-    range_labels = [f"{i}-{i + 5}%" for i in range(0, 100, 5)]
+    range_labels = [f"{i}-{i + 5}\\%" for i in range(0, 100, 5)]
 
     # Count model MAPEs in each range
     model_counts = []
@@ -379,20 +363,21 @@ def _create_comparison_histogram(
         )
         random_counts.append(count)
 
-    # Create bar chart
-    bars = ax.bar(range(len(model_counts)), model_counts, alpha=0.8)
+    # Create side-by-side bars with distinct colors
+    x = np.arange(len(range_labels))
+    width = 0.35
 
-    # Overlay random-guess histogram as semi-transparent
-    ax.bar(range(len(random_counts)), random_counts, alpha=0.3, linewidth=1.5)
+    bars1 = ax.bar(x - width/2, model_counts, width, alpha=0.8, label='Model')
+    bars2 = ax.bar(x + width/2, random_counts, width, alpha=0.8, label='Random Guessing')
 
-    # Add value labels on model bars (matching original)
-    for i, (bar, count) in enumerate(zip(bars, model_counts)):
+    # Add value labels on model bars
+    for i, (bar, count) in enumerate(zip(bars1, model_counts)):
         if count > 0:
             percentage = (count / len(model_mapes)) * 100
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height() + 0.1,
-                f"{count}\n({percentage:.1f}%)",
+                f"{count}\n({percentage:.1f}\\%)",
                 ha="center",
                 va="bottom",
                 fontsize=10,
@@ -401,30 +386,19 @@ def _create_comparison_histogram(
 
     ax.set_xlabel("MAPE Range")
     ax.set_ylabel("Number of Experiments")
-    ax.set_xticks(range(len(range_labels)))
+    ax.set_xticks(x)
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
-    ax.grid(True, alpha=0.3, axis="y")
+    ax.legend()
 
     # Calculate random guessing mean
     random_mean = np.mean(random_mapes) if random_mapes else 0
 
-    # Add statistics text with outlier and failure counts (matching original layout)
+    # Add minimal statistics text
     if model_mapes:
         stats_text = f"Total: {len(model_mapes)} experiments\n"
-        stats_text += f"Mean {mape_label}: {np.mean(model_mapes):.1f}%\n"
-        stats_text += f"Median {mape_label}: {np.median(model_mapes):.1f}%\n"
-        stats_text += f"Std Dev: {np.std(model_mapes):.1f}%\n"
-        stats_text += f"Min {mape_label}: {np.min(model_mapes):.1f}%\n"
-        stats_text += f"Max {mape_label}: {np.max(model_mapes):.1f}%\n"
-        stats_text += f"\nRandom Guessing Mean: {random_mean:.1f}%"
-
-        # Add outlier and failure information if present
-        if outlier_count > 0 or failed_count > 0:
-            stats_text += f"\n\n--- Excluded ---"
-            if outlier_count > 0:
-                stats_text += f"\nOutliers: {outlier_count}"
-            if failed_count > 0:
-                stats_text += f"\nFailed: {failed_count}"
+        stats_text += f"Mean {mape_label}: {np.mean(model_mapes):.1f}\\%\n"
+        stats_text += f"Median {mape_label}: {np.median(model_mapes):.1f}\\%\n"
+        stats_text += f"\nRandom Guessing Mean: {random_mean:.1f}\\%"
 
         ax.text(
             0.98,
@@ -434,8 +408,11 @@ def _create_comparison_histogram(
             ha="right",
             va="top",
             fontsize=10,
-            bbox=dict(boxstyle="round,pad=0.5", alpha=0.8),
+            bbox=dict(boxstyle="round,pad=0.5", facecolor='none'),
         )
+
+    # Remove ticks
+    ax.tick_params(axis="both", which="both", length=0)
 
     plt.tight_layout()
     return fig
@@ -687,7 +664,6 @@ def generate_synthetic_random_evaluation(
     ax.set_ylabel("Number of Experiments", fontsize=14)
     ax.set_xticks(range(len(range_labels)))
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
-    ax.grid(True, alpha=0.3, axis="y")
 
     # Add statistics text
     stats_text = f"Total: {len(mapes)} experiments\n"
@@ -707,6 +683,9 @@ def generate_synthetic_random_evaluation(
         fontsize=10,
         bbox=dict(boxstyle="round,pad=0.5", alpha=0.8),
     )
+
+    # Remove ticks
+    ax.tick_params(axis="both", which="both", length=0)
 
     plt.tight_layout()
 
@@ -774,7 +753,6 @@ def generate_synthetic_random_evaluation(
             fontweight="bold",
         )
         ax.legend(fontsize=9)
-        ax.grid(True, alpha=0.3)
 
         # Add statistics box
         stats = f"Mean: {actual_mean:.1f}%\n"
@@ -790,6 +768,9 @@ def generate_synthetic_random_evaluation(
             fontsize=8,
             bbox=dict(boxstyle="round,pad=0.3", alpha=0.8),
         )
+        
+        # Remove ticks
+        ax.tick_params(axis="both", which="both", length=0)
 
     # Hide unused subplots
     for idx in range(len(param_names), len(axes)):

@@ -2,13 +2,17 @@
 """
 Script to re-run plotting utilities on completed batch results.
 This allows you to regenerate plots with updated plotting functions.
+
+Supports both regular and paper/publication styling.
 """
 
 import json
 import argparse
 from pathlib import Path
 from plotting_utils import (
-    plot_batch_edge_case_detection
+    plot_batch_edge_case_detection,
+    plot_batch_mape_distribution,
+    plot_batch_parameter_breakdown
 )
 from batch_analysis import (
     create_summary_statistics,
@@ -16,18 +20,15 @@ from batch_analysis import (
     print_mape_distribution,
     detect_edge_cases
 )
-from plotting_utils import (
-    plot_batch_mape_distribution,
-    plot_batch_parameter_breakdown
-)
 
-def replot_batch_results(results_dir, output_dir=None):
+def replot_batch_results(results_dir, output_dir=None, paper_mode=False):
     """
     Re-run plotting utilities on completed batch results.
     
     Args:
         results_dir: Path to directory containing batch_results.json
         output_dir: Optional custom output directory for plots
+        paper_mode: Use paper/publication styling if True
     """
     results_dir = Path(results_dir)
     
@@ -78,13 +79,21 @@ def replot_batch_results(results_dir, output_dir=None):
     print(f"Outlier experiments: {outlier_count}")
     print(f"Total failed (failed + outliers): {total_failed}")
     
+    # Use direct plotting functions (paper style is now default)
+    if paper_mode:
+        print("\nUsing paper/publication styling")
+    
+    plot_mape_fn = plot_batch_mape_distribution
+    plot_param_fn = plot_batch_parameter_breakdown
+    plot_edge_fn = plot_batch_edge_case_detection
+    
     # Generate all plots
     plot_files = []
     
     try:
-        # 1. MAPE Distribution Plot (from plotting_utils)
+        # 1. MAPE Distribution Plot
         print("\n1. Creating MAPE distribution plot...")
-        mape_plot = plot_batch_mape_distribution(
+        mape_plot = plot_mape_fn(
             successful_results, 
             layer_count=layer_count, 
             output_dir=output_dir,
@@ -97,9 +106,9 @@ def replot_batch_results(results_dir, output_dir=None):
             plot_files.append(mape_plot)
             print(f"   ✓ Saved: {mape_plot}")
     
-        # 2. Parameter Breakdown Plot (from plotting_utils) 
+        # 2. Parameter Breakdown Plot
         print("\n2. Creating parameter breakdown plot...")
-        param_plot = plot_batch_parameter_breakdown(
+        param_plot = plot_param_fn(
             successful_results, 
             layer_count=layer_count, 
             output_dir=output_dir,
@@ -112,10 +121,13 @@ def replot_batch_results(results_dir, output_dir=None):
             plot_files.append(param_plot)
             print(f"   ✓ Saved: {param_plot}")
     
-        # 3. Edge Case Detection Plot (from plotting_utils)
+        # 3. Edge Case Detection Plot
         print("\n3. Creating edge case detection plot...")
-        edge_plot = plot_batch_edge_case_detection(
-            batch_results, layer_count, output_dir, save=True,
+        edge_plot = plot_edge_fn(
+            successful_results,
+            layer_count=layer_count,
+            output_dir=output_dir,
+            save=True,
             failed_count=failed_count,
             outlier_count=outlier_count
         )
@@ -126,10 +138,9 @@ def replot_batch_results(results_dir, output_dir=None):
         # Note: Removed duplicate parameter breakdown plot call
     
     except Exception as e:
-        print(f"Error generating plots: {e}")
+        print(f"Error creating plots: {e}")
         import traceback
         traceback.print_exc()
-        return
     
     print(f"\nSuccessfully regenerated {len(plot_files)} plots!")
     print("\nGenerated plots:")
@@ -138,14 +149,16 @@ def replot_batch_results(results_dir, output_dir=None):
     
     return plot_files
 
+
 def main():
     parser = argparse.ArgumentParser(description="Re-run plotting utilities on completed batch results")
     parser.add_argument("results_dir", help="Directory containing batch_results.json")
     parser.add_argument("--output-dir", help="Custom output directory for plots")
+    parser.add_argument("--paper", action="store_true", help="Use paper/publication styling")
     
     args = parser.parse_args()
     
-    replot_batch_results(args.results_dir, args.output_dir)
+    replot_batch_results(args.results_dir, args.output_dir, paper_mode=args.paper)
 
 if __name__ == "__main__":
     main()
