@@ -18,6 +18,7 @@ constraint_prior_tests/
 md_report_plots/
 random_guessing_evaluation/
 model_comparison_plots/
+thesis_plots_test/
 
 
 # Development directories (keep these ignored)
