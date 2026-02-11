@@ -46,7 +46,7 @@ def plot_reflectivity(q, r, dr, dq=None, title=None, save_path=None, paper_mode=
         paper_mode: Use paper styling if True
     """
     fig = _create_reflectivity_plot(q, r, dr, dq, title)
-    
+
     if save_path:
         if paper_mode:
             save_path = Path(save_path).with_suffix(".pdf")

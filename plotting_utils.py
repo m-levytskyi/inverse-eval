@@ -62,11 +62,17 @@ def plot_simple_comparison(
         hide_title: Hide plot titles (for publication)
     """
     print(f"\nDEBUG [plot_simple_comparison]: Starting plot for {experiment_name}")
-    print(f"  q_exp shape: {np.array(q_exp).shape if hasattr(q_exp, '__len__') else 'scalar'}")
-    print(f"  curve_exp shape: {np.array(curve_exp).shape if hasattr(curve_exp, '__len__') else 'scalar'}")
-    print(f"  predicted_sld_x shape: {np.array(predicted_sld_x).shape if hasattr(predicted_sld_x, '__len__') else 'scalar'}")
+    print(
+        f"  q_exp shape: {np.array(q_exp).shape if hasattr(q_exp, '__len__') else 'scalar'}"
+    )
+    print(
+        f"  curve_exp shape: {np.array(curve_exp).shape if hasattr(curve_exp, '__len__') else 'scalar'}"
+    )
+    print(
+        f"  predicted_sld_x shape: {np.array(predicted_sld_x).shape if hasattr(predicted_sld_x, '__len__') else 'scalar'}"
+    )
     print(f"  hide_title: {hide_title}")
-    
+
     # Add SLD fixing mode to the experiment name if available
     display_name = experiment_name
     if priors_config and "fix_sld_mode" in priors_config:
@@ -257,7 +263,7 @@ def plot_batch_edge_case_detection(
                 xytext=(10, 10),
                 textcoords="offset points",
                 fontsize=8,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor='none', edgecolor='none'),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="none", edgecolor="none"),
                 arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0"),
             )
 
@@ -484,7 +490,6 @@ def plot_batch_mape_distribution(
     ax.set_xticks(range(len(range_labels)))
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
 
-
     # Determine MAPE label for statistics
     mape_label = "Constraint MAPE" if priors_type_used == "constraint_based" else "MAPE"
 
@@ -520,7 +525,7 @@ def plot_batch_mape_distribution(
             ha="right",
             va="top",
             fontsize=10,
-            bbox=dict(boxstyle="round,pad=0.5", facecolor='none'),
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="none"),
         )
 
     plt.tight_layout()
@@ -746,7 +751,7 @@ def plot_batch_parameter_breakdown(
                 ha="center",
                 va="bottom",
                 fontsize=9,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor='none'),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="none"),
                 fontweight="bold",
             )
 
@@ -776,7 +781,7 @@ def plot_batch_parameter_breakdown(
                 ha="center",
                 va="top",
                 fontsize=9,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor='none'),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="none"),
             )
 
     plt.tight_layout()

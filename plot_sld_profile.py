@@ -40,10 +40,8 @@ def plot_sld_profile(
     Returns:
         The matplotlib axis with the plot.
     """
-    ax = _create_sld_plot(
-        depths, sld_profile, label, ax, color, title, xlabel, ylabel
-    )
-    
+    ax = _create_sld_plot(depths, sld_profile, label, ax, color, title, xlabel, ylabel)
+
     if save_path and ax is not None:
         if paper_mode:
             save_path = Path(save_path).with_suffix(".pdf")
@@ -68,17 +66,23 @@ def _create_sld_plot(
 ):
     """Internal function to create SLD plot."""
     print(f"\nDEBUG [_create_sld_plot]: Creating SLD plot")
-    print(f"  depths shape: {np.array(depths).shape if hasattr(depths, '__len__') else 'scalar'}")
+    print(
+        f"  depths shape: {np.array(depths).shape if hasattr(depths, '__len__') else 'scalar'}"
+    )
     print(f"  sld_profile type: {type(sld_profile)}")
     if isinstance(sld_profile, (list, tuple)):
         print(f"  sld_profile is list/tuple with {len(sld_profile)} elements")
         for i, prof in enumerate(sld_profile):
-            print(f"    Profile {i} shape: {np.array(prof).shape if hasattr(prof, '__len__') else 'scalar'}")
+            print(
+                f"    Profile {i} shape: {np.array(prof).shape if hasattr(prof, '__len__') else 'scalar'}"
+            )
     else:
-        print(f"  sld_profile shape: {np.array(sld_profile).shape if hasattr(sld_profile, '__len__') else 'scalar'}")
+        print(
+            f"  sld_profile shape: {np.array(sld_profile).shape if hasattr(sld_profile, '__len__') else 'scalar'}"
+        )
     print(f"  label: {label}")
     print(f"  color: {color}")
-    
+
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 4))
 

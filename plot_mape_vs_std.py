@@ -73,22 +73,22 @@ def extract_mape_std_data(results):
             std_values = pred_dict["nf_params_std"]
             param_names = pred_dict.get("param_names", [])
             by_param = param_metrics.get("by_parameter", {})
-            
+
             # Calculate constraint-normalized std for each physical parameter
             constraint_std_values = []
             for i, nf_param_name in enumerate(param_names):
                 canonical_name = param_map.get(nf_param_name)
                 if canonical_name is None:
                     continue  # Skip nuisance parameters
-                
+
                 param_data = by_param.get(canonical_name, {})
                 constraint_width = param_data.get("constraint_width")
-                
+
                 if constraint_width is not None and constraint_width > 0:
                     # Normalize std by constraint width: (std / constraint_width) * 100
                     constraint_std = (std_values[i] / constraint_width) * 100
                     constraint_std_values.append(constraint_std)
-            
+
             # Mean constraint-normalized std across all physical parameters
             if len(constraint_std_values) > 0:
                 mean_constraint_std = np.mean(constraint_std_values)
@@ -120,14 +120,20 @@ def extract_mape_std_data(results):
             param_mape = param_data.get("constraint_percentage_error")
             constraint_width = param_data.get("constraint_width")
 
-            if param_mape is not None and constraint_width is not None and constraint_width > 0:
+            if (
+                param_mape is not None
+                and constraint_width is not None
+                and constraint_width > 0
+            ):
                 # Calculate constraint-normalized std
                 constraint_std = (std_values[i] / constraint_width) * 100
-                
+
                 data["by_parameter"][canonical_name]["constraint_mape"].append(
                     abs(param_mape)
                 )
-                data["by_parameter"][canonical_name]["constraint_std"].append(constraint_std)
+                data["by_parameter"][canonical_name]["constraint_std"].append(
+                    constraint_std
+                )
                 data["by_parameter"][canonical_name]["raw_std"].append(std_values[i])
                 data["by_parameter"][canonical_name]["exp_ids"].append(exp_id)
 
@@ -194,11 +200,11 @@ def plot_mape_vs_std(data, output_dir):
     # Create 10 bins
     n_bins = 10
     bin_size = len(sorted_std) // n_bins
-    
+
     bin_std_means = []
     bin_mape_means = []
     bin_mape_stds = []
-    
+
     for i in range(n_bins):
         start_idx = i * bin_size
         if i == n_bins - 1:
@@ -206,10 +212,10 @@ def plot_mape_vs_std(data, output_dir):
             end_idx = len(sorted_std)
         else:
             end_idx = (i + 1) * bin_size
-        
+
         bin_std_values = sorted_std[start_idx:end_idx]
         bin_mape_values = sorted_mape[start_idx:end_idx]
-        
+
         bin_std_means.append(np.mean(bin_std_values))
         bin_mape_means.append(np.mean(bin_mape_values))
         bin_mape_stds.append(np.std(bin_mape_values))
@@ -219,22 +225,22 @@ def plot_mape_vs_std(data, output_dir):
     bin_mape_stds = np.array(bin_mape_stds)
 
     # Plot scatter (all points, faded)
-    ax.scatter(std, mape, alpha=0.15, s=15, c='gray', label='Individual experiments')
-    
+    ax.scatter(std, mape, alpha=0.15, s=15, c="gray", label="Individual experiments")
+
     # Plot binned data
     ax.errorbar(
-        bin_std_means, 
-        bin_mape_means, 
+        bin_std_means,
+        bin_mape_means,
         yerr=bin_mape_stds,
-        fmt='o-', 
-        markersize=8, 
+        fmt="o-",
+        markersize=8,
         linewidth=2,
-        color='red',
-        ecolor='red',
+        color="red",
+        ecolor="red",
         capsize=5,
         capthick=2,
-        label='Binned average (10 bins)',
-        zorder=10
+        label="Binned average (10 bins)",
+        zorder=10,
     )
 
     ax.set_xlabel("Mean Constraint-Normalized Std Dev (%)", fontsize=12)
@@ -245,7 +251,7 @@ def plot_mape_vs_std(data, output_dir):
         fontweight="bold",
     )
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=10, loc='best')
+    ax.legend(fontsize=10, loc="best")
 
     # Add correlation coefficient for binned data
     if len(bin_std_means) > 1:
@@ -285,8 +291,14 @@ def plot_mape_vs_std(data, output_dir):
         std = np.array(param_data["constraint_std"])
 
         scatter = ax.scatter(std, mape, alpha=0.5, s=20, c=mape, cmap="viridis")
-        ax.set_xlabel(f"{param_labels.get(param_name, param_name)} Constraint-Normalized Std Dev (%)", fontsize=12)
-        ax.set_ylabel(f"{param_labels.get(param_name, param_name)} Constraint MAPE (%)", fontsize=12)
+        ax.set_xlabel(
+            f"{param_labels.get(param_name, param_name)} Constraint-Normalized Std Dev (%)",
+            fontsize=12,
+        )
+        ax.set_ylabel(
+            f"{param_labels.get(param_name, param_name)} Constraint MAPE (%)",
+            fontsize=12,
+        )
         ax.set_title(
             f"Uncertainty vs Accuracy: {param_labels.get(param_name, param_name)}\nConstraint-Based Priors (30%)",
             fontsize=14,
@@ -344,7 +356,9 @@ def plot_mape_vs_std(data, output_dir):
         scatter = ax.scatter(std, mape, alpha=0.5, s=15, c=mape, cmap="viridis")
         ax.set_xlabel("Constraint-Norm. Std (%)", fontsize=10)
         ax.set_ylabel("Constraint MAPE (%)", fontsize=10)
-        ax.set_title(param_labels.get(param_name, param_name), fontsize=11, fontweight="bold")
+        ax.set_title(
+            param_labels.get(param_name, param_name), fontsize=11, fontweight="bold"
+        )
         ax.grid(True, alpha=0.3)
 
         # Add correlation

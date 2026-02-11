@@ -184,12 +184,12 @@ def plot_and_save_peaks(
     fig = _create_peaks_plot(
         q, r, peaks, exp_id, title, analyze_first_half, paper_mode=paper_mode
     )
-    
+
     if paper_mode:
         output_path = Path(output_dir) / f"{exp_id}_peaks.pdf"
     else:
         output_path = Path(output_dir) / f"{exp_id}_peaks.png"
-    
+
     plt.savefig(output_path)
     plt.close(fig)
 
@@ -231,8 +231,8 @@ def _create_peaks_plot(
             [peak_q],
             [peak_r],
             s=300,
-            facecolors='none',
-            edgecolors='red',
+            facecolors="none",
+            edgecolors="red",
             zorder=5,
             linewidths=2.5,
         )
@@ -240,10 +240,10 @@ def _create_peaks_plot(
     # Fixed legend (black is experimental, not "detected peaks")
     if not paper_mode:
         ax.legend(loc="best")
-    
+
     # Remove ticks
     ax.tick_params(axis="both", which="both", length=0)
-    
+
     plt.tight_layout()
 
     return fig
