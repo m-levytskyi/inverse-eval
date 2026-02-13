@@ -20,6 +20,7 @@ random_guessing_evaluation/
 model_comparison_plots/
 paper_plots_test/
 paper_batches/
+archive/
 
 
 # Development directories (keep these ignored)
