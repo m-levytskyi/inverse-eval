@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Tuple
 from constraints_utils import get_constraint_range
+from plotting_utils import plot_random_guessing_comparison
 
 
 def generate_random_prediction(
@@ -269,153 +270,33 @@ def plot_comparison_histogram(
 ):
     """
     Create comparison histogram with model and random-guess MAPEs.
+    
+    Wrapper around plot_random_guessing_comparison from plotting_utils.
 
     Args:
         model_mapes: List of model MAPE values
         random_mapes: List of random-guess MAPE values
-        batch_name: Name of the batch for plot title
+        batch_name: Name of the batch for plot title (unused, kept for compatibility)
         output_path: Path to save the plot
         priors_type: Type of priors used
         layer_count: Number of layers
-        narrow_priors_deviation: Deviation for narrow priors
+        narrow_priors_deviation: Deviation for narrow priors (unused, kept for compatibility)
         use_prominent_features: Whether prominent features filtering was used
-        fix_sld_mode: SLD fixing mode
-        failed_count: Number of failed experiments
-        outlier_count: Number of outlier experiments
-        paper_mode: Use paper styling if True
+        fix_sld_mode: SLD fixing mode (unused, kept for compatibility)
+        failed_count: Number of failed experiments (unused, kept for compatibility)
+        outlier_count: Number of outlier experiments (unused, kept for compatibility)
+        paper_mode: Use paper styling if True (unused, kept for compatibility)
     """
-    fig = _create_comparison_histogram(
-        model_mapes,
-        random_mapes,
-        batch_name,
-        priors_type,
-        layer_count,
-        narrow_priors_deviation,
-        use_prominent_features,
-        fix_sld_mode,
-        failed_count,
-        outlier_count,
+    output_dir = output_path.parent
+    plot_random_guessing_comparison(
+        model_mapes=model_mapes,
+        random_mapes=random_mapes,
+        output_dir=output_dir,
+        save=True,
+        priors_type=priors_type,
+        layer_count=layer_count,
+        use_prominent_features=use_prominent_features,
     )
-    
-    if paper_mode:
-        output_path = Path(output_path).with_suffix(".pdf")
-    
-    plt.savefig(output_path)
-    plt.close()
-    else:
-        fig = _create_comparison_histogram(
-            model_mapes,
-            random_mapes,
-            batch_name,
-            priors_type,
-            layer_count,
-            narrow_priors_deviation,
-            use_prominent_features,
-            fix_sld_mode,
-            failed_count,
-            outlier_count,
-        )
-        plt.savefig(output_path)
-        plt.close()
-
-    print(f"Comparison plot saved to: {output_path}")
-
-
-def _create_comparison_histogram(
-    model_mapes,
-    random_mapes,
-    batch_name,
-    priors_type,
-    layer_count,
-    narrow_priors_deviation,
-    use_prominent_features,
-    fix_sld_mode,
-    failed_count,
-    outlier_count,
-):
-    """Internal function to create comparison histogram."""
-    # Determine MAPE type label
-    mape_type_label = (
-        "Constraint-Based MAPE" if priors_type == "constraint_based" else "MAPE"
-    )
-    mape_label = "Constraint MAPE" if priors_type == "constraint_based" else "MAPE"
-
-    # Create distribution plot
-    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-
-    # Define MAPE ranges - fixed 5% bins from 0-100%
-    mape_ranges = list(range(0, 105, 5))
-    range_labels = [f"{i}-{i + 5}\\%" for i in range(0, 100, 5)]
-
-    # Count model MAPEs in each range
-    model_counts = []
-    for i in range(len(mape_ranges) - 1):
-        count = sum(
-            1 for mape in model_mapes if mape_ranges[i] <= mape < mape_ranges[i + 1]
-        )
-        model_counts.append(count)
-
-    # Count random MAPEs in each range
-    random_counts = []
-    for i in range(len(mape_ranges) - 1):
-        count = sum(
-            1 for mape in random_mapes if mape_ranges[i] <= mape < mape_ranges[i + 1]
-        )
-        random_counts.append(count)
-
-    # Create side-by-side bars with distinct colors
-    x = np.arange(len(range_labels))
-    width = 0.35
-
-    bars1 = ax.bar(x - width/2, model_counts, width, alpha=0.8, label='Model')
-    bars2 = ax.bar(x + width/2, random_counts, width, alpha=0.8, label='Random Guessing')
-
-    # Add value labels on model bars
-    for i, (bar, count) in enumerate(zip(bars1, model_counts)):
-        if count > 0:
-            percentage = (count / len(model_mapes)) * 100
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.1,
-                f"{count}\n({percentage:.1f}\\%)",
-                ha="center",
-                va="bottom",
-                fontsize=10,
-                fontweight="bold",
-            )
-
-    ax.set_xlabel("MAPE Range")
-    ax.set_ylabel("Number of Experiments")
-    ax.set_xticks(x)
-    ax.set_xticklabels(range_labels, rotation=45, ha="right")
-    ax.legend()
-
-    # Calculate random guessing mean
-    random_mean = np.mean(random_mapes) if random_mapes else 0
-
-    # Add minimal statistics text
-    if model_mapes:
-        stats_text = f"Total: {len(model_mapes)} experiments\n"
-        stats_text += f"Mean {mape_label}: {np.mean(model_mapes):.1f}\\%\n"
-        stats_text += f"Median {mape_label}: {np.median(model_mapes):.1f}\\%\n"
-        stats_text += f"\nRandom Guessing Mean: {random_mean:.1f}\\%"
-
-        ax.text(
-            0.98,
-            0.98,
-            stats_text,
-            transform=ax.transAxes,
-            ha="right",
-            va="top",
-            fontsize=10,
-            bbox=dict(boxstyle="round,pad=0.5", facecolor='none'),
-        )
-
-    # Remove ticks
-    ax.tick_params(axis="both", which="both", length=0)
-
-    plt.tight_layout()
-    return fig
 
 
 def process_batches(batch_numbers: List[int]):

@@ -85,6 +85,54 @@ def _build_filename(prefix, layer_count, use_prominent_features=False):
     return "_".join(parts) + ".pdf"
 
 
+def _get_mape_ranges():
+    """Return standard MAPE ranges and labels."""
+    mape_ranges = list(range(0, 105, 5))
+    range_labels = [f"{i}-{i + 5}%" for i in range(0, 100, 5)]
+    return mape_ranges, range_labels
+
+
+def _count_mapes_in_ranges(mapes, mape_ranges):
+    """Count MAPE values in each range bin."""
+    return [
+        sum(1 for m in mapes if mape_ranges[i] <= m < mape_ranges[i + 1])
+        for i in range(len(mape_ranges) - 1)
+    ]
+
+
+def _build_comparison_title(config, priors_type="constraint_based"):
+    """Build title for comparison plots with config-based suffix."""
+    mape_type = "Constraint-Based MAPE" if priors_type == "constraint_based" else "MAPE"
+    
+    title_parts = []
+    if config.get("sld_fix_mode", "none") != "none":
+        mode = config["sld_fix_mode"]
+        mode_name = "All SLD Fixed" if mode == "all" else "Backing SLD Fixed"
+        title_parts.append(mode_name)
+    if config.get("prominent", False):
+        title_parts.append("Prominent Features")
+    
+    title_suffix = f" ({', '.join(title_parts)})" if title_parts else ""
+    deviation_pct = int(config.get("deviation", 0.30) * 100)
+    
+    return mape_type, title_suffix, deviation_pct
+
+
+def _format_model_stats(mapes, label, mape_label, meta=None):
+    """Format statistics text for a model."""
+    meta = meta or {}
+    stats = f"{label}:\n"
+    stats += f"  Total: {len(mapes)} experiments\n"
+    stats += f"  Mean {mape_label}: {np.mean(mapes):.1f}%\n"
+    stats += f"  Median {mape_label}: {np.median(mapes):.1f}%\n"
+    stats += f"  Std Dev: {np.std(mapes):.1f}%\n"
+    if "failed" in meta:
+        stats += f"  Failed: {meta['failed']}\n"
+    if "outliers" in meta:
+        stats += f"  Outliers: {meta['outliers']}\n"
+    return stats
+
+
 # ============================================================================
 # SINGLE EXPERIMENT PLOT
 # ============================================================================
@@ -440,3 +488,351 @@ def create_batch_analysis_plots(
     )
 
     return plot_paths
+
+
+# ============================================================================
+# MODEL COMPARISON PLOTS
+# ============================================================================
+
+
+def plot_model_comparison_histogram(
+    baseline_mapes,
+    comparison_mapes,
+    config,
+    output_dir=".",
+    save=True,
+    baseline_label="Baseline",
+    comparison_label="Comparison",
+    baseline_meta=None,
+    comparison_meta=None,
+):
+    """
+    Create comparison histogram with baseline and comparison model MAPEs.
+
+    Args:
+        baseline_mapes: List of baseline model MAPE values
+        comparison_mapes: List of comparison model MAPE values  
+        config: Configuration dict with deviation, sld_fix_mode, prominent keys
+        output_dir: Directory to save plot
+        save: Whether to save the plot
+        baseline_label: Label for baseline model
+        comparison_label: Label for comparison model
+        baseline_meta: Metadata dict for baseline (priors_type, failed, outliers)
+        comparison_meta: Metadata dict for comparison
+
+    Returns:
+        Figure path if saved, None otherwise
+    """
+    baseline_meta = baseline_meta or {}
+    comparison_meta = comparison_meta or {}
+    
+    priors_type = baseline_meta.get("priors_type", "constraint_based")
+    mape_label = _mape_label(priors_type)
+    mape_type, title_suffix, deviation_pct = _build_comparison_title(config, priors_type)
+
+    # Create plot
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    fig.suptitle(
+        f"{mape_type} Distribution - Model Comparison{title_suffix}\n"
+        f"(±{deviation_pct}% Constraint-Based Priors)",
+        fontsize=16,
+        fontweight="bold",
+    )
+
+    # Get MAPE ranges and count values
+    mape_ranges, range_labels = _get_mape_ranges()
+    baseline_counts = _count_mapes_in_ranges(baseline_mapes, mape_ranges)
+    comparison_counts = _count_mapes_in_ranges(comparison_mapes, mape_ranges)
+
+    # Plot baseline as background
+    ax.bar(
+        range(len(baseline_counts)),
+        baseline_counts,
+        alpha=0.3,
+        linewidth=1.5,
+        label=baseline_label,
+    )
+
+    # Overlay comparison as foreground
+    bars = ax.bar(
+        range(len(comparison_counts)),
+        comparison_counts,
+        alpha=0.8,
+        label=comparison_label,
+    )
+
+    # Add value labels
+    for i, (bar, count) in enumerate(zip(bars, comparison_counts)):
+        if count > 0:
+            percentage = (count / len(comparison_mapes)) * 100
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                bar.get_height(),
+                f"{count}\n({percentage:.1f}%)",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+    ax.set_xlabel("MAPE Range", fontsize=14)
+    ax.set_ylabel("Number of Experiments", fontsize=14)
+    ax.set_xticks(range(len(range_labels)))
+    ax.set_xticklabels(range_labels, rotation=45, ha="right")
+    ax.grid(True, alpha=0.3, axis="y")
+    ax.legend(loc="lower right", fontsize=11, framealpha=0.9)
+
+    # Statistics text
+    stats_text = _format_model_stats(comparison_mapes, comparison_label, mape_label, comparison_meta)
+    stats_text += "\n" + _format_model_stats(baseline_mapes, baseline_label, mape_label, baseline_meta)
+    
+    # Calculate improvement
+    improvement = ((np.mean(baseline_mapes) - np.mean(comparison_mapes)) / 
+                   np.mean(baseline_mapes)) * 100
+    stats_text += f"\nImprovement: {improvement:+.1f}%"
+
+    ax.text(
+        0.98,
+        0.98,
+        stats_text,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.5", alpha=0.9),
+        family="monospace",
+    )
+
+    plt.tight_layout()
+
+    if save:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        plot_file = output_dir / "model_comparison_mape.pdf"
+        plt.savefig(plot_file, dpi=300, bbox_inches="tight")
+        plt.close()
+        print(f"Model comparison plot saved to: {plot_file}")
+        return plot_file
+    else:
+        plt.show()
+        return None
+
+
+def plot_random_guessing_comparison(
+    model_mapes,
+    random_mapes,
+    output_dir=".",
+    save=True,
+    priors_type="constraint_based",
+    layer_count=1,
+    use_prominent_features=False,
+):
+    """
+    Create comparison histogram with model and random-guessing baseline.
+
+    Args:
+        model_mapes: List of model MAPE values
+        random_mapes: List of random-guess MAPE values
+        output_dir: Directory to save plot
+        save: Whether to save the plot
+        priors_type: Type of priors used
+        layer_count: Number of layers
+        use_prominent_features: Whether prominent features filtering was used
+
+    Returns:
+        Figure path if saved, None otherwise
+    """
+    mape_label = _mape_label(priors_type)
+
+    # Create plot
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+
+    # Get MAPE ranges and count values
+    mape_ranges, range_labels = _get_mape_ranges()
+    model_counts = _count_mapes_in_ranges(model_mapes, mape_ranges)
+    random_counts = _count_mapes_in_ranges(random_mapes, mape_ranges)
+
+    # Side-by-side bars
+    x = np.arange(len(range_labels))
+    width = 0.35
+
+    bars1 = ax.bar(x - width/2, model_counts, width, alpha=0.8, label='Model')
+    bars2 = ax.bar(x + width/2, random_counts, width, alpha=0.8, 
+                   label='Random Guessing')
+
+    # Add value labels on model bars
+    for i, (bar, count) in enumerate(zip(bars1, model_counts)):
+        if count > 0:
+            percentage = (count / len(model_mapes)) * 100
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.1,
+                f"{count}\n({percentage:.1f}%)",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+    ax.set_xlabel("MAPE Range")
+    ax.set_ylabel("Number of Experiments")
+    ax.set_xticks(x)
+    ax.set_xticklabels(range_labels, rotation=45, ha="right")
+    ax.legend()
+
+    # Statistics text
+    random_mean = np.mean(random_mapes) if random_mapes else 0
+    stats_text = f"Total: {len(model_mapes)} experiments\n"
+    stats_text += f"Mean {mape_label}: {np.mean(model_mapes):.1f}%\n"
+    stats_text += f"Median {mape_label}: {np.median(model_mapes):.1f}%\n"
+    stats_text += f"\nRandom Guessing Mean: {random_mean:.1f}%"
+
+    ax.text(
+        0.98,
+        0.98,
+        stats_text,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=10,
+        bbox=dict(boxstyle="round,pad=0.5", facecolor='none'),
+    )
+
+    ax.tick_params(axis="both", which="both", length=0)
+    plt.tight_layout()
+
+    if save:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filename = _build_filename("random_comparison", layer_count, 
+                                   use_prominent_features)
+        plot_file = output_dir / filename
+        plt.savefig(plot_file, dpi=300, bbox_inches="tight")
+        plt.close()
+        print(f"Random guessing comparison plot saved to: {plot_file}")
+        return plot_file
+    else:
+        plt.show()
+        return None
+
+
+def plot_parameter_comparison_grid(
+    baseline_per_param,
+    comparison_per_param,
+    config,
+    output_dir=".",
+    save=True,
+    baseline_label="Baseline",
+    comparison_label="Comparison",
+    priors_type="constraint_based",
+):
+    """
+    Create per-parameter MAPE comparison plots in a 2x3 grid.
+
+    Args:
+        baseline_per_param: Dict of parameter name -> list of MAPEs for baseline
+        comparison_per_param: Dict of parameter name -> list of MAPEs for comparison
+        config: Configuration dict with deviation, sld_fix_mode, prominent keys
+        output_dir: Directory to save plot
+        save: Whether to save the plot
+        baseline_label: Label for baseline model
+        comparison_label: Label for comparison model
+        priors_type: Type of priors used
+
+    Returns:
+        Figure path if saved, None otherwise
+    """
+    # Get all parameter names
+    param_names = sorted(
+        set(list(baseline_per_param.keys()) + list(comparison_per_param.keys()))
+    )
+
+    if not param_names:
+        print(f"No parameter data available")
+        return None
+
+    mape_label = _mape_label(priors_type)
+    mape_type, title_suffix, deviation_pct = _build_comparison_title(config, priors_type)
+
+    # Create subplots
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    axes = axes.flatten()
+
+    fig.suptitle(
+        f"Per-Parameter {mape_type} Distributions - Model Comparison{title_suffix}\n"
+        f"(±{deviation_pct}% Constraint-Based Priors)",
+        fontsize=16,
+        fontweight="bold",
+    )
+
+    # Get MAPE ranges
+    mape_ranges, range_labels = _get_mape_ranges()
+
+    for idx, param_name in enumerate(param_names):
+        if idx >= len(axes):
+            break
+
+        ax = axes[idx]
+
+        baseline_vals = baseline_per_param.get(param_name, [])
+        comparison_vals = comparison_per_param.get(param_name, [])
+
+        # Count values in each range
+        baseline_counts = _count_mapes_in_ranges(baseline_vals, mape_ranges)
+        comparison_counts = _count_mapes_in_ranges(comparison_vals, mape_ranges)
+
+        # Plot baseline as background
+        ax.bar(range(len(baseline_counts)), baseline_counts, alpha=0.3, linewidth=1.0)
+
+        # Overlay comparison as foreground
+        ax.bar(range(len(comparison_counts)), comparison_counts, alpha=0.8, linewidth=0.5)
+
+        ax.set_title(param_name, fontsize=12, fontweight="bold")
+        ax.set_xlabel("MAPE Range", fontsize=10)
+        ax.set_ylabel("Count", fontsize=10)
+        ax.set_xticks(range(0, len(range_labels), 4))
+        ax.set_xticklabels(
+            [range_labels[i] for i in range(0, len(range_labels), 4)],
+            rotation=45,
+            ha="right",
+            fontsize=8,
+        )
+        ax.grid(True, alpha=0.3, axis="y")
+
+        # Add statistics
+        if baseline_vals and comparison_vals:
+            baseline_mean = np.mean(baseline_vals)
+            comparison_mean = np.mean(comparison_vals)
+            improvement = ((baseline_mean - comparison_mean) / baseline_mean) * 100
+
+            stats = f"{comparison_label[:4]}: {comparison_mean:.1f}%\n"
+            stats += f"{baseline_label[:4]}: {baseline_mean:.1f}%\n"
+            stats += f"Δ: {improvement:+.1f}%"
+            ax.text(
+                0.98,
+                0.98,
+                stats,
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.3", alpha=0.8),
+                family="monospace",
+            )
+
+    # Hide unused subplots
+    for idx in range(len(param_names), len(axes)):
+        axes[idx].axis("off")
+
+    plt.tight_layout()
+
+    if save:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        plot_file = output_dir / "param_comparison.pdf"
+        plt.savefig(plot_file, dpi=300, bbox_inches="tight")
+        plt.close()
+        print(f"Parameter comparison plot saved to: {plot_file}")
+        return plot_file
+    else:
+        plt.show()
+        return None
