@@ -272,7 +272,7 @@ def detect_edge_cases(successful_results):
                 print(f"   SLD: {case['sld_mape']:.1f}%")
             print()
     else:
-        print("\n✅ No edge cases detected (all experiments < 50% MAPE)")
+        print("\nNo edge cases detected (all experiments < 50% MAPE)")
 
     return edge_cases
 

@@ -542,7 +542,7 @@ def get_constraint_based_prior_bounds(
 def get_prior_bounds_for_experiment(
     experiment_id,
     true_params_dict=None,
-    priors_type="broad",
+    priors_type="constraint_based",
     deviation=0.5,
     layer_count=1,
     fix_sld_mode="none",
@@ -553,7 +553,7 @@ def get_prior_bounds_for_experiment(
     Args:
         experiment_id: Experiment identifier
         true_params_dict: Dictionary with true parameters (for narrow/constraint_based priors)
-        priors_type: "broad", "narrow", or "constraint_based"
+        priors_type: "narrow" or "constraint_based"
         deviation: Relative deviation for narrow priors (e.g., 0.5 for 50%) or
                   constraint percentage for constraint_based priors (e.g., 0.3 for 30%)
         layer_count: Number of layers (1 or 2)

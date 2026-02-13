@@ -412,7 +412,7 @@ def run_single_experiment(
     preprocessing_consecutive=3,
     preprocessing_remove_singles=False,
     apply_constraints=True,
-    priors_type="broad",
+    priors_type="constraint_based",
     priors_deviation=0.5,
     fix_sld_mode="none",
     use_theoretical=False,
@@ -434,7 +434,7 @@ def run_single_experiment(
         preprocessing_consecutive: Consecutive points threshold
         preprocessing_remove_singles: Remove isolated high-error points
         apply_constraints: Whether to apply physical constraints to parameters
-        priors_type: Type of priors to use ("broad", "narrow", or "constraint_based")
+        priors_type: Type of priors to use ("narrow" or "constraint_based")
         priors_deviation: Deviation for narrow priors (e.g., 0.3 for 30%) or
                          constraint percentage for constraint_based priors
         fix_sld_mode: SLD fixing mode - "none", "backing", or "all"

@@ -64,7 +64,7 @@ def apply_physical_constraints(prediction_dict, layer_count=1):
             violations_found = True
 
     if violations_found:
-        print("✅ Applied physical constraints to prevent negative values")
+        print("Applied physical constraints to prevent negative values")
 
         # Update prediction dictionary
         prediction_dict["predicted_params_array"] = constrained_predicted
@@ -99,7 +99,7 @@ def validate_physical_parameters(params, param_names, experiment_id="unknown"):
             violations.append(f"{param_name}: {value:.4f} < 0")
 
     if violations:
-        print(f"❌ Physical constraint violations in {experiment_id}:")
+        print(f"Physical constraint violations in {experiment_id}:")
         for violation in violations:
             print(f"  - {violation}")
         return False
