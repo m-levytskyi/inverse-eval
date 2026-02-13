@@ -106,7 +106,7 @@ class BatchInferencePipeline:
             fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
             experiment_ids: List of specific experiment IDs to process (optional)
             use_prominent_features: Whether to use prominent features analysis
-            priors_type: Explicit priors type - "broad", "narrow", or "constraint_based"
+            priors_type: Explicit priors type - "narrow" or "constraint_based"
                         (overrides use_narrow_priors if provided)
             use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
             inference_backend: Inference backend: "predict" (default) or "nf"
@@ -139,7 +139,7 @@ class BatchInferencePipeline:
             self.priors_type = priors_type
             self.use_narrow_priors = priors_type in ["narrow", "constraint_based"]
         else:
-            self.priors_type = "narrow" if use_narrow_priors else "broad"
+            self.priors_type = "narrow" if use_narrow_priors else "constraint_based"
 
         # Create timestamped output directory in batch_inference_results
         timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
@@ -209,7 +209,8 @@ class BatchInferencePipeline:
             percentage = int(self.narrow_priors_deviation * 100)
             return f"{percentage}priors"
         else:
-            return "broadpriors"
+            # Default case (shouldn't be reached with current code)
+            return "defaultpriors"
 
     def _format_sld_fix_info(self):
         """Format SLD fix information for folder name."""
@@ -284,7 +285,7 @@ class BatchInferencePipeline:
             original_num = self.num_experiments
             self.num_experiments = len(experiments_with_peaks)
 
-            print(f"\n📊 PROMINENT FEATURES FILTERING RESULTS:")
+            print(f"\nPROMINENT FEATURES FILTERING RESULTS:")
             print(
                 f"  Found {len(experiments_with_peaks)} experiments with prominent peaks"
             )
@@ -376,13 +377,13 @@ class BatchInferencePipeline:
             results["fallback_applied"] = False
 
             print(
-                f"  ✅ {experiment_id} completed successfully in {processing_time:.1f}s"
+                f"  {experiment_id} completed successfully in {processing_time:.1f}s"
             )
             return results
 
         except Exception as error:
             error_msg = str(error)
-            print(f"  ❌ Failed: {error_msg}")
+            print(f"  Failed: {error_msg}")
 
             # No fallback - fail immediately
             processing_time = time.time() - start_time
@@ -715,8 +716,8 @@ def parse_arguments():
     parser.add_argument(
         "--priors-type",
         type=str,
-        choices=["broad", "narrow", "constraint_based"],
-        help="Prior bounds type: broad, narrow, or constraint_based",
+        choices=["narrow", "constraint_based"],
+        help="Prior bounds type: narrow or constraint_based",
     )
 
     parser.add_argument(

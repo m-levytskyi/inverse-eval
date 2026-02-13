@@ -84,7 +84,7 @@ def calculate_parameter_metrics(
         true_params: True parameter values
         param_names: List of parameter names
         prior_bounds: Optional prior bounds array (for constraint-based MAPE calculation)
-        priors_type: Optional priors type string ("constraint_based", "narrow", "broad")
+        priors_type: Optional priors type string ("constraint_based" or "narrow")
 
     Returns:
         Dictionary with calculated parameter metrics
