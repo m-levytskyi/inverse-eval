@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Replot specific batch results in paper style.
+"""Replot specific batch results into categorized output directories.
 Wrapper around replot_batch_results.py for specific batches.
 """
 
@@ -19,8 +18,24 @@ def find_batch_directory(batch_id, base_dir="batch_inference_results"):
     return None
 
 
-def replot_batch_paper(batch_id):
-    """Replot batch using replot_batch_results with paper_mode=True."""
+def get_batch_category(batch_id):
+    """Determine which category a batch belongs to."""
+    if 102 <= batch_id <= 119:
+        return "reflectorch"
+    elif 269 <= batch_id <= 286:
+        return "NF_baseline"
+    elif 232 <= batch_id <= 250:
+        return "NF_qweighted"
+    elif batch_id == 291:
+        return "NF_mean_conditioned"
+    elif batch_id == 299:
+        return "NF_qweighted_exp1_alpha2_beta2"
+    else:
+        return "other"
+
+
+def replot_batch_paper(batch_id, base_output_dir="paper_batches"):
+    """Replot batch results into categorized output directories."""
     batch_dir = find_batch_directory(batch_id)
 
     if not batch_dir:
@@ -28,13 +43,15 @@ def replot_batch_paper(batch_id):
         return
 
     print(f"\nProcessing batch {batch_id}: {batch_dir.name}")
+    
+    category = get_batch_category(batch_id)
+    output_dir = Path(base_output_dir) / category / batch_dir.name
 
-    # Use replot_batch_results with paper mode enabled
-    replot_batch_results(batch_dir, output_dir=None, paper_mode=True)
+    replot_batch_results(batch_dir, output_dir=output_dir)
 
 
 def main():
-    """Replot specified batches in paper style."""
+    """Replot specified batches into categorized output directories."""
     # Batch ranges: 269-286, 232-250, 291, 102-119
     batch_ids = []
 
@@ -47,10 +64,13 @@ def main():
     # Add batch 291
     batch_ids.append(291)
 
+    # Add batch 299 (NF qweighted exp1, alpha=beta=2)
+    batch_ids.append(299)
+
     # Add range 102-119
     batch_ids.extend(range(102, 120))
 
-    print(f"Replotting {len(batch_ids)} batches in paper style")
+    print(f"Replotting {len(batch_ids)} batches")
     print(f"Batch IDs: {sorted(set(batch_ids))}")
 
     success_count = 0

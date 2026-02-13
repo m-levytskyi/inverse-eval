@@ -1,13 +1,15 @@
 # Paper-specific matplotlib style overrides
 # Use with: plt.style.use(['science', 'paper'])
+# Note: backend is set in plotting_utils.py via matplotlib.use('pdf')
 
-# Match document typographic scale (12pt report)
-font.size: 12
-axes.labelsize: 12
-axes.titlesize: 12
-xtick.labelsize: 10
-ytick.labelsize: 10
-legend.fontsize: 10
+# Match document typographic scale (12pt document)
+font.family: serif
+font.size: 10
+axes.labelsize: 10
+axes.titlesize: 10
+xtick.labelsize: 9
+ytick.labelsize: 9
+legend.fontsize: 9
 legend.frameon: False
 legend.fancybox: False
 legend.framealpha: 0.0
@@ -20,18 +22,17 @@ xtick.minor.size: 0
 ytick.major.size: 0
 ytick.minor.size: 0
 
-# Physical size: full \linewidth (390pt = 5.40in)
-# Height uses golden ratio approximation (0.62)
-figure.figsize: 5.40, 3.35
+# Physical size: 390pt textwidth = 5.42in
+# Height uses golden ratio (5.42 × 0.618 = 3.35in)
+figure.figsize: 5.42, 3.35
 figure.constrained_layout.use: True
 
 # Print-friendly strokes
 lines.linewidth: 1.2
 lines.markersize: 5
 
-# Export quality settings
+# Export quality settings - PDF format
 savefig.format: pdf
-savefig.bbox: tight
 savefig.dpi: 300
 pdf.fonttype: 42
 ps.fonttype: 42

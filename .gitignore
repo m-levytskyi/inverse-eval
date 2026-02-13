@@ -19,6 +19,7 @@ md_report_plots/
 random_guessing_evaluation/
 model_comparison_plots/
 paper_plots_test/
+paper_batches/
 
 
 # Development directories (keep these ignored)
