@@ -1,0 +1,19 @@
+# Q-weighted exp1 configuration sweep (mixed sigmas)
+# Corresponds to: auto_batch_sweep_q_exp1_2.py
+
+prior_deviations: [5, 30, 99]
+sld_modes: ["none"]
+prominent_features: [false]
+priors_type: "constraint_based"
+
+inference_backend: "nf"
+nf_config_name: "nf_config_mixed_sigmas_qweighted_exp1.yaml"
+nf_num_samples: 1000
+nf_disable_importance_sampling: false
+use_sigmas_as_input: true
+
+num_experiments: null
+layer_count: 1
+data_directory: "../reflectorch_devvm/reflectorch/dataset/test"
+
+sweep_results_dir: "sweep_results_nf_mixed_sigmas_qweighted"

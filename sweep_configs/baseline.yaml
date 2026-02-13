@@ -1,0 +1,19 @@
+# Baseline NF configuration sweep
+# Corresponds to: auto_batch_sweep.py
+
+prior_deviations: [5, 30, 99]
+sld_modes: ["none", "backing", "all"]
+prominent_features: [false, true]
+priors_type: "constraint_based"
+
+inference_backend: "nf"
+nf_config_name: "example_nf_config_reflectorch.yaml"
+nf_num_samples: 1000
+nf_disable_importance_sampling: false
+use_sigmas_as_input: false
+
+num_experiments: null
+layer_count: 1
+data_directory: "../reflectorch_devvm/reflectorch/dataset/test"
+
+sweep_results_dir: "sweep_results_nf_baseline"
