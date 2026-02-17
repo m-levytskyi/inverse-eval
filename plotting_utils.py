@@ -1143,7 +1143,6 @@ def paper_peaks(data_file="dataset/train/s000780_theoretical_curve.dat",
     plt.close()
     print(f"Peaks plot saved to: {plot_file}")
     return plot_file
-    return plot_file
 
 
 # ============================================================================
