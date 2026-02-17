@@ -366,6 +366,7 @@ class BatchInferencePipeline:
                 nf_num_samples=self.nf_num_samples,
                 nf_enable_importance_sampling=self.nf_enable_importance_sampling,
                 use_sigmas_input=self.use_sigmas_input,
+                data_directory=str(self.data_directory),
             )
 
             # Success with primary priors
@@ -656,8 +657,8 @@ def parse_arguments():
     parser.add_argument(
         "--num-experiments",
         type=int,
-        default=10,
-        help="Number of experiments to process (default: 10)",
+        default=None,
+        help="Number of experiments to process (default: all)",
     )
     parser.add_argument(
         "--layer-count",
