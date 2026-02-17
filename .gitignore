@@ -21,6 +21,7 @@ model_comparison_plots/
 paper_plots_test/
 paper_batches/
 archive/
+anaklasis_eval/
 
 
 # Development directories (keep these ignored)
