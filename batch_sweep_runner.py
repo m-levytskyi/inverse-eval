@@ -106,8 +106,12 @@ class BatchPipelineSweep:
         cmd = [
             sys.executable,
             "batch_pipeline.py",
-            "--num-experiments",
-            str(self.num_experiments) if self.num_experiments else "all",
+        ]
+
+        if self.num_experiments is not None:
+            cmd.extend(["--num-experiments", str(self.num_experiments)])
+
+        cmd.extend([
             "--layer-count",
             str(self.layer_count),
             "--data-directory",
@@ -116,11 +120,11 @@ class BatchPipelineSweep:
             self.config["priors_type"],
             "--priors-deviation",
             str(prior_deviation),
-            "--sld-mode",
+            "--fix-sld-mode",
             sld_mode,
             "--inference-backend",
             self.config["inference_backend"],
-        ]
+        ])
 
         if use_prominent_features:
             cmd.append("--use-prominent-features")
@@ -133,7 +137,7 @@ class BatchPipelineSweep:
                 cmd.append("--nf-disable-importance-sampling")
 
         if self.config["use_sigmas_as_input"]:
-            cmd.append("--use-sigmas-as-input")
+            cmd.append("--use-sigmas-input")
 
         start_time = time.time()
 
@@ -274,10 +278,55 @@ def parse_arguments():
     )
     
     parser.add_argument(
+        "--num-experiments",
+        type=int,
+        help="Number of experiments to process (None = all)"
+    )
+    
+    parser.add_argument(
+        "--layer-count",
+        type=int,
+        choices=[1, 2],
+        help="Layer count to filter experiments (1 or 2)"
+    )
+    
+    parser.add_argument(
+        "--data-directory",
+        type=str,
+        help="Data directory path"
+    )
+    
+    parser.add_argument(
+        "--disable-preprocessing",
+        action="store_true",
+        help="Disable data preprocessing"
+    )
+    
+    parser.add_argument(
+        "--disable-constraints",
+        action="store_true",
+        help="Disable physical constraints application"
+    )
+    
+    parser.add_argument(
+        "--experiment-ids",
+        type=str,
+        nargs="+",
+        help="Specific experiment IDs to process (e.g., s005156 s004141)"
+    )
+    
+    parser.add_argument(
         "--prior-deviations",
         type=int,
         nargs="+",
-        help="Prior deviation percentages to test (e.g., 5 30 99)"
+        help="Prior deviation percentages to test (e.g., 5 30 60 99)"
+    )
+    
+    parser.add_argument(
+        "--priors-type",
+        type=str,
+        choices=["narrow", "constraint_based"],
+        help="Prior bounds type: narrow or constraint_based"
     )
     
     parser.add_argument(
@@ -297,27 +346,34 @@ def parse_arguments():
     )
     
     parser.add_argument(
-        "--nf-config",
+        "--inference-backend",
         type=str,
-        help="NF config YAML filename"
+        choices=["predict", "nf"],
+        help="Inference backend: predict or nf"
     )
     
     parser.add_argument(
-        "--use-sigmas-as-input",
+        "--config-name",
+        type=str,
+        help="Optional reflectorch config name (overrides backend default)"
+    )
+    
+    parser.add_argument(
+        "--nf-num-samples",
+        type=int,
+        help="NF backend: number of samples (default: 1000)"
+    )
+    
+    parser.add_argument(
+        "--nf-disable-importance-sampling",
         action="store_true",
-        help="Use sigmas as input channel (requires 2-channel model)"
+        help="NF backend: disable importance sampling"
     )
     
     parser.add_argument(
-        "--num-experiments",
-        type=int,
-        help="Number of experiments to process (None = all)"
-    )
-    
-    parser.add_argument(
-        "--layer-count",
-        type=int,
-        help="Layer count to filter experiments"
+        "--use-sigmas-input",
+        action="store_true",
+        help="Use sigmas as additional input channel to neural network (requires 2-channel model)"
     )
     
     return parser.parse_args()
@@ -337,8 +393,29 @@ def main():
     if args.sweep_name:
         config["sweep_results_dir"] = f"sweep_results_{args.sweep_name}"
     
+    if args.num_experiments:
+        config["num_experiments"] = args.num_experiments
+    
+    if args.layer_count:
+        config["layer_count"] = args.layer_count
+    
+    if args.data_directory:
+        config["data_directory"] = args.data_directory
+    
+    if args.disable_preprocessing:
+        config["disable_preprocessing"] = True
+    
+    if args.disable_constraints:
+        config["disable_constraints"] = True
+    
+    if args.experiment_ids:
+        config["experiment_ids"] = args.experiment_ids
+    
     if args.prior_deviations:
         config["prior_deviations"] = args.prior_deviations
+    
+    if args.priors_type:
+        config["priors_type"] = args.priors_type
     
     if args.sld_modes:
         config["sld_modes"] = args.sld_modes
@@ -348,17 +425,20 @@ def main():
             p.lower() == "true" for p in args.prominent_features
         ]
     
-    if args.nf_config:
-        config["nf_config_name"] = args.nf_config
+    if args.inference_backend:
+        config["inference_backend"] = args.inference_backend
     
-    if args.use_sigmas_as_input:
+    if args.config_name:
+        config["nf_config_name"] = args.config_name
+    
+    if args.nf_num_samples:
+        config["nf_num_samples"] = args.nf_num_samples
+    
+    if args.nf_disable_importance_sampling:
+        config["nf_disable_importance_sampling"] = True
+    
+    if args.use_sigmas_input:
         config["use_sigmas_as_input"] = True
-    
-    if args.num_experiments:
-        config["num_experiments"] = args.num_experiments
-    
-    if args.layer_count:
-        config["layer_count"] = args.layer_count
     
     print("Starting automated batch pipeline parameter sweep...")
     print(f"Configuration: {json.dumps(config, indent=2)}")
