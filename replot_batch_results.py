@@ -7,6 +7,8 @@ Supports both generic batch replotting and paper-specific categorized replotting
 """
 
 import json
+import sys
+import pickle
 import argparse
 from pathlib import Path
 from plotting_utils import create_batch_analysis_plots
@@ -178,6 +180,103 @@ def replot_paper_batches(batch_ids=None):
     return success_count
 
 
+def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
+    """
+    Replot batch results from anaklasis evaluation pickle files.
+
+    Loads pickle predictions, converts to batch_results format using
+    anaklasis_eval/evaluate_pickle_predictions.py, then generates
+    MAPE distribution and parameter breakdown plots.
+
+    Args:
+        pickle_path: Path to pickle results file. Defaults to
+                     anaklasis_eval/results_exp_1L_fitconstraints0_width0.3_simple.pkl
+        output_dir: Output directory (defaults to paper_batches/anaklasis/)
+        layer_count: Number of layers (default 1)
+
+    Returns:
+        List of saved plot paths
+    """
+    anaklasis_dir = Path("anaklasis_eval")
+
+    if pickle_path is None:
+        pickle_path = anaklasis_dir / f"results_exp_{layer_count}L_fitconstraints0_width0.3_simple.pkl"
+    else:
+        pickle_path = Path(pickle_path)
+
+    if not pickle_path.exists():
+        print(f"Error: {pickle_path} not found!")
+        return []
+
+    manifest_path = anaklasis_dir / f"manifest_exp_{layer_count}L.pkl"
+    if not manifest_path.exists():
+        print(f"Error: {manifest_path} not found!")
+        return []
+
+    # Import conversion functions from anaklasis_eval
+    sys.path.insert(0, str(anaklasis_dir.resolve()))
+    try:
+        from evaluate_pickle_predictions import (
+            load_pickle_data,
+            load_manifest,
+            convert_pickle_to_batch_results,
+        )
+    finally:
+        sys.path.pop(0)
+
+    # Load pickle data and manifest
+    targets, predictions, indices, bounds_flags, width = load_pickle_data(
+        str(pickle_path))
+
+    # Validate: convert_pickle_to_batch_results only supports fitconstraints=0 (6 params)
+    if targets.shape[1] != 6:
+        print(f"Error: Pickle has {targets.shape[1]} parameters per experiment. "
+              f"Only fitconstraints=0 (6 parameters) is supported.")
+        return []
+
+    manifest_samples = load_manifest(str(manifest_path))
+
+    # Convert to batch_results format
+    batch_results, outlier_count = convert_pickle_to_batch_results(
+        targets, predictions, indices, bounds_flags, manifest_samples, width)
+
+    if not batch_results:
+        print("Error: No valid experiments after conversion")
+        return []
+
+    if output_dir is None:
+        # Derive subdirectory from pickle filename
+        stem = pickle_path.stem  # e.g. results_exp_1L_fitconstraints0_width0.3_simple
+        output_dir = Path("paper_batches") / "anaklasis" / stem
+    else:
+        output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    successful = {k: v for k, v in batch_results.items() if v.get("success", False)}
+    print(f"Processing {len(successful)} experiments "
+          f"({layer_count} layer(s), {outlier_count} outliers excluded)")
+    print(f"Saving plots to: {output_dir}")
+
+    try:
+        plot_paths = create_batch_analysis_plots(
+            successful,
+            layer_count=layer_count,
+            output_dir=output_dir,
+            save=True,
+        )
+        saved = [str(p) for p in plot_paths.values() if p is not None]
+        print(f"\nRegenerated {len(saved)} plots:")
+        for path in saved:
+            print(f"  - {path}")
+        return saved
+
+    except Exception as e:
+        print(f"Error creating plots: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Re-run plotting utilities on completed batch results"
@@ -197,6 +296,15 @@ def main():
         help="Replot paper batches into categorized directories",
     )
     parser.add_argument(
+        "--anaklasis",
+        nargs="?",
+        const="default",
+        default=None,
+        metavar="PICKLE_PATH",
+        help="Replot anaklasis results from pickle file "
+             "(default: anaklasis_eval/results_exp_1L_fitconstraints0_width0.3_simple.pkl)",
+    )
+    parser.add_argument(
         "--batch-ids",
         type=int,
         nargs="+",
@@ -205,14 +313,17 @@ def main():
 
     args = parser.parse_args()
 
-    if args.paper:
+    if args.anaklasis is not None:
+        pkl = None if args.anaklasis == "default" else args.anaklasis
+        replot_anaklasis(pickle_path=pkl, output_dir=args.output_dir)
+    elif args.paper:
         # Paper mode: replot batches into categorized directories
         replot_paper_batches(batch_ids=args.batch_ids)
     elif args.results_dir:
         # Single batch mode
         replot_batch_results(args.results_dir, args.output_dir)
     else:
-        parser.error("Either provide results_dir or use --paper mode")
+        parser.error("Either provide results_dir, use --paper, or use --anaklasis")
 
 
 if __name__ == "__main__":
