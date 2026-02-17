@@ -103,11 +103,11 @@ def get_batch_category(batch_id):
     Returns:
         Category name string
     """
-    if 102 <= batch_id <= 119:
+    if 302 <= batch_id <= 319:
         return "reflectorch"
     elif 269 <= batch_id <= 286:
         return "NF_baseline"
-    elif 232 <= batch_id <= 250:
+    elif 233 <= batch_id <= 250:
         return "NF_qweighted"
     elif batch_id == 291:
         return "NF_mean_conditioned"
