@@ -7,7 +7,23 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from plot_experimental_reflectivity import load_experimental_data, plot_reflectivity
+
+def load_experimental_data(data_path):
+    """Load experimental data from file (3 or 4 column format)."""
+    data = np.loadtxt(data_path)
+    if data.shape[1] == 3:
+        q = data[:, 0]
+        r = data[:, 1]
+        dr = data[:, 2]
+        dq = None
+    elif data.shape[1] == 4:
+        q = data[:, 0]
+        r = data[:, 1]
+        dr = data[:, 2]
+        dq = data[:, 3]
+    else:
+        raise ValueError(f"Unsupported data format: {data.shape[1]} columns")
+    return q, r, dr, dq
 
 
 def detect_peaks(
