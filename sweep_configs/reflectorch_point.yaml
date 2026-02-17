@@ -1,0 +1,20 @@
+# Baseline Reflectorch point-estimate configuration sweep
+# Model: b_mc_point_neutron_conv_standard_L1_InputQDq
+# Corresponds to: auto_batch_sweep.py
+
+prior_deviations: [5, 30, 99]
+sld_modes: ["none", "backing", "all"]
+prominent_features: [false, true]
+priors_type: "constraint_based"
+
+inference_backend: "predict"
+nf_config_name: "b_mc_point_neutron_conv_standard_L1_InputQDq.yaml"
+#nf_num_samples: 1000
+#nf_disable_importance_sampling: false
+use_sigmas_as_input: false
+
+num_experiments: null
+layer_count: 1
+data_directory: "../reflectorch_devvm/reflectorch/dataset/test"
+
+sweep_results_dir: "sweep_results_reflectorch_point"
