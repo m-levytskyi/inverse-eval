@@ -111,6 +111,8 @@ def get_batch_category(batch_id):
         return "NF_mean_conditioned"
     elif batch_id == 299:
         return "NF_qweighted_exp1_alpha2_beta2"
+    elif batch_id == 301:
+        return "NF_qweighted_exp2_alpha4_beta4"
     else:
         return "other"
 
