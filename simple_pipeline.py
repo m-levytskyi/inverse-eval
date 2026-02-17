@@ -422,6 +422,7 @@ def run_single_experiment(
     nf_enable_importance_sampling: bool = True,
     clip_prediction: bool = True,
     use_sigmas_input: bool = False,
+    data_directory: str = "data",
 ):
     """
     Run a single experiment inference with configurable options.
@@ -441,12 +442,11 @@ def run_single_experiment(
         use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
         clip_prediction: Whether to clip predicted parameters to prior bounds (default: True)
         use_sigmas_input: Use sigmas as additional input channel to neural network (requires 2-channel model)
+        data_directory: Base data directory to search for experiment files (default: "data")
 
     Returns:
         Dictionary with results including parameters and metrics
     """
-    data_directory = "data"
-
     # Discover experiment files
     data_file, model_file, detected_layer_count = discover_experiment_files(
         experiment_id, data_directory, layer_count, use_theoretical=use_theoretical
