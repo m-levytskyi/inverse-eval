@@ -88,7 +88,7 @@ def _build_filename(prefix, layer_count, use_prominent_features=False):
 def _get_mape_ranges():
     """Return standard MAPE ranges and labels."""
     mape_ranges = list(range(0, 105, 5))
-    range_labels = [f"{i}-{i + 5}%" for i in range(0, 100, 5)]
+    range_labels = [f"{i}-{i + 5}" for i in range(0, 100, 5)]
     return mape_ranges, range_labels
 
 
@@ -268,7 +268,7 @@ def plot_batch_mape_distribution(
 
     # Fixed 5% bins from 0-100%
     bin_edges = list(range(0, 105, 5))
-    range_labels = [f"{i}-{i + 5}\\%" for i in range(0, 100, 5)]
+    range_labels = [f"{i}-{i + 5}" for i in range(0, 100, 5)]
 
     counts = []
     for i in range(len(bin_edges) - 1):
@@ -279,17 +279,16 @@ def plot_batch_mape_distribution(
     # Value labels on bars
     for bar, count in zip(bars, counts):
         if count > 0:
-            pct = (count / len(mapes)) * 100
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height() + 0.1,
-                f"{count}\n({pct:.1f}\\%)",
+                f"{count}",
                 ha="center",
                 va="bottom",
-                fontweight="bold",
+                fontsize=8,
             )
 
-    ax.set_xlabel("MAPE Range")
+    ax.set_xlabel("MAPE Range (\\%)")
     ax.set_ylabel("Number of Experiments")
     ax.set_xticks(range(len(range_labels)))
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
@@ -564,17 +563,16 @@ def plot_model_comparison_histogram(
     # Add value labels
     for i, (bar, count) in enumerate(zip(bars, comparison_counts)):
         if count > 0:
-            percentage = (count / len(comparison_mapes)) * 100
             ax.text(
                 bar.get_x() + bar.get_width() / 2.0,
                 bar.get_height(),
-                f"{count}\n({percentage:.1f}%)",
+                f"{count}",
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=7,
             )
 
-    ax.set_xlabel("MAPE Range", fontsize=14)
+    ax.set_xlabel("MAPE Range (\\%)", fontsize=14)
     ax.set_ylabel("Number of Experiments", fontsize=14)
     ax.set_xticks(range(len(range_labels)))
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
@@ -662,18 +660,16 @@ def plot_random_guessing_comparison(
     # Add value labels on model bars
     for i, (bar, count) in enumerate(zip(bars1, model_counts)):
         if count > 0:
-            percentage = (count / len(model_mapes)) * 100
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height() + 0.1,
-                f"{count}\n({percentage:.1f}%)",
+                f"{count}",
                 ha="center",
                 va="bottom",
-                fontsize=10,
-                fontweight="bold",
+                fontsize=8,
             )
 
-    ax.set_xlabel("MAPE Range")
+    ax.set_xlabel("MAPE Range (\\%)")
     ax.set_ylabel("Number of Experiments")
     ax.set_xticks(x)
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
