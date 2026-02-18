@@ -6,3 +6,4 @@ paper_batches/
 
 # Markdown files
 *.md
+!README.md
