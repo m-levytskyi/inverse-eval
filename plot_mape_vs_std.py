@@ -418,6 +418,189 @@ def plot_mape_vs_std(data, output_dir):
         print(f"    Correlation: {corr:.4f}")
 
 
+def extract_coverage_data(results):
+    """
+    Compute credible-interval coverage from NF percentiles vs true values.
+
+    Uses all five saved percentile levels (5, 25, 50, 75, 95) as CDF
+    calibration points.  For each level k, the empirical coverage is the
+    fraction of experiments where true_value <= p_k.
+
+    Args:
+        results: Batch results dictionary (experiment_id -> result dict).
+
+    Returns:
+        dict with keys:
+            - "by_parameter": {param_name: {"n": int,
+                                             "empirical": [float x5]}}
+            - "average": {"empirical": [float x5], "n_params": int}
+            - "nominal": [5, 25, 50, 75, 95]
+    """
+    # Percentile levels stored in nf_params_percentiles (row order)
+    nominal_levels = [5, 25, 50, 75, 95]
+    n_levels = len(nominal_levels)
+
+    # Parameter name mapping (NF model names -> canonical names)
+    param_map = {
+        "Thickness L1": "thickness",
+        "Roughness L1": "amb_rough",
+        "Roughness sub": "sub_rough",
+        "SLD L1": "layer_sld",
+        "SLD sub": "sub_sld",
+    }
+
+    # Accumulators: param -> {"below": [int x5], "total": int}
+    counts = {}
+
+    for exp_id, exp_data in results.items():
+        if not exp_data.get("success") or exp_data.get("excluded_as_outlier"):
+            continue
+
+        pred_dict = exp_data.get("prediction_dict", {})
+        percentiles = pred_dict.get("nf_params_percentiles")
+        param_names = pred_dict.get("param_names", [])
+
+        if percentiles is None or len(percentiles) != n_levels:
+            continue
+
+        # Resolve true values -- try true_params_dict first, then true_params
+        true_params = exp_data.get("true_params_dict") or exp_data.get("true_params", {})
+        layer_count = exp_data.get("layer_count", 1)
+        layer_key = f"{layer_count}_layer"
+        true_entry = true_params.get(layer_key, {})
+        true_values = true_entry.get("params", [])
+        true_names = true_entry.get("param_names", [])
+
+        # Fallback: use param_metrics.by_parameter which has "true" per param
+        if not true_values or not true_names:
+            by_param = exp_data.get("param_metrics", {}).get("by_parameter", {})
+            if by_param:
+                true_names = list(by_param.keys())
+                true_values = [by_param[k].get("true") for k in true_names]
+                true_values = [v for v in true_values if v is not None]
+                if len(true_values) != len(true_names):
+                    continue
+
+        if not true_values or not true_names:
+            continue
+
+        true_map = dict(zip(true_names, true_values))
+
+        for i, nf_name in enumerate(param_names):
+            canonical = param_map.get(nf_name)
+            if canonical is None:
+                continue  # skip nuisance params
+
+            true_val = true_map.get(canonical)
+            if true_val is None:
+                continue
+
+            if canonical not in counts:
+                counts[canonical] = {"below": [0] * n_levels, "total": 0}
+
+            counts[canonical]["total"] += 1
+            for lev_idx in range(n_levels):
+                if true_val <= percentiles[lev_idx][i]:
+                    counts[canonical]["below"][lev_idx] += 1
+
+    # Build output
+    by_parameter = {}
+    sum_empirical = [0.0] * n_levels
+    n_params = 0
+    for param, c in counts.items():
+        if c["total"] == 0:
+            continue
+        empirical = [100.0 * c["below"][j] / c["total"] for j in range(n_levels)]
+        by_parameter[param] = {"n": c["total"], "empirical": empirical}
+        for j in range(n_levels):
+            sum_empirical[j] += empirical[j]
+        n_params += 1
+
+    average = {}
+    if n_params > 0:
+        average = {
+            "empirical": [s / n_params for s in sum_empirical],
+            "n_params": n_params,
+        }
+
+    print(f"Coverage computed for {n_params} parameters")
+    for p, d in by_parameter.items():
+        parts = ", ".join(f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, d["empirical"]))
+        print(f"  {p}: n={d['n']}, {parts}")
+    if average:
+        parts = ", ".join(f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, average["empirical"]))
+        print(f"  Average: {parts}")
+
+    return {
+        "by_parameter": by_parameter,
+        "average": average,
+        "nominal": nominal_levels,
+    }
+
+
+def plot_coverage(coverage_data, output_dir):
+    """
+    Plot nominal vs empirical credible-interval coverage.
+
+    Produces a single plot with one curve per parameter plus the average,
+    overlaid on the ideal (diagonal) line.  Uses all saved percentile
+    levels (5, 25, 50, 75, 95) as calibration points.
+
+    Args:
+        coverage_data: Output of extract_coverage_data().
+        output_dir: Directory to save the plot.
+
+    Returns:
+        Path to the saved plot file.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    param_labels = {
+        "thickness": "Thickness",
+        "amb_rough": "Ambient Roughness",
+        "sub_rough": "Substrate Roughness",
+        "layer_sld": "Layer SLD",
+        "sub_sld": "Substrate SLD",
+    }
+
+    nominal = np.array(coverage_data["nominal"])
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    # Ideal diagonal
+    ax.plot([0, 100], [0, 100], "k--", linewidth=1, label="Ideal")
+
+    markers = ["o", "s", "^", "D", "v"]
+    for idx, (param, data) in enumerate(sorted(coverage_data["by_parameter"].items())):
+        empirical = np.array(data["empirical"])
+        label = f"{param_labels.get(param, param)}"
+        ax.plot(nominal, empirical, marker=markers[idx % len(markers)],
+                markersize=8, linewidth=1.5, label=label)
+
+    # Average curve
+    avg = coverage_data.get("average", {})
+    if avg:
+        avg_empirical = np.array(avg["empirical"])
+        ax.plot(nominal, avg_empirical, "k-o", markersize=10, linewidth=2.5,
+                label="Average", zorder=20)
+
+    ax.set_xlabel("Nominal Coverage (%)", fontsize=12)
+    ax.set_ylabel("Empirical Coverage (%)", fontsize=12)
+    ax.set_title("Credible-Interval Coverage", fontsize=14, fontweight="bold")
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.set_aspect("equal")
+    ax.legend(fontsize=9, loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    ax.grid(True, alpha=0.3)
+
+    plot_file = output_dir / "coverage_nominal_vs_empirical.png"
+    plt.savefig(plot_file, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Coverage plot saved to: {plot_file}")
+    return plot_file
+
+
 def main():
     """Main function."""
     # Path to batch results

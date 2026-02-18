@@ -1145,6 +1145,78 @@ def paper_peaks(data_file="dataset/train/s000780_theoretical_curve.dat",
     return plot_file
 
 
+def paper_coverage(batch_num, output_dir=None):
+    """
+    Generate credible-interval coverage plot (nominal vs empirical) for a batch.
+
+    For each physical parameter, checks whether the true value falls inside
+    the NF posterior percentile intervals (50% and 90%) and plots
+    empirical coverage against the nominal level.
+
+    Args:
+        batch_num: Batch number to analyze
+        output_dir: Output directory (defaults to paper_batches/)
+    """
+    from plot_mape_vs_std import extract_coverage_data
+
+    batch_dir = _find_batch_dir(batch_num)
+    results = _load_batch_json(batch_dir)
+
+    if output_dir is None:
+        output_dir = "paper_batches"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    coverage_data = extract_coverage_data(results)
+
+    if not coverage_data["by_parameter"]:
+        print("No coverage data available (missing nf_params_percentiles or true_params).")
+        return None
+
+    nominal = np.array(coverage_data["nominal"])  # [5, 25, 50, 75, 95]
+
+    fig, ax = plt.subplots()
+
+    # Ideal diagonal
+    ax.plot([0, 100], [0, 100], "k--", linewidth=0.8, label="Ideal")
+
+    param_labels = {
+        "thickness": "Thickness",
+        "amb_rough": "Ambient Roughness",
+        "sub_rough": "Substrate Roughness",
+        "layer_sld": "Layer SLD",
+        "sub_sld": "Substrate SLD",
+    }
+    markers = ["o", "s", "^", "D", "v"]
+
+    for idx, (param, data) in enumerate(sorted(coverage_data["by_parameter"].items())):
+        empirical = np.array(data["empirical"])
+        label = f"{param_labels.get(param, param)}"
+        ax.plot(nominal, empirical, marker=markers[idx % len(markers)],
+                markersize=6, linewidth=1.2, label=label)
+
+    # Average curve
+    avg = coverage_data.get("average", {})
+    if avg:
+        avg_empirical = np.array(avg["empirical"])
+        ax.plot(nominal, avg_empirical, "k-o", markersize=8, linewidth=2,
+                label="Average", zorder=20)
+
+    ax.set_xlabel("Nominal Coverage (\\%)")
+    ax.set_ylabel("Empirical Coverage (\\%)")
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.set_aspect("equal")
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    ax.tick_params(axis="both", which="both", length=0)
+
+    plot_file = output_dir / f"coverage_{batch_num}.pdf"
+    plt.savefig(plot_file, bbox_inches="tight")
+    plt.close()
+    print(f"Coverage plot saved to: {plot_file}")
+    return plot_file
+
+
 # ============================================================================
 # MAIN (PAPER PLOT CLI)
 # ============================================================================
@@ -1227,6 +1299,14 @@ def main():
     p_peaks.add_argument("--full-curve", action="store_true",
                          help="Analyze full curve instead of first half")
 
+    # -- coverage --
+    p_cov = subparsers.add_parser(
+        "coverage",
+        help="Credible-interval coverage (nominal vs empirical)",
+    )
+    p_cov.add_argument("batch", type=int, help="Batch number")
+    p_cov.add_argument("--output-dir", help="Output directory")
+
     args = parser.parse_args()
 
     if args.command == "calibration":
@@ -1268,6 +1348,9 @@ def main():
             min_width=args.min_width,
             analyze_first_half=not args.full_curve,
         )
+
+    elif args.command == "coverage":
+        paper_coverage(args.batch, output_dir=args.output_dir)
 
 
 if __name__ == "__main__":
