@@ -9,7 +9,7 @@ settings used across the project.
 # DATA DIRECTORIES
 # =============================================================================
 
-DATA_DIRECTORY = "../reflectorch_devvm/reflectorch/dataset/test"
+DATA_DIRECTORY = "dataset/test"
 BATCH_RESULTS_DIR = "batch_inference_results"
 PAPER_BATCHES_DIR = "paper_batches"
 SWEEP_RESULTS_DIR = "sweep_results"
