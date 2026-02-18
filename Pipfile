@@ -5,11 +5,13 @@ name = "pypi"
 
 [packages]
 ipykernel = "*"
+jupyterlab = "*"
 pandas = "*"
 scipy = "*"
 numpy = "*"
 seaborn = "*"
-reflectorch = "*"
+# reflectorch is installed from the custom GitLab source below (NOT from PyPI)
+reflectorch = {git = "https://gitlab.lrz.de/thesis-levytskyi/nflows_reflectorch.git"}
 scikit-learn = "*"
 scienceplots = "*"
 

@@ -1,38 +1,8 @@
 __pycache__/
 
 # Generated results (keep these ignored)
-inference_results/
 batch_inference_results/
-synthetic_data/
-peaks_plots/
-sld_plots/
-sweep_results/
-sweep_results_*/
-constraint_visualization_plots/
-constraint_prior_tests/
-md_report_plots/
-random_guessing_evaluation/
-model_comparison_plots/
-paper_plots_test/
 paper_batches/
-archive/
-
-
-# Development directories (keep these ignored)
-debug/
-deprecated/
-
-# Allow small test data files
-!data/test_data/
-!data/*.dat
-!data/*.txt
 
 # Markdown files
 *.md
-
-# Demo / example scripts
-demo_*.py
-example_*.py
-
-# NF model checkpoints
-saved_models/model_example_nf_config_reflectorch.pt
