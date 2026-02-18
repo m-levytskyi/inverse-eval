@@ -13,7 +13,10 @@ import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 from collections import defaultdict
-from plotting_utils import plot_model_comparison_histogram, plot_parameter_comparison_grid
+from plotting_utils import (
+    plot_model_comparison_histogram,
+    plot_parameter_comparison_grid,
+)
 
 
 def load_batch_summary(batch_dir: Path) -> Dict:
@@ -163,7 +166,7 @@ def _plot_model_comparison_histogram_old(
 ):
     """
     DEPRECATED: Use plotting_utils.plot_model_comparison_histogram instead.
-    
+
     Create comparison histogram with baseline (grey) and q-weighted (colored) MAPEs.
 
     Args:
@@ -175,7 +178,7 @@ def _plot_model_comparison_histogram_old(
         qweighted_meta: Metadata for q-weighted model
     """
     from plotting_utils import plot_model_comparison_histogram as plot_comparison
-    
+
     plot_comparison(
         baseline_mapes=baseline_mapes,
         comparison_mapes=qweighted_mapes,
@@ -199,7 +202,7 @@ def _plot_param_comparison_old(
 ):
     """
     DEPRECATED: Use plotting_utils.plot_parameter_comparison_grid instead.
-    
+
     Create per-parameter MAPE comparison plots.
 
     Args:
@@ -211,7 +214,7 @@ def _plot_param_comparison_old(
         qweighted_meta: Metadata for q-weighted model
     """
     from plotting_utils import plot_parameter_comparison_grid
-    
+
     plot_parameter_comparison_grid(
         baseline_per_param=baseline_per_param,
         comparison_per_param=qweighted_per_param,

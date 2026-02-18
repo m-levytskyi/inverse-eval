@@ -34,19 +34,16 @@ DEFAULT_CONFIG = {
     "sld_modes": ["none", "backing", "all"],
     "prominent_features": [False, True],
     "priors_type": "constraint_based",
-    
     # Inference backend configuration
     "inference_backend": "nf",
     "nf_config_name": "example_nf_config_reflectorch.yaml",
     "nf_num_samples": 1000,
     "nf_disable_importance_sampling": False,
     "use_sigmas_as_input": False,
-    
     # Experiment configuration
     "num_experiments": None,
     "layer_count": 1,
     "data_directory": "../reflectorch_devvm/reflectorch/dataset/test",
-    
     # Output configuration
     "sweep_results_dir": "sweep_results",
 }
@@ -63,16 +60,13 @@ class BatchPipelineSweep:
         self.config = DEFAULT_CONFIG.copy()
         if config:
             self.config.update(config)
-        
+
         self.num_experiments = self.config["num_experiments"]
         self.layer_count = self.config["layer_count"]
         self.data_directory = self.config["data_directory"]
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.sweep_dir = (
-            Path(self.config["sweep_results_dir"])
-            / f"sweep_{timestamp}"
-        )
+        self.sweep_dir = Path(self.config["sweep_results_dir"]) / f"sweep_{timestamp}"
         self.sweep_dir.mkdir(parents=True, exist_ok=True)
 
         self.results_summary = []
@@ -86,12 +80,10 @@ class BatchPipelineSweep:
         print(f"Initialized sweep with {self.total_runs} total parameter combinations")
         print(f"Results will be saved to: {self.sweep_dir}")
 
-    def run_single_batch(
-        self, prior_deviation, sld_mode, use_prominent_features
-    ):
+    def run_single_batch(self, prior_deviation, sld_mode, use_prominent_features):
         """Run a single batch pipeline instance."""
         self.run_count += 1
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(f"RUN {self.run_count}/{self.total_runs}")
         print(f"Prior deviation: {prior_deviation}%")
         print(f"SLD mode: {sld_mode}")
@@ -100,8 +92,10 @@ class BatchPipelineSweep:
         if self.config["inference_backend"] == "nf":
             print(f"NF config: {self.config['nf_config_name']}")
             print(f"NF samples: {self.config['nf_num_samples']}")
-            print(f"NF importance sampling: {not self.config['nf_disable_importance_sampling']}")
-        print(f"{'='*80}\n")
+            print(
+                f"NF importance sampling: {not self.config['nf_disable_importance_sampling']}"
+            )
+        print(f"{'=' * 80}\n")
 
         cmd = [
             sys.executable,
@@ -111,20 +105,22 @@ class BatchPipelineSweep:
         if self.num_experiments is not None:
             cmd.extend(["--num-experiments", str(self.num_experiments)])
 
-        cmd.extend([
-            "--layer-count",
-            str(self.layer_count),
-            "--data-directory",
-            self.data_directory,
-            "--priors-type",
-            self.config["priors_type"],
-            "--priors-deviation",
-            str(prior_deviation),
-            "--fix-sld-mode",
-            sld_mode,
-            "--inference-backend",
-            self.config["inference_backend"],
-        ])
+        cmd.extend(
+            [
+                "--layer-count",
+                str(self.layer_count),
+                "--data-directory",
+                self.data_directory,
+                "--priors-type",
+                self.config["priors_type"],
+                "--priors-deviation",
+                str(prior_deviation),
+                "--fix-sld-mode",
+                sld_mode,
+                "--inference-backend",
+                self.config["inference_backend"],
+            ]
+        )
 
         if use_prominent_features:
             cmd.append("--use-prominent-features")
@@ -162,7 +158,9 @@ class BatchPipelineSweep:
                 "return_code": result.returncode,
             }
 
-            print(f"Run {self.run_count} completed successfully in {execution_time:.1f}s")
+            print(
+                f"Run {self.run_count} completed successfully in {execution_time:.1f}s"
+            )
 
         except subprocess.TimeoutExpired:
             execution_time = time.time() - start_time
@@ -240,9 +238,9 @@ class BatchPipelineSweep:
         successful_runs = sum(1 for r in self.results_summary if r["success"])
         failed_runs = len(self.results_summary) - successful_runs
 
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print("SWEEP COMPLETE")
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
         print(f"Total runs: {len(self.results_summary)}/{self.total_runs}")
         print(f"Successful runs: {successful_runs}/{self.total_runs}")
         print(f"Failed runs: {failed_runs}/{self.total_runs}")
@@ -264,182 +262,172 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Run batch pipeline parameter sweep with constraint-based priors"
     )
-    
+
+    parser.add_argument("--config", type=str, help="Path to YAML configuration file")
+
     parser.add_argument(
-        "--config",
-        type=str,
-        help="Path to YAML configuration file"
+        "--sweep-name", type=str, help="Name for this sweep (used in output directory)"
     )
-    
-    parser.add_argument(
-        "--sweep-name",
-        type=str,
-        help="Name for this sweep (used in output directory)"
-    )
-    
+
     parser.add_argument(
         "--num-experiments",
         type=int,
-        help="Number of experiments to process (None = all)"
+        help="Number of experiments to process (None = all)",
     )
-    
+
     parser.add_argument(
         "--layer-count",
         type=int,
         choices=[1, 2],
-        help="Layer count to filter experiments (1 or 2)"
+        help="Layer count to filter experiments (1 or 2)",
     )
-    
-    parser.add_argument(
-        "--data-directory",
-        type=str,
-        help="Data directory path"
-    )
-    
+
+    parser.add_argument("--data-directory", type=str, help="Data directory path")
+
     parser.add_argument(
         "--disable-preprocessing",
         action="store_true",
-        help="Disable data preprocessing"
+        help="Disable data preprocessing",
     )
-    
+
     parser.add_argument(
         "--disable-constraints",
         action="store_true",
-        help="Disable physical constraints application"
+        help="Disable physical constraints application",
     )
-    
+
     parser.add_argument(
         "--experiment-ids",
         type=str,
         nargs="+",
-        help="Specific experiment IDs to process (e.g., s005156 s004141)"
+        help="Specific experiment IDs to process (e.g., s005156 s004141)",
     )
-    
+
     parser.add_argument(
         "--prior-deviations",
         type=int,
         nargs="+",
-        help="Prior deviation percentages to test (e.g., 5 30 60 99)"
+        help="Prior deviation percentages to test (e.g., 5 30 60 99)",
     )
-    
+
     parser.add_argument(
         "--priors-type",
         type=str,
         choices=["narrow", "constraint_based"],
-        help="Prior bounds type: narrow or constraint_based"
+        help="Prior bounds type: narrow or constraint_based",
     )
-    
+
     parser.add_argument(
         "--sld-modes",
         type=str,
         nargs="+",
         choices=["none", "backing", "all"],
-        help="SLD fixing modes to test"
+        help="SLD fixing modes to test",
     )
-    
+
     parser.add_argument(
         "--prominent-features",
         type=str,
         nargs="+",
         choices=["true", "false"],
-        help="Test with prominent features enabled/disabled"
+        help="Test with prominent features enabled/disabled",
     )
-    
+
     parser.add_argument(
         "--inference-backend",
         type=str,
         choices=["predict", "nf"],
-        help="Inference backend: predict or nf"
+        help="Inference backend: predict or nf",
     )
-    
+
     parser.add_argument(
         "--config-name",
         type=str,
-        help="Optional reflectorch config name (overrides backend default)"
+        help="Optional reflectorch config name (overrides backend default)",
     )
-    
+
     parser.add_argument(
         "--nf-num-samples",
         type=int,
-        help="NF backend: number of samples (default: 1000)"
+        help="NF backend: number of samples (default: 1000)",
     )
-    
+
     parser.add_argument(
         "--nf-disable-importance-sampling",
         action="store_true",
-        help="NF backend: disable importance sampling"
+        help="NF backend: disable importance sampling",
     )
-    
+
     parser.add_argument(
         "--use-sigmas-input",
         action="store_true",
-        help="Use sigmas as additional input channel to neural network (requires 2-channel model)"
+        help="Use sigmas as additional input channel to neural network (requires 2-channel model)",
     )
-    
+
     return parser.parse_args()
 
 
 def main():
     """Main function to run the parameter sweep."""
     args = parse_arguments()
-    
+
     # Load config from file if provided
     config = {}
     if args.config:
         print(f"Loading configuration from: {args.config}")
         config = load_config_from_yaml(args.config)
-    
+
     # Override with command line arguments
     if args.sweep_name:
         config["sweep_results_dir"] = f"sweep_results_{args.sweep_name}"
-    
+
     if args.num_experiments:
         config["num_experiments"] = args.num_experiments
-    
+
     if args.layer_count:
         config["layer_count"] = args.layer_count
-    
+
     if args.data_directory:
         config["data_directory"] = args.data_directory
-    
+
     if args.disable_preprocessing:
         config["disable_preprocessing"] = True
-    
+
     if args.disable_constraints:
         config["disable_constraints"] = True
-    
+
     if args.experiment_ids:
         config["experiment_ids"] = args.experiment_ids
-    
+
     if args.prior_deviations:
         config["prior_deviations"] = args.prior_deviations
-    
+
     if args.priors_type:
         config["priors_type"] = args.priors_type
-    
+
     if args.sld_modes:
         config["sld_modes"] = args.sld_modes
-    
+
     if args.prominent_features:
         config["prominent_features"] = [
             p.lower() == "true" for p in args.prominent_features
         ]
-    
+
     if args.inference_backend:
         config["inference_backend"] = args.inference_backend
-    
+
     if args.config_name:
         config["nf_config_name"] = args.config_name
-    
+
     if args.nf_num_samples:
         config["nf_num_samples"] = args.nf_num_samples
-    
+
     if args.nf_disable_importance_sampling:
         config["nf_disable_importance_sampling"] = True
-    
+
     if args.use_sigmas_input:
         config["use_sigmas_as_input"] = True
-    
+
     print("Starting automated batch pipeline parameter sweep...")
     print(f"Configuration: {json.dumps(config, indent=2)}")
 

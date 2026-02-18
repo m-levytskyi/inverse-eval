@@ -15,7 +15,6 @@ from pathlib import Path
 plt.style.use("paper.mplstyle")
 
 
-
 def load_batch_results(results_file):
     """Load batch results from JSON file."""
     print(f"Loading results from: {results_file}")
@@ -462,7 +461,9 @@ def extract_coverage_data(results):
             continue
 
         # Resolve true values -- try true_params_dict first, then true_params
-        true_params = exp_data.get("true_params_dict") or exp_data.get("true_params", {})
+        true_params = exp_data.get("true_params_dict") or exp_data.get(
+            "true_params", {}
+        )
         layer_count = exp_data.get("layer_count", 1)
         layer_key = f"{layer_count}_layer"
         true_entry = true_params.get(layer_key, {})
@@ -523,10 +524,14 @@ def extract_coverage_data(results):
 
     print(f"Coverage computed for {n_params} parameters")
     for p, d in by_parameter.items():
-        parts = ", ".join(f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, d["empirical"]))
+        parts = ", ".join(
+            f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, d["empirical"])
+        )
         print(f"  {p}: n={d['n']}, {parts}")
     if average:
-        parts = ", ".join(f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, average["empirical"]))
+        parts = ", ".join(
+            f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, average["empirical"])
+        )
         print(f"  Average: {parts}")
 
     return {
@@ -573,15 +578,28 @@ def plot_coverage(coverage_data, output_dir):
     for idx, (param, data) in enumerate(sorted(coverage_data["by_parameter"].items())):
         empirical = np.array(data["empirical"])
         label = f"{param_labels.get(param, param)}"
-        ax.plot(nominal, empirical, marker=markers[idx % len(markers)],
-                markersize=8, linewidth=1.5, label=label)
+        ax.plot(
+            nominal,
+            empirical,
+            marker=markers[idx % len(markers)],
+            markersize=8,
+            linewidth=1.5,
+            label=label,
+        )
 
     # Average curve
     avg = coverage_data.get("average", {})
     if avg:
         avg_empirical = np.array(avg["empirical"])
-        ax.plot(nominal, avg_empirical, "k-o", markersize=10, linewidth=2.5,
-                label="Average", zorder=20)
+        ax.plot(
+            nominal,
+            avg_empirical,
+            "k-o",
+            markersize=10,
+            linewidth=2.5,
+            label="Average",
+            zorder=20,
+        )
 
     ax.set_xlabel("Nominal Coverage (%)", fontsize=12)
     ax.set_ylabel("Empirical Coverage (%)", fontsize=12)

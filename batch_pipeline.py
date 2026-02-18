@@ -377,9 +377,7 @@ class BatchInferencePipeline:
             results["priors_used"] = self.priors_type
             results["fallback_applied"] = False
 
-            print(
-                f"  {experiment_id} completed successfully in {processing_time:.1f}s"
-            )
+            print(f"  {experiment_id} completed successfully in {processing_time:.1f}s")
             return results
 
         except Exception as error:

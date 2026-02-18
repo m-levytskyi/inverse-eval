@@ -10,6 +10,7 @@ Uses SciencePlots for publication-quality styling via paper.mplstyle.
 
 import numpy as np
 import matplotlib
+
 matplotlib.use("pdf")
 import matplotlib.pyplot as plt
 import scienceplots  # noqa: F401 - registers 'science' style
@@ -103,7 +104,7 @@ def _count_mapes_in_ranges(mapes, mape_ranges):
 def _build_comparison_title(config, priors_type="constraint_based"):
     """Build title for comparison plots with config-based suffix."""
     mape_type = "Constraint-Based MAPE" if priors_type == "constraint_based" else "MAPE"
-    
+
     title_parts = []
     if config.get("sld_fix_mode", "none") != "none":
         mode = config["sld_fix_mode"]
@@ -111,10 +112,10 @@ def _build_comparison_title(config, priors_type="constraint_based"):
         title_parts.append(mode_name)
     if config.get("prominent", False):
         title_parts.append("Prominent Features")
-    
+
     title_suffix = f" ({', '.join(title_parts)})" if title_parts else ""
     deviation_pct = int(config.get("deviation", 0.30) * 100)
-    
+
     return mape_type, title_suffix, deviation_pct
 
 
@@ -510,7 +511,7 @@ def plot_model_comparison_histogram(
 
     Args:
         baseline_mapes: List of baseline model MAPE values
-        comparison_mapes: List of comparison model MAPE values  
+        comparison_mapes: List of comparison model MAPE values
         config: Configuration dict with deviation, sld_fix_mode, prominent keys
         output_dir: Directory to save plot
         save: Whether to save the plot
@@ -524,10 +525,12 @@ def plot_model_comparison_histogram(
     """
     baseline_meta = baseline_meta or {}
     comparison_meta = comparison_meta or {}
-    
+
     priors_type = baseline_meta.get("priors_type", "constraint_based")
     mape_label = _mape_label(priors_type)
-    mape_type, title_suffix, deviation_pct = _build_comparison_title(config, priors_type)
+    mape_type, title_suffix, deviation_pct = _build_comparison_title(
+        config, priors_type
+    )
 
     # Create plot
     fig, ax = plt.subplots()
@@ -618,9 +621,8 @@ def plot_random_guessing_comparison(
     x = np.arange(len(range_labels))
     width = 0.35
 
-    ax.bar(x - width/2, model_counts, width, alpha=0.8, label='Model')
-    ax.bar(x + width/2, random_counts, width, alpha=0.8,
-           label='Random Guessing')
+    ax.bar(x - width / 2, model_counts, width, alpha=0.8, label="Model")
+    ax.bar(x + width / 2, random_counts, width, alpha=0.8, label="Random Guessing")
 
     ax.set_xlabel("MAPE Range (\\%)")
     ax.set_ylabel("Number of Experiments")
@@ -641,7 +643,7 @@ def plot_random_guessing_comparison(
         transform=ax.transAxes,
         ha="right",
         va="top",
-        bbox=dict(boxstyle="round,pad=0.5", facecolor='none'),
+        bbox=dict(boxstyle="round,pad=0.5", facecolor="none"),
     )
 
     ax.tick_params(axis="both", which="both", length=0)
@@ -649,8 +651,9 @@ def plot_random_guessing_comparison(
     if save:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        filename = _build_filename("random_comparison", layer_count,
-                                   use_prominent_features)
+        filename = _build_filename(
+            "random_comparison", layer_count, use_prominent_features
+        )
         plot_file = output_dir / filename
         plt.savefig(plot_file)
         plt.close()
@@ -696,7 +699,9 @@ def plot_parameter_comparison_grid(
         print("No parameter data available")
         return None
 
-    mape_type, title_suffix, deviation_pct = _build_comparison_title(config, priors_type)
+    mape_type, title_suffix, deviation_pct = _build_comparison_title(
+        config, priors_type
+    )
 
     # Create subplots
     fig, axes = plt.subplots(2, 3)
@@ -727,7 +732,9 @@ def plot_parameter_comparison_grid(
         ax.bar(range(len(baseline_counts)), baseline_counts, alpha=0.3, linewidth=1.0)
 
         # Overlay comparison as foreground
-        ax.bar(range(len(comparison_counts)), comparison_counts, alpha=0.8, linewidth=0.5)
+        ax.bar(
+            range(len(comparison_counts)), comparison_counts, alpha=0.8, linewidth=0.5
+        )
 
         ax.set_title(param_name)
         ax.set_xlabel("MAPE Range (\\%)")
@@ -793,6 +800,7 @@ def _find_batch_dir(batch_num, base_dir="batch_inference_results"):
 def _load_batch_json(batch_dir, filename="batch_results.json"):
     """Load a JSON file from a batch directory."""
     import json
+
     path = Path(batch_dir) / filename
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
@@ -839,8 +847,11 @@ def paper_calibration(batch_num, output_dir=None):
     if len(std) > 1:
         corr = np.corrcoef(std, mape)[0, 1]
         ax.text(
-            0.05, 0.95, f"r = {corr:.3f}\nn = {len(std)}",
-            transform=ax.transAxes, va="top",
+            0.05,
+            0.95,
+            f"r = {corr:.3f}\nn = {len(std)}",
+            transform=ax.transAxes,
+            va="top",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="none"),
         )
     plot_file = output_dir / f"calibration_scatter_{batch_num}.pdf"
@@ -864,8 +875,13 @@ def paper_calibration(batch_num, output_dir=None):
 
     ax.scatter(std, mape, alpha=0.3, s=10, label="Individual")
     ax.errorbar(
-        bin_std_means, bin_mape_means, yerr=bin_mape_stds,
-        fmt="o-", capsize=3, label=f"Binned ({n_bins} bins)", zorder=10,
+        bin_std_means,
+        bin_mape_means,
+        yerr=bin_mape_stds,
+        fmt="o-",
+        capsize=3,
+        label=f"Binned ({n_bins} bins)",
+        zorder=10,
     )
     ax.set_xlabel("Mean Constraint-Normalized Std Dev (\\%)")
     ax.set_ylabel("Overall Constraint-Based MAPE (\\%)")
@@ -873,8 +889,11 @@ def paper_calibration(batch_num, output_dir=None):
     if len(std) > 1:
         corr = np.corrcoef(std, mape)[0, 1]
         ax.text(
-            0.05, 0.95, f"r = {corr:.3f}",
-            transform=ax.transAxes, va="top",
+            0.05,
+            0.95,
+            f"r = {corr:.3f}",
+            transform=ax.transAxes,
+            va="top",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="none"),
         )
     plot_file = output_dir / f"calibration_binned_{batch_num}.pdf"
@@ -927,8 +946,13 @@ def paper_random_guessing(batch_num, output_dir=None):
     )
 
 
-def paper_model_comparison(baseline_batch, comparison_batch, output_dir=None,
-                           baseline_label="Baseline", comparison_label="Comparison"):
+def paper_model_comparison(
+    baseline_batch,
+    comparison_batch,
+    output_dir=None,
+    baseline_label="Baseline",
+    comparison_label="Comparison",
+):
     """
     Generate model comparison plots (overall MAPE + per-parameter) for two batches.
 
@@ -1001,8 +1025,7 @@ def paper_reflectivity(data_file, output_dir=None, hide_title=False):
     fig, ax = plt.subplots()
 
     if dq is not None:
-        ax.errorbar(q, r, yerr=dr, xerr=dq, fmt="o", markersize=3,
-                     label="Experimental")
+        ax.errorbar(q, r, yerr=dr, xerr=dq, fmt="o", markersize=3, label="Experimental")
     else:
         ax.errorbar(q, r, yerr=dr, fmt="o", markersize=3, label="Experimental")
 
@@ -1038,9 +1061,7 @@ def paper_sld_profile(batch_num, experiment_id, output_dir=None, hide_title=Fals
     results = _load_batch_json(batch_dir)
 
     if experiment_id not in results:
-        raise KeyError(
-            f"Experiment {experiment_id} not found in batch {batch_num}"
-        )
+        raise KeyError(f"Experiment {experiment_id} not found in batch {batch_num}")
 
     result = results[experiment_id]
     if not result.get("success"):
@@ -1074,9 +1095,14 @@ def paper_sld_profile(batch_num, experiment_id, output_dir=None, hide_title=Fals
     return plot_file
 
 
-def paper_peaks(data_file="dataset/train/s000780_theoretical_curve.dat",
-                output_dir=None, min_prominence=0.2, min_rise=0.05,
-                min_width=10, analyze_first_half=True):
+def paper_peaks(
+    data_file="dataset/train/s000780_theoretical_curve.dat",
+    output_dir=None,
+    min_prominence=0.2,
+    min_rise=0.05,
+    min_width=10,
+    analyze_first_half=True,
+):
     """
     Plot a reflectivity curve with the first prominent peak highlighted.
 
@@ -1125,9 +1151,13 @@ def paper_peaks(data_file="dataset/train/s000780_theoretical_curve.dat",
         peak_q = q[peak["index"]]
         peak_r = r[peak["index"]]
         ax.scatter(
-            [peak_q], [peak_r],
-            s=300, facecolors="none", edgecolors="red",
-            zorder=5, linewidths=2.5,
+            [peak_q],
+            [peak_r],
+            s=300,
+            facecolors="none",
+            edgecolors="red",
+            zorder=5,
+            linewidths=2.5,
         )
 
     ax.tick_params(axis="both", which="both", length=0)
@@ -1169,7 +1199,9 @@ def paper_coverage(batch_num, output_dir=None):
     coverage_data = extract_coverage_data(results)
 
     if not coverage_data["by_parameter"]:
-        print("No coverage data available (missing nf_params_percentiles or true_params).")
+        print(
+            "No coverage data available (missing nf_params_percentiles or true_params)."
+        )
         return None
 
     nominal = np.array(coverage_data["nominal"])  # [5, 25, 50, 75, 95]
@@ -1191,15 +1223,28 @@ def paper_coverage(batch_num, output_dir=None):
     for idx, (param, data) in enumerate(sorted(coverage_data["by_parameter"].items())):
         empirical = np.array(data["empirical"])
         label = f"{param_labels.get(param, param)}"
-        ax.plot(nominal, empirical, marker=markers[idx % len(markers)],
-                markersize=6, linewidth=1.2, label=label)
+        ax.plot(
+            nominal,
+            empirical,
+            marker=markers[idx % len(markers)],
+            markersize=6,
+            linewidth=1.2,
+            label=label,
+        )
 
     # Average curve
     avg = coverage_data.get("average", {})
     if avg:
         avg_empirical = np.array(avg["empirical"])
-        ax.plot(nominal, avg_empirical, "k-o", markersize=8, linewidth=2,
-                label="Average", zorder=20)
+        ax.plot(
+            nominal,
+            avg_empirical,
+            "k-o",
+            markersize=8,
+            linewidth=2,
+            label="Average",
+            zorder=20,
+        )
 
     ax.set_xlabel("Nominal Coverage (\\%)")
     ax.set_ylabel("Empirical Coverage (\\%)")
@@ -1254,10 +1299,12 @@ def main():
     p_cmp.add_argument("baseline", type=int, help="Baseline batch number")
     p_cmp.add_argument("comparison", type=int, help="Comparison batch number")
     p_cmp.add_argument("--output-dir", help="Output directory")
-    p_cmp.add_argument("--baseline-label", default="Baseline",
-                       help="Label for baseline model")
-    p_cmp.add_argument("--comparison-label", default="Comparison",
-                       help="Label for comparison model")
+    p_cmp.add_argument(
+        "--baseline-label", default="Baseline", help="Label for baseline model"
+    )
+    p_cmp.add_argument(
+        "--comparison-label", default="Comparison", help="Label for comparison model"
+    )
 
     # -- reflectivity --
     p_refl = subparsers.add_parser(
@@ -1266,8 +1313,7 @@ def main():
     )
     p_refl.add_argument("data_file", help="Path to experimental data file")
     p_refl.add_argument("--output-dir", help="Output directory")
-    p_refl.add_argument("--hide-title", action="store_true",
-                        help="Hide plot title")
+    p_refl.add_argument("--hide-title", action="store_true", help="Hide plot title")
 
     # -- sld --
     p_sld = subparsers.add_parser(
@@ -1277,26 +1323,37 @@ def main():
     p_sld.add_argument("batch", type=int, help="Batch number")
     p_sld.add_argument("experiment", help="Experiment ID (e.g. s005394)")
     p_sld.add_argument("--output-dir", help="Output directory")
-    p_sld.add_argument("--hide-title", action="store_true",
-                        help="Hide plot title")
+    p_sld.add_argument("--hide-title", action="store_true", help="Hide plot title")
 
     # -- peaks --
     p_peaks = subparsers.add_parser(
         "peaks",
         help="Plot reflectivity curve with first prominent peak highlighted",
     )
-    p_peaks.add_argument("data_file", nargs="?",
-                          default="dataset/train/s000780_theoretical_curve.dat",
-                          help="Path to data file (default: dataset/train/s000780_theoretical_curve.dat)")
+    p_peaks.add_argument(
+        "data_file",
+        nargs="?",
+        default="dataset/train/s000780_theoretical_curve.dat",
+        help="Path to data file (default: dataset/train/s000780_theoretical_curve.dat)",
+    )
     p_peaks.add_argument("--output-dir", help="Output directory")
-    p_peaks.add_argument("--min-prominence", type=float, default=0.2,
-                         help="Minimum peak prominence (default: 0.2)")
-    p_peaks.add_argument("--min-rise", type=float, default=0.05,
-                         help="Minimum rise (default: 0.05)")
-    p_peaks.add_argument("--min-width", type=int, default=10,
-                         help="Minimum peak width (default: 10)")
-    p_peaks.add_argument("--full-curve", action="store_true",
-                         help="Analyze full curve instead of first half")
+    p_peaks.add_argument(
+        "--min-prominence",
+        type=float,
+        default=0.2,
+        help="Minimum peak prominence (default: 0.2)",
+    )
+    p_peaks.add_argument(
+        "--min-rise", type=float, default=0.05, help="Minimum rise (default: 0.05)"
+    )
+    p_peaks.add_argument(
+        "--min-width", type=int, default=10, help="Minimum peak width (default: 10)"
+    )
+    p_peaks.add_argument(
+        "--full-curve",
+        action="store_true",
+        help="Analyze full curve instead of first half",
+    )
 
     # -- coverage --
     p_cov = subparsers.add_parser(

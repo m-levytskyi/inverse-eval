@@ -5,7 +5,6 @@ Parameter constraints utility for ensuring physical validity of ReflecTorch pred
 """
 
 
-
 def apply_physical_constraints(prediction_dict, layer_count=1):
     """
     Apply physical constraints to ReflecTorch predictions to prevent negative

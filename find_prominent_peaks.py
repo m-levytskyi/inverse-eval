@@ -204,7 +204,7 @@ def plot_and_save_peaks(
         output_path = Path(output_dir) / f"{exp_id}_peaks.pdf"
     else:
         output_path = Path(output_dir) / f"{exp_id}_peaks.png"
-    
+
     plt.savefig(output_path)
     plt.close(fig)
 

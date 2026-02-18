@@ -49,7 +49,9 @@ def replot_batch_results(results_dir, output_dir=None):
         layer_count = 1
 
     successful = {k: v for k, v in batch_results.items() if v.get("success", False)}
-    print(f"Processing {len(successful)}/{len(batch_results)} successful experiments ({layer_count} layer(s))")
+    print(
+        f"Processing {len(successful)}/{len(batch_results)} successful experiments ({layer_count} layer(s))"
+    )
     print(f"Saving plots to: {output_dir}")
 
     try:
@@ -68,6 +70,7 @@ def replot_batch_results(results_dir, output_dir=None):
     except Exception as e:
         print(f"Error creating plots: {e}")
         import traceback
+
         traceback.print_exc()
         return []
 
@@ -201,7 +204,10 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
     anaklasis_dir = Path("anaklasis_eval")
 
     if pickle_path is None:
-        pickle_path = anaklasis_dir / f"results_exp_{layer_count}L_fitconstraints0_width0.3_simple.pkl"
+        pickle_path = (
+            anaklasis_dir
+            / f"results_exp_{layer_count}L_fitconstraints0_width0.3_simple.pkl"
+        )
     else:
         pickle_path = Path(pickle_path)
 
@@ -227,19 +233,23 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
 
     # Load pickle data and manifest
     targets, predictions, indices, bounds_flags, width = load_pickle_data(
-        str(pickle_path))
+        str(pickle_path)
+    )
 
     # Validate: convert_pickle_to_batch_results only supports fitconstraints=0 (6 params)
     if targets.shape[1] != 6:
-        print(f"Error: Pickle has {targets.shape[1]} parameters per experiment. "
-              f"Only fitconstraints=0 (6 parameters) is supported.")
+        print(
+            f"Error: Pickle has {targets.shape[1]} parameters per experiment. "
+            f"Only fitconstraints=0 (6 parameters) is supported."
+        )
         return []
 
     manifest_samples = load_manifest(str(manifest_path))
 
     # Convert to batch_results format
     batch_results, outlier_count = convert_pickle_to_batch_results(
-        targets, predictions, indices, bounds_flags, manifest_samples, width)
+        targets, predictions, indices, bounds_flags, manifest_samples, width
+    )
 
     if not batch_results:
         print("Error: No valid experiments after conversion")
@@ -254,8 +264,10 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     successful = {k: v for k, v in batch_results.items() if v.get("success", False)}
-    print(f"Processing {len(successful)} experiments "
-          f"({layer_count} layer(s), {outlier_count} outliers excluded)")
+    print(
+        f"Processing {len(successful)} experiments "
+        f"({layer_count} layer(s), {outlier_count} outliers excluded)"
+    )
     print(f"Saving plots to: {output_dir}")
 
     try:
@@ -274,6 +286,7 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
     except Exception as e:
         print(f"Error creating plots: {e}")
         import traceback
+
         traceback.print_exc()
         return []
 
@@ -303,7 +316,7 @@ def main():
         default=None,
         metavar="PICKLE_PATH",
         help="Replot anaklasis results from pickle file "
-             "(default: anaklasis_eval/results_exp_1L_fitconstraints0_width0.3_simple.pkl)",
+        "(default: anaklasis_eval/results_exp_1L_fitconstraints0_width0.3_simple.pkl)",
     )
     parser.add_argument(
         "--batch-ids",

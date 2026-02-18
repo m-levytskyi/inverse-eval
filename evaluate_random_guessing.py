@@ -270,7 +270,7 @@ def plot_comparison_histogram(
 ):
     """
     Create comparison histogram with model and random-guess MAPEs.
-    
+
     Wrapper around plot_random_guessing_comparison from plotting_utils.
 
     Args:
@@ -648,7 +648,7 @@ def generate_synthetic_random_evaluation(
             fontsize=8,
             bbox=dict(boxstyle="round,pad=0.3", alpha=0.8),
         )
-        
+
         # Remove ticks
         ax.tick_params(axis="both", which="both", length=0)
 
