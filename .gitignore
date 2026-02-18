@@ -1,10 +1,5 @@
 __pycache__/
 
-# Large data directories (keep these ignored)
-data/MARIA_VIPR_dataset/
-data/Experimental/
-dataset/
-
 # Generated results (keep these ignored)
 inference_results/
 batch_inference_results/
