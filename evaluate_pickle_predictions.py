@@ -22,9 +22,6 @@ import json
 import numpy as np
 from pathlib import Path
 
-# Add reflectorch-maria to path
-sys.path.insert(0, str(Path(__file__).parent / 'reflectorch-maria'))
-
 from error_calculation import calculate_parameter_metrics
 from plotting_utils import plot_batch_mape_distribution, plot_batch_parameter_breakdown
 from constraints_utils import get_constraint_ranges, get_constraint_widths

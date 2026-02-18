@@ -201,11 +201,12 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
     Returns:
         List of saved plot paths
     """
+    root_dir = Path(".")
     anaklasis_dir = Path("anaklasis_eval")
 
     if pickle_path is None:
         pickle_path = (
-            anaklasis_dir
+            root_dir
             / f"results_exp_{layer_count}L_fitconstraints0_width0.3_simple.pkl"
         )
     else:
@@ -220,16 +221,12 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
         print(f"Error: {manifest_path} not found!")
         return []
 
-    # Import conversion functions from anaklasis_eval
-    sys.path.insert(0, str(anaklasis_dir.resolve()))
-    try:
-        from evaluate_pickle_predictions import (
-            load_pickle_data,
-            load_manifest,
-            convert_pickle_to_batch_results,
-        )
-    finally:
-        sys.path.pop(0)
+    # Import conversion functions from root directory
+    from evaluate_pickle_predictions import (
+        load_pickle_data,
+        load_manifest,
+        convert_pickle_to_batch_results,
+    )
 
     # Load pickle data and manifest
     targets, predictions, indices, bounds_flags, width = load_pickle_data(
