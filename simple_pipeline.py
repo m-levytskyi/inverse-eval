@@ -18,7 +18,6 @@ from parameter_discovery import (
     parse_true_parameters_from_model_file,
     generate_true_sld_profile,
     get_prior_bounds_for_experiment,
-    get_parameter_names_for_layer_count,
 )
 from error_calculation import (
     calculate_fit_metrics,

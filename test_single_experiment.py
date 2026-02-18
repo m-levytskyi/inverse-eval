@@ -8,11 +8,9 @@ by comparing predicted parameters against expected values with tolerance thresho
 import torch
 import numpy as np
 import sys
-from pathlib import Path
 
 # Import our modular utilities
 from parameter_discovery import discover_experiment_files
-from error_calculation import calculate_fit_metrics
 from reflectorch import EasyInferenceModel
 
 # Set seed for reproducibility
@@ -205,7 +203,7 @@ class ReflectometryTest:
             return True
 
         except Exception as e:
-            print(f"\n" + "=" * 80)
+            print("\n" + "=" * 80)
             print(f"TEST FAILED: {str(e)}")
             print("=" * 80)
             return False

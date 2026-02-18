@@ -6,8 +6,6 @@ This module provides functions for discovering experiment files, parsing true pa
 and generating various types of prior bounds for reflectometry inference.
 """
 
-import os
-import re
 import numpy as np
 from pathlib import Path
 from constraints_utils import get_constraint_ranges, get_constraint_range
@@ -810,7 +808,7 @@ def discover_batch_experiments(
                     exp_id = exp_file.name.replace("_experimental_curve.dat", "")
                     experiments.append(exp_id)
             else:
-                print(f"  No experiment files found in root directory")
+                print("  No experiment files found in root directory")
 
     print(f"Found {len(experiments)} experiments")
 

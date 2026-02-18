@@ -693,10 +693,9 @@ def plot_parameter_comparison_grid(
     )
 
     if not param_names:
-        print(f"No parameter data available")
+        print("No parameter data available")
         return None
 
-    mape_label = _mape_label(priors_type)
     mape_type, title_suffix, deviation_pct = _build_comparison_title(config, priors_type)
 
     # Create subplots

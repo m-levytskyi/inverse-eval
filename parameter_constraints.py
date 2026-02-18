@@ -4,7 +4,6 @@
 Parameter constraints utility for ensuring physical validity of ReflecTorch predictions.
 """
 
-import numpy as np
 
 
 def apply_physical_constraints(prediction_dict, layer_count=1):
@@ -143,5 +142,5 @@ if __name__ == "__main__":
         print(f"  Minimum value: {info['min_value']} {info['unit']}")
         print(f"  Reason: {info['reason']}")
 
-    print(f"\nThese constraints prevent the 'Negative roughness encountered' and")
-    print(f"'Negative thickness encountered' errors by ensuring physical validity.")
+    print("\nThese constraints prevent the 'Negative roughness encountered' and")
+    print("'Negative thickness encountered' errors by ensuring physical validity.")

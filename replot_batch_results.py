@@ -8,7 +8,6 @@ Supports both generic batch replotting and paper-specific categorized replotting
 
 import json
 import sys
-import pickle
 import argparse
 from pathlib import Path
 from plotting_utils import create_batch_analysis_plots

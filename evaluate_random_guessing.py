@@ -186,7 +186,7 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     }
 
     if not successful_results:
-        print(f"  No successful experiments in batch")
+        print("  No successful experiments in batch")
         return [], []
 
     print(f"  Found {len(successful_results)} successful experiments")
@@ -414,7 +414,7 @@ def generate_synthetic_random_evaluation(
         output_path: Path to save the plot
     """
     print(f"\n{'=' * 80}")
-    print(f"SYNTHETIC RANDOM EVALUATION")
+    print("SYNTHETIC RANDOM EVALUATION")
     print(f"{'=' * 80}")
     print(f"Generating {num_experiments} synthetic experiments")
     print(f"Layer count: {layer_count}")
@@ -579,7 +579,6 @@ def generate_synthetic_random_evaluation(
 
     # Create per-parameter MAPE histograms
     print("\nGenerating per-parameter MAPE distributions...")
-    n_params = len(param_names)
     fig_params, axes = plt.subplots(2, 3, figsize=(18, 12))
     axes = axes.flatten()
 
@@ -687,16 +686,16 @@ def generate_synthetic_random_evaluation(
     print(f"\n{'=' * 80}")
     print("INTERPRETATION:")
     print(f"{'=' * 80}")
-    print(f"This represents the WORST CASE scenario - completely uninformed guessing")
-    print(f"where we don't even know the true parameter values.")
-    print(f"")
+    print("This represents the WORST CASE scenario - completely uninformed guessing")
+    print("where we don't even know the true parameter values.")
+    print("")
     print(f"Expected mean MAPE ≈ {100 / 3:.1f}% for uniform random (theoretical)")
     print(f"Actual overall mean MAPE = {np.mean(mapes):.1f}%")
-    print(f"")
-    print(f"Each parameter should follow a triangular distribution with mean ≈ 33.33%")
-    print(f"when both true and predicted values are uniformly sampled.")
-    print(f"")
-    print(f"Any model or informed random guessing that performs better than")
+    print("")
+    print("Each parameter should follow a triangular distribution with mean ≈ 33.33%")
+    print("when both true and predicted values are uniformly sampled.")
+    print("")
+    print("Any model or informed random guessing that performs better than")
     print(f"{np.mean(mapes):.1f}% demonstrates knowledge of the true parameters!")
     print(f"{'=' * 80}")
 
@@ -737,7 +736,7 @@ if __name__ == "__main__":
                 print(f"Evaluating batch {batch_numbers[0]} against random guessing")
             else:
                 print(f"Evaluating batches {batch_numbers} against random guessing")
-            print(f"Generating ONE random prediction per experiment\n")
+            print("Generating ONE random prediction per experiment\n")
 
             process_batches(batch_numbers)
         else:
@@ -749,6 +748,6 @@ if __name__ == "__main__":
         print(
             f"Evaluating batches {batch_numbers[0]} to {batch_numbers[-1]} against random guessing"
         )
-        print(f"Generating ONE random prediction per experiment\n")
+        print("Generating ONE random prediction per experiment\n")
 
         process_batches(batch_numbers)

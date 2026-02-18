@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 import glob
 import tqdm
@@ -162,7 +161,7 @@ def find_experiments_with_prominent_peaks(
             experiments_without_peaks.append(exp_id)
 
     if verbose:
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  Experiments with prominent peaks: {len(experiments_with_peaks)}")
         print(
             f"  Experiments without prominent peaks: {len(experiments_without_peaks)}"

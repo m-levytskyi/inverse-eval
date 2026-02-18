@@ -11,11 +11,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# Apply paper plotting style if available
-try:
-    plt.style.use("paper.mplstyle")
-except:
-    pass
+# Apply paper plotting style
+plt.style.use("paper.mplstyle")
+
 
 
 def load_batch_results(results_file):

@@ -269,7 +269,7 @@ def calculate_parameter_metrics(
         metrics["overall"]["constraint_mape"] = float(overall_constraint_mape)
         metrics["priors_type"] = priors_type
 
-    print(f"Parameter metrics calculated:")
+    print("Parameter metrics calculated:")
     print(f"  - Overall MAPE: {overall_mape:.2f}%")
     if overall_constraint_mape is not None:
         print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
@@ -321,53 +321,6 @@ def calculate_residuals(y_exp, y_pred, sigma_exp, q_exp, q_model):
         "residual_stats": residual_stats,
         "standardized_stats": standardized_stats,
     }
-
-
-def calculate_confidence_intervals(
-    pred_params, true_params=None, confidence_level=0.95
-):
-    """
-    Calculate confidence intervals for predicted parameters.
-
-    This is a simplified implementation. In practice, you might want to use
-    bootstrap methods or uncertainty propagation from the model.
-
-    Args:
-        pred_params: Predicted parameter values
-        true_params: True parameter values (optional, for validation)
-        confidence_level: Confidence level (default: 0.95)
-
-    Returns:
-        Dictionary with confidence interval information
-    """
-    # This is a placeholder implementation
-    # In practice, you would need uncertainty estimates from the model
-
-    alpha = 1 - confidence_level
-    z_score = 1.96  # For 95% confidence interval
-
-    # Assume 10% uncertainty as a rough estimate
-    # This should be replaced with actual uncertainty estimates
-    uncertainties = np.array(pred_params) * 0.1
-
-    lower_bounds = np.array(pred_params) - z_score * uncertainties
-    upper_bounds = np.array(pred_params) + z_score * uncertainties
-
-    intervals = {
-        "confidence_level": confidence_level,
-        "lower_bounds": lower_bounds.tolist(),
-        "upper_bounds": upper_bounds.tolist(),
-        "uncertainties": uncertainties.tolist(),
-    }
-
-    if true_params is not None:
-        # Check if true values fall within confidence intervals
-        true_array = np.array(true_params)
-        within_ci = (true_array >= lower_bounds) & (true_array <= upper_bounds)
-        intervals["true_within_ci"] = within_ci.tolist()
-        intervals["coverage"] = float(np.mean(within_ci))
-
-    return intervals
 
 
 def summary_statistics(fit_metrics, param_metrics=None):
@@ -426,7 +379,7 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
     print(f"METRICS REPORT: {model_name}")
     print(f"{'=' * 60}")
 
-    print(f"\nFIT QUALITY METRICS:")
+    print("\nFIT QUALITY METRICS:")
     print(f"  R-squared:              {fit_metrics.get('r_squared', 'N/A'):.6f}")
     print(f"  MSE:                    {fit_metrics.get('mse', 'N/A'):.6e}")
     print(f"  L1 Loss:                {fit_metrics.get('l1_loss', 'N/A'):.6e}")
@@ -442,10 +395,9 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
     )
 
     if param_metrics:
-        print(f"\nPARAMETER ACCURACY:")
+        print("\nPARAMETER ACCURACY:")
 
         # Use constraint-based MAPE as primary metric when using constraint-based priors
-        priors_type = param_metrics.get("priors_type", "unknown")
         use_constraint_mape = "constraint_mape" in param_metrics.get("overall", {})
 
         if use_constraint_mape:
@@ -465,7 +417,7 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
         )
 
         if "by_type" in param_metrics:
-            print(f"\n  By Parameter Type:")
+            print("\n  By Parameter Type:")
             for param_type, metrics in param_metrics["by_type"].items():
                 print(f"    {param_type.capitalize()}:")
                 if use_constraint_mape and "constraint_mape" in metrics:
@@ -488,15 +440,15 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
     )
     mape_type = "Constraint-based MAPE" if use_constraint_mape else "MAPE"
 
-    print(f"\nQUALITY ASSESSMENT:")
+    print("\nQUALITY ASSESSMENT:")
     if summary["fit_quality"]["excellent"]:
-        print(f"  Fit Quality: EXCELLENT (R² > 0.95)")
+        print("  Fit Quality: EXCELLENT (R² > 0.95)")
     elif summary["fit_quality"]["good"]:
-        print(f"  Fit Quality: GOOD (R² > 0.90)")
+        print("  Fit Quality: GOOD (R² > 0.90)")
     elif summary["fit_quality"]["acceptable"]:
-        print(f"  Fit Quality: ACCEPTABLE (R² > 0.80)")
+        print("  Fit Quality: ACCEPTABLE (R² > 0.80)")
     else:
-        print(f"  Fit Quality: POOR (R² ≤ 0.80)")
+        print("  Fit Quality: POOR (R² ≤ 0.80)")
 
     if param_metrics:
         if summary["parameter_accuracy"]["excellent"]:

@@ -267,7 +267,7 @@ class BatchInferencePipeline:
             List of experiment IDs
         """
         if self.use_prominent_features:
-            print(f"\n🔍 PROMINENT FEATURES MODE ENABLED")
+            print("\n🔍 PROMINENT FEATURES MODE ENABLED")
             print("=" * 50)
 
             # Find experiments with prominent peaks
@@ -285,7 +285,7 @@ class BatchInferencePipeline:
             original_num = self.num_experiments
             self.num_experiments = len(experiments_with_peaks)
 
-            print(f"\nPROMINENT FEATURES FILTERING RESULTS:")
+            print("\nPROMINENT FEATURES FILTERING RESULTS:")
             print(
                 f"  Found {len(experiments_with_peaks)} experiments with prominent peaks"
             )
@@ -300,7 +300,7 @@ class BatchInferencePipeline:
                     for exp_id in self.experiment_ids
                     if exp_id in experiments_with_peaks
                 ]
-                print(f"  Filtering provided experiment IDs...")
+                print("  Filtering provided experiment IDs...")
                 print(f"  Provided: {len(self.experiment_ids)} experiments")
                 print(f"  With prominent peaks: {len(filtered_ids)} experiments")
 
@@ -437,7 +437,7 @@ class BatchInferencePipeline:
 
                         if not is_within:
                             print(f"  OUTLIER DETECTED: {exp_id}")
-                            print(f"  True parameters outside constraint bounds:")
+                            print("  True parameters outside constraint bounds:")
                             for (
                                 param_name,
                                 value,
@@ -613,8 +613,8 @@ class BatchInferencePipeline:
         # Create plots with outlier and failure statistics
         if successful_results:
             try:
-                print(f"\nCreating analysis plots...")
-                plot_paths = create_batch_analysis_plots(
+                print("\nCreating analysis plots...")
+                create_batch_analysis_plots(
                     successful_results,
                     layer_count=self.layer_count,
                     output_dir=str(self.output_dir),
@@ -626,7 +626,7 @@ class BatchInferencePipeline:
                     failed_count=failed_count,
                     outlier_count=outlier_count,
                 )
-                print(f"Analysis plots completed")
+                print("Analysis plots completed")
             except Exception as e:
                 print(f"Warning: Failed to create plots: {e}")
 

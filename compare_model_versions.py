@@ -10,10 +10,8 @@ The baseline model appears as grey background bars, q-weighted as colored foregr
 """
 
 import json
-import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 from collections import defaultdict
 from plotting_utils import plot_model_comparison_histogram, plot_parameter_comparison_grid
 
@@ -276,7 +274,7 @@ def generate_comparison_plots(
         output_dir: Output directory for plots
     """
     print(f"\n{'=' * 80}")
-    print(f"MODEL COMPARISON: Q-Weighted vs Baseline")
+    print("MODEL COMPARISON: Q-Weighted vs Baseline")
     print(f"{'=' * 80}")
     print(
         f"Baseline batches: {baseline_range[0]}-{baseline_range[1]} (Generated data only)"
@@ -314,7 +312,7 @@ def generate_comparison_plots(
 
     # Generate plots for each matching pair
     for baseline_path, qweighted_path, config in matches:
-        print(f"\nProcessing pair:")
+        print("\nProcessing pair:")
         print(f"  Baseline: {baseline_path.name}")
         print(f"  Q-Weighted: {qweighted_path.name}")
         print(
@@ -337,7 +335,7 @@ def generate_comparison_plots(
             print(f"  Q-Weighted: {len(qweighted_mapes)} MAPEs extracted")
 
             if not baseline_mapes or not qweighted_mapes:
-                print(f"  Skipping - insufficient data")
+                print("  Skipping - insufficient data")
                 continue
 
             # Determine output filenames

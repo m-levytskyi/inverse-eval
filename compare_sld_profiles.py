@@ -210,14 +210,13 @@ def compare_sld_profiles(
             layer_key = "2_layer" if "2_layer" in true_params_dict else "1_layer"
             if layer_key in true_params_dict:
                 params = true_params_dict[layer_key]["params"]
-                param_names = true_params_dict[layer_key]["param_names"]
 
                 # Format parameters for display
                 info_text += f"Model Parameters ({layer_key}):\n"
 
                 if layer_key == "1_layer":
                     thickness, amb_rough, sub_rough, layer_sld, sub_sld = params
-                    info_text += f"  Ambient SLD: 3.50 ×10⁻⁶ Å⁻²\n"
+                    info_text += "  Ambient SLD: 3.50 ×10⁻⁶ Å⁻²\n"
                     info_text += f"  Layer thickness: {thickness:.1f} Å\n"
                     info_text += f"  Layer SLD: {layer_sld:.2f} ×10⁻⁶ Å⁻²\n"
                     info_text += f"  Substrate SLD: {sub_sld:.2f} ×10⁻⁶ Å⁻²\n"
@@ -234,7 +233,7 @@ def compare_sld_profiles(
                         layer2_sld,
                         sub_sld,
                     ) = params
-                    info_text += f"  Ambient SLD: 3.50 ×10⁻⁶ Å⁻²\n"
+                    info_text += "  Ambient SLD: 3.50 ×10⁻⁶ Å⁻²\n"
                     info_text += f"  Layer1 thickness: {thickness1:.1f} Å\n"
                     info_text += f"  Layer1 SLD: {layer1_sld:.2f} ×10⁻⁶ Å⁻²\n"
                     info_text += f"  Layer2 thickness: {thickness2:.1f} Å\n"
@@ -422,7 +421,7 @@ def batch_compare_sld_profiles(
 
     # Summary
     successful = sum(1 for fig in results.values() if fig is not None)
-    print(f"\n" + "=" * 80)
+    print("\n" + "=" * 80)
     print(f"Batch comparison completed: {successful}/{len(experiment_ids)} successful")
 
     return results
