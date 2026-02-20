@@ -366,12 +366,12 @@ def summary_statistics(fit_metrics, param_metrics=None):
     return summary
 
 
-def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
+def print_metrics_report(fit_metrics=None, param_metrics=None, model_name="Model"):
     """
     Print a formatted report of all calculated metrics.
 
     Args:
-        fit_metrics: Dictionary of fit metrics
+        fit_metrics: Dictionary of fit metrics (optional)
         param_metrics: Dictionary of parameter metrics (optional)
         model_name: Name of the model for the report
     """
@@ -379,20 +379,21 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
     print(f"METRICS REPORT: {model_name}")
     print(f"{'=' * 60}")
 
-    print("\nFIT QUALITY METRICS:")
-    print(f"  R-squared:              {fit_metrics.get('r_squared', 'N/A'):.6f}")
-    print(f"  MSE:                    {fit_metrics.get('mse', 'N/A'):.6e}")
-    print(f"  L1 Loss:                {fit_metrics.get('l1_loss', 'N/A'):.6e}")
-    print(f"  Chi-squared:            {fit_metrics.get('chi_squared', 'N/A'):.6f}")
-    print(
-        f"  Reduced Chi-squared:    {fit_metrics.get('reduced_chi_squared', 'N/A'):.6f}"
-    )
-    print(
-        f"  Mean Relative Error:    {fit_metrics.get('mean_relative_error', 'N/A'):.4f}"
-    )
-    print(
-        f"  Max Relative Error:     {fit_metrics.get('max_relative_error', 'N/A'):.4f}"
-    )
+    if fit_metrics is not None:
+        print("\nFIT QUALITY METRICS:")
+        print(f"  R-squared:              {fit_metrics.get('r_squared', 'N/A'):.6f}")
+        print(f"  MSE:                    {fit_metrics.get('mse', 'N/A'):.6e}")
+        print(f"  L1 Loss:                {fit_metrics.get('l1_loss', 'N/A'):.6e}")
+        print(f"  Chi-squared:            {fit_metrics.get('chi_squared', 'N/A'):.6f}")
+        print(
+            f"  Reduced Chi-squared:    {fit_metrics.get('reduced_chi_squared', 'N/A'):.6f}"
+        )
+        print(
+            f"  Mean Relative Error:    {fit_metrics.get('mean_relative_error', 'N/A'):.4f}"
+        )
+        print(
+            f"  Max Relative Error:     {fit_metrics.get('max_relative_error', 'N/A'):.4f}"
+        )
 
     if param_metrics:
         print("\nPARAMETER ACCURACY:")
@@ -432,32 +433,32 @@ def print_metrics_report(fit_metrics, param_metrics=None, model_name="Model"):
                 print(f"      MSE:  {metrics.get('mse', 'N/A'):.6f}")
 
     # Generate quality assessment
-    summary = summary_statistics(fit_metrics, param_metrics)
-
-    # Determine which MAPE metric is being used for assessment
     use_constraint_mape = param_metrics and "constraint_mape" in param_metrics.get(
         "overall", {}
     )
     mape_type = "Constraint-based MAPE" if use_constraint_mape else "MAPE"
 
-    print("\nQUALITY ASSESSMENT:")
-    if summary["fit_quality"]["excellent"]:
-        print("  Fit Quality: EXCELLENT (R² > 0.95)")
-    elif summary["fit_quality"]["good"]:
-        print("  Fit Quality: GOOD (R² > 0.90)")
-    elif summary["fit_quality"]["acceptable"]:
-        print("  Fit Quality: ACCEPTABLE (R² > 0.80)")
-    else:
-        print("  Fit Quality: POOR (R² ≤ 0.80)")
+    if fit_metrics is not None or param_metrics is not None:
+        summary = summary_statistics(fit_metrics or {}, param_metrics)
+        print("\nQUALITY ASSESSMENT:")
+        if fit_metrics is not None:
+            if summary["fit_quality"]["excellent"]:
+                print("  Fit Quality: EXCELLENT (R² > 0.95)")
+            elif summary["fit_quality"]["good"]:
+                print("  Fit Quality: GOOD (R² > 0.90)")
+            elif summary["fit_quality"]["acceptable"]:
+                print("  Fit Quality: ACCEPTABLE (R² > 0.80)")
+            else:
+                print("  Fit Quality: POOR (R² ≤ 0.80)")
 
-    if param_metrics:
-        if summary["parameter_accuracy"]["excellent"]:
-            print(f"  Parameter Accuracy: EXCELLENT ({mape_type} < 5%)")
-        elif summary["parameter_accuracy"]["good"]:
-            print(f"  Parameter Accuracy: GOOD ({mape_type} < 10%)")
-        elif summary["parameter_accuracy"]["acceptable"]:
-            print(f"  Parameter Accuracy: ACCEPTABLE ({mape_type} < 20%)")
-        else:
-            print(f"  Parameter Accuracy: POOR ({mape_type} ≥ 20%)")
+        if param_metrics:
+            if summary["parameter_accuracy"]["excellent"]:
+                print(f"  Parameter Accuracy: EXCELLENT ({mape_type} < 5%)")
+            elif summary["parameter_accuracy"]["good"]:
+                print(f"  Parameter Accuracy: GOOD ({mape_type} < 10%)")
+            elif summary["parameter_accuracy"]["acceptable"]:
+                print(f"  Parameter Accuracy: ACCEPTABLE ({mape_type} < 20%)")
+            else:
+                print(f"  Parameter Accuracy: POOR ({mape_type} ≥ 20%)")
 
     print(f"{'=' * 60}\n")
