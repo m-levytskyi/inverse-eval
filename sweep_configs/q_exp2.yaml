@@ -1,9 +1,9 @@
 # Q-weighted exp2 configuration sweep (mixed sigmas)
 # Corresponds to: auto_batch_sweep_q_exp2.py
 
-prior_deviations: [30]
-sld_modes: ["none"]
-prominent_features: [false]
+prior_deviations: [5, 30, 99]
+sld_modes: ["none", "backing", "all"]
+prominent_features: [false, true]
 priors_type: "constraint_based"
 
 inference_backend: "nf"
