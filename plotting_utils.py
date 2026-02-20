@@ -457,6 +457,7 @@ def plot_batch_parameter_breakdown(
             "parameter_breakdown", layer_count, use_prominent_features
         )
         plot_file = Path(output_dir) / filename
+        plot_file.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(plot_file)
         plt.close()
         print(f"Parameter breakdown plot saved to: {plot_file}")
@@ -483,6 +484,9 @@ def create_batch_analysis_plots(
         Dictionary with paths to saved plots
     """
     plot_paths = {}
+
+    if save and output_dir is not None:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     plot_paths["mape_distribution"] = plot_batch_mape_distribution(
         batch_results,
