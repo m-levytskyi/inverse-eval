@@ -1,0 +1,31 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: evaluation_pipeline
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Mykhailo
+    family-names: Levytskyi
+    email: m.levytskyi@hm.edu
+    affiliation: 'Hochschule München, FZ Jülich'
+    orcid: 'https://orcid.org/0009-0009-0423-8204'
+repository-code: 'https://gitlab.lrz.de/thesis-levytskyi/evaluation_pipeline'
+url: 'https://gitlab.lrz.de/thesis-levytskyi'
+abstract: >-
+  A research evaluation pipeline for neutron/X-ray
+  reflectometry parameter estimation using normalizing flow
+  (NF) neural networks. This repository forms part of a
+  master's thesis on probabilistic machine learning methods
+  for thin-film analysis.
+
+  The pipeline evaluates the custom nflows_reflectorch
+  package — an extension of reflectorch that adds
+  normalizing flows support and several advanced input
+  transformations — against the MARIA instrument dataset
+  from the MLZ (Maier-Leibnitz Zentrum) neutron source.
+date-released: '2026-02-27'
+
