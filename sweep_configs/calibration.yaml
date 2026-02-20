@@ -2,8 +2,8 @@
 # Corresponds to: auto_batch_sweep_calibration.py
 
 prior_deviations: [5, 30, 99]
-sld_modes: ["none"]
-prominent_features: [false]
+sld_modes: ["none", "backing", "all"]
+prominent_features: [false, true]
 priors_type: "constraint_based"
 
 inference_backend: "nf"
