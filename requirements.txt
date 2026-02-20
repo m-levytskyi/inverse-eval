@@ -1,26 +1,9 @@
-# Reflectorch Evaluation Pipeline — Python dependencies
-# Python 3.12 required
-#
-# IMPORTANT: reflectorch must be installed from the custom GitLab source below,
-# NOT from PyPI. The nflows_reflectorch package extends reflectorch with
-# normalizing flows support and is not available on PyPI.
-#
-# Install via pip:
-#   pip install -r requirements.txt
-#
-# Or via Pipenv (recommended):
-#   pipenv install
-
-# Core ML / reflectometry backend (install from GitLab, not PyPI)
-git+https://gitlab.lrz.de/thesis-levytskyi/nflows_reflectorch.git
-
 # Numerical & scientific computing
 numpy
 scipy
 pandas
 
 # Machine learning
-torch
 scikit-learn
 
 # Plotting

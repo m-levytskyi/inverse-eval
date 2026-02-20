@@ -1,8 +1,9 @@
 # Makefile for evaluation_pipeline
 # - creates a local venv
 # - clones nflows_reflectorch
-# - installs it editable into the venv
-# - installs remaining dependencies from requirements.txt (and/or Pipfile via pipenv)
+# - (optionally) pulls Git LFS models
+# - installs nflows_reflectorch editable into the venv
+# - installs PyTorch (pinned legacy cu118 by default) + remaining deps
 
 SHELL := /bin/bash
 .ONESHELL:
@@ -17,23 +18,34 @@ FW_DIR      := $(VENDOR_DIR)/nflows_reflectorch
 
 # Use HTTPS by default; switch to SSH if your supervisors use SSH keys:
 FW_REPO_URL ?= https://gitlab.lrz.de/thesis-levytskyi/nflows_reflectorch.git
-# Pin to a tag/commit for reproducibility (recommended):
+# Pin to a tag/commit for reproducibility:
 FW_REF      ?= dev_ml
 
-REQ_FILE    := requirements.txt
+REQ_FILE            := requirements.txt
 
-.PHONY: help setup venv framework install-framework deps lfs check-tools clean distclean
+TORCH_WHEEL ?= cu118   # cu118 | cu121 | cpu
+TORCH_REQ_cu118 := requirements.torch-cu118.txt
+TORCH_REQ_cu121 := requirements.torch-cu121.txt
+
+.PHONY: help setup venv framework install-framework deps torch lfs check-tools check-torch clean distclean
 
 help:
 	@echo "Targets:"
-	@echo "  make setup           Create venv, clone framework, install editable, install deps"
-	@echo "  make venv            Create/update venv"
-	@echo "  make framework       Clone/update framework repo at FW_REF into $(FW_DIR)"
+	@echo "  make setup              Create venv, clone framework, pull LFS, install framework editable, install deps"
+	@echo "  make venv               Create/update venv"
+	@echo "  make framework          Clone/update framework repo at FW_REF into $(FW_DIR)"
+	@echo "  make lfs                Pull Git LFS objects in framework repo (if used)"
 	@echo "  make install-framework  Install framework editable into venv"
-	@echo "  make deps            Install other dependencies"
-	@echo "  make lfs             Pull Git LFS objects in framework repo (if used)"
-	@echo "  make clean           Remove venv"
-	@echo "  make distclean       Remove venv + vendor/"
+	@echo "  make torch              Install torch according to TORCH_WHEEL ($(TORCH_WHEEL))"
+	@echo "  make deps               Install torch + other dependencies"
+	@echo "  make check-torch        Print torch/cuda status"
+	@echo "  make clean              Remove venv"
+	@echo "  make distclean          Remove venv + vendor/"
+	@echo ""
+	@echo "Vars:"
+	@echo "  TORCH_WHEEL=cu118|cu121|cpu"
+	@echo "  FW_REF=<branch|tag|commit>"
+	@echo "  FW_REPO_URL=<url>"
 
 setup: check-tools venv framework lfs install-framework deps
 
@@ -54,9 +66,7 @@ framework:
 	fi
 	cd "$(FW_DIR)"
 	git fetch --all --tags --prune
-	# checkout pinned ref (branch/tag/commit)
 	git checkout "$(FW_REF)"
-	# ensure working tree matches remote for branches
 	if git show-ref --verify --quiet "refs/remotes/origin/$(FW_REF)"; then \
 		git reset --hard "origin/$(FW_REF)"; \
 	fi
@@ -73,20 +83,28 @@ lfs:
 	fi
 
 install-framework: venv framework
-	# Editable install of the local clone
 	$(PIP) install -e "$(FW_DIR)"
 
-deps: venv
+torch: venv
+ifeq ($(TORCH_WHEEL),cu118)
+	$(PIP) install -r $(TORCH_REQ_cu118)
+else ifeq ($(TORCH_WHEEL),cu121)
+	$(PIP) install -r $(TORCH_REQ_cu121)
+else ifeq ($(TORCH_WHEEL),cpu)
+	$(PIP) install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+else
+	@echo "Unknown TORCH_WHEEL=$(TORCH_WHEEL) (use cu118|cu121|cpu)"; exit 1
+endif
+
+deps: venv torch
 	@if [ -f "$(REQ_FILE)" ]; then \
 		$(PIP) install -r "$(REQ_FILE)"; \
 	else \
 		echo "No $(REQ_FILE) found; skipping."; \
 	fi
-	# If you still want to support Pipfile, uncomment:
-	# @if [ -f "Pipfile" ]; then \
-	#   $(PIP) install pipenv; \
-	#   PIPENV_VENV_IN_PROJECT=1 pipenv install --dev; \
-	# fi
+
+check-torch: venv
+	$(PY) -c "import torch; print('torch', torch.__version__); print('cuda available', torch.cuda.is_available()); print('device', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"
 
 clean:
 	rm -rf "$(VENV)"
