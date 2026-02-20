@@ -111,14 +111,14 @@ def get_batch_category(batch_id):
         return "NF_baseline"
     elif 233 <= batch_id <= 250:
         return "NF_qweighted"
-    elif batch_id == 291:
-        return "NF_mean_conditioned"
-    elif batch_id == 299:
-        return "NF_qweighted_exp1_alpha2_beta2"
-    elif batch_id == 301:
-        return "NF_qweighted_exp2_alpha4_beta4"
     elif batch_id == 320:
         return "NF_baseline_with_stats"
+    elif 324 <= batch_id <= 341:
+        return "NF_qweighted_exp1_alpha2_beta2_sweep"
+    elif 342 <= batch_id <= 359:
+        return "NF_qweighted_exp2_alpha4_beta4_sweep"
+    elif 360 <= batch_id <= 377:
+        return "NF_mean_conditioned_sweep"
     else:
         return "other"
 
@@ -162,10 +162,12 @@ def replot_paper_batches(batch_ids=None):
         # Default batch ranges for paper
         batch_ids = []
         batch_ids.extend(range(269, 287))  # NF baseline: 269-286
-        batch_ids.extend(range(232, 251))  # NF qweighted: 232-250
-        batch_ids.append(291)  # NF mean conditioned
-        batch_ids.append(299)  # NF qweighted exp1, alpha=beta=2
-        batch_ids.extend(range(102, 120))  # Reflectorch: 102-119
+        batch_ids.extend(range(233, 251))  # NF qweighted: 233-250
+        batch_ids.append(320)  # NF baseline with stats
+        batch_ids.extend(range(302, 320))  # Reflectorch: 302-319
+        batch_ids.extend(range(324, 342))  # NF qweighted exp1 sweep: 324-341
+        batch_ids.extend(range(342, 360))  # NF qweighted exp2 sweep: 342-359
+        batch_ids.extend(range(360, 378))  # NF mean conditioned sweep: 360-377
 
     batch_ids = sorted(set(batch_ids))
     print(f"Replotting {len(batch_ids)} batches")
