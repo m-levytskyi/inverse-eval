@@ -7,3 +7,9 @@ paper_batches/
 # Markdown files
 *.md
 !README.md
+
+# Virtual environment
+.venv/
+
+# Cloned repositories
+vendor/
