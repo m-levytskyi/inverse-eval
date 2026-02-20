@@ -6,37 +6,18 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 
 ---
 
-## Notebooks (Quick Start)
-
-The notebooks are the recommended starting point for exploring this pipeline:
-
-| Notebook | Description |
-|----------|-------------|
-| [`notebooks/01_single_experiment.ipynb`](notebooks/01_single_experiment.ipynb) | Step-by-step walkthrough of a single inference run — load data, build priors, run the NF model, visualise the fit and SLD profile |
-| [`notebooks/02_batch_inference.ipynb`](notebooks/02_batch_inference.ipynb) | Batch processing demonstration — run inference over many experiments and analyse the results |
-| [`notebooks/03_thesis_figures.ipynb`](notebooks/03_thesis_figures.ipynb) | Reproduce all figures from the thesis — MAPE histograms, model comparisons, coverage plots, and single-curve fits |
-
-Launch with:
-
-```bash
-pipenv shell
-jupyter lab notebooks/
-```
-
----
-
 ## Table of Contents
 
 - [Overview](#overview)
 - [Repository Structure](#repository-structure)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Notebooks (Quick Start)](#notebooks-quick-start)
 - [Dataset Setup](#dataset-setup)
 - [Configuration](#configuration)
 - [Running Experiments](#running-experiments)
 - [Reproducing Thesis Figures](#reproducing-thesis-figures)
 - [Module Reference](#module-reference)
-- [Notebooks](#notebooks)
 
 ---
 
@@ -118,8 +99,7 @@ evaluation_pipeline/
 │
 └── notebooks/
     ├── 01_single_experiment.ipynb   # Single-experiment walkthrough
-    ├── 02_batch_inference.ipynb     # Batch processing demonstration
-    └── 03_thesis_figures.ipynb      # Reproduce all thesis figures
+    └── 02_batch_inference.ipynb     # Batch processing demonstration
 ```
 
 ---
@@ -129,7 +109,7 @@ evaluation_pipeline/
 | Requirement | Version |
 |-------------|---------|
 | Python | 3.10-3.12 |
-| pipenv | latest |
+| make | any |
 | Git | any |
 | CUDA (optional) | 11.8+ (for GPU acceleration) |
 | LaTeX (optional) | for `text.usetex = True` in plots |
@@ -145,26 +125,45 @@ git clone <this-repo-url>
 cd evaluation_pipeline
 ```
 
-### 2. Install dependencies
-
-All dependencies, including the custom `nflows_reflectorch` package (installed directly from its GitLab source), are declared in the `Pipfile`. Run:
+### 2. Set up the environment
 
 ```bash
-pipenv install
+make setup && make check-torch
+```
+
+This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), installs PyTorch (CUDA 11.8 by default), and installs all remaining dependencies.
+
+If `check-torch` reports a CUDA error, rerun with a different wheel:
+
+```bash
+# CUDA 12.1
+make setup TORCH_WHEEL=cu121 && make check-torch
+
+# CPU only
+make setup TORCH_WHEEL=cpu && make check-torch
 ```
 
 ### 3. Activate the environment
 
 ```bash
-pipenv shell
+source .venv/bin/activate
 ```
 
-### 4. (Optional) Install PyTorch with CUDA
+---
 
-If you have an NVIDIA GPU, install the CUDA-enabled PyTorch build before running `pipenv install`:
+## Notebooks (Quick Start)
+
+The notebooks are the recommended starting point for exploring this pipeline:
+
+| Notebook | Description |
+|----------|-------------|
+| [`notebooks/01_single_experiment.ipynb`](notebooks/01_single_experiment.ipynb) | Step-by-step walkthrough of a single inference run — load data, build priors, run the NF model, visualise the fit and SLD profile |
+| [`notebooks/02_batch_inference.ipynb`](notebooks/02_batch_inference.ipynb) | Batch processing demonstration — run inference over many experiments and analyse the results |
+
+Launch with:
 
 ```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu118
+jupyter lab notebooks/
 ```
 
 ---
@@ -517,12 +516,4 @@ Calculates MAPE variants:
 
 Identifies experiments with prominent oscillation features using peak detection on the reflectivity curve. Used to create higher-difficulty evaluation subsets.
 
----
 
-## Notebooks
-
-| Notebook | Purpose |
-|----------|---------|
-| `notebooks/01_single_experiment.ipynb` | Step-by-step walkthrough of one inference run |
-| `notebooks/02_batch_inference.ipynb` | Batch processing demonstration with result analysis |
-| `notebooks/03_thesis_figures.ipynb` | Reproduce all figures from the thesis |
