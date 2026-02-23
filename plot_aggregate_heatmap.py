@@ -146,7 +146,7 @@ def plot(stats: dict, output_path: Path):
     im, _ = heatmap(
         np.ma.array(matrix, mask=np.isnan(matrix)),
         row_labels, col_labels, ax=ax,
-        cmap="viridis",
+        cmap="RdYlGn_r",
         cbarlabel=r"Mean MAPE (\%)",
     )
     annotate_heatmap(im, data=matrix, valfmt="{x:.2f}")
