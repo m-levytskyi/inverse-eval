@@ -27,8 +27,6 @@ from error_calculation import calculate_parameter_metrics
 
 PARAM_NAMES_5 = ["thickness", "amb_rough", "sub_rough", "layer_sld", "sub_sld"]
 PICKLE_TO_REFLECTORCH_INDICES = [3, 1, 4, 2, 5]
-# Constraint MAPE uses fixed constraint widths by parameter type, so numeric bounds are placeholders.
-PLACEHOLDER_PRIOR_BOUNDS_5 = [[0.0, 1.0] for _ in PARAM_NAMES_5]
 
 
 def load_constraint_mapes_from_summary(summary_file: Path) -> list[float]:
@@ -131,7 +129,6 @@ def load_anaklasis_constraint_mapes(pickle_file: Path) -> list[float]:
                 pred_params=pred_vals,
                 true_params=true_vals,
                 param_names=PARAM_NAMES_5,
-                prior_bounds=PLACEHOLDER_PRIOR_BOUNDS_5,
                 priors_type="constraint_based",
             )
 
