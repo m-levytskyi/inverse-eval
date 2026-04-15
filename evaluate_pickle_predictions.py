@@ -16,15 +16,13 @@ Pickle file: results_exp_1L_fitconstraints0_width0.3_simple.pkl
 - Should match batch_results_143.json setup
 """
 
-import sys
 import pickle
-import json
 import numpy as np
 from pathlib import Path
 
 from error_calculation import calculate_parameter_metrics
 from plotting_utils import plot_batch_mape_distribution, plot_batch_parameter_breakdown
-from constraints_utils import get_constraint_ranges, get_constraint_widths
+from constraints_utils import get_constraint_ranges
 
 
 def load_pickle_data(pickle_file='results_exp_1L_fitconstraints0_width0.3_simple.pkl'):
@@ -217,7 +215,7 @@ def convert_pickle_to_batch_results(targets, predictions, indices, bounds_flags,
         if (pkl_pos + 1) % 500 == 0:
             print(f"  Processed {pkl_pos + 1}/{len(indices)} experiments...")
     
-    print(f"\nConversion complete:")
+    print("\nConversion complete:")
     print(f"  Total experiments in pickle: {len(indices)}")
     print(f"  Outliers (excluded): {outlier_count}")
     print(f"  Valid experiments: {len(batch_results)}")
@@ -310,7 +308,7 @@ def main():
                         param_stats[param_type].append(pm['by_type'][param_type]['constraint_mape'])
     
     if constraint_mapes:
-        print(f"\nOverall Constraint-Based MAPE Statistics:")
+        print("\nOverall Constraint-Based MAPE Statistics:")
         print(f"  Total experiments: {len(constraint_mapes)}")
         print(f"  Mean: {np.mean(constraint_mapes):.2f}%")
         print(f"  Median: {np.median(constraint_mapes):.2f}%")
@@ -325,14 +323,14 @@ def main():
         poor = sum(1 for m in constraint_mapes if m >= 20)
         
         total = len(constraint_mapes)
-        print(f"\n  Distribution:")
+        print("\n  Distribution:")
         print(f"    Excellent (< 5%):     {excellent:4d} ({excellent/total*100:5.1f}%)")
         print(f"    Good (5-10%):         {good:4d} ({good/total*100:5.1f}%)")
         print(f"    Acceptable (10-20%):  {acceptable:4d} ({acceptable/total*100:5.1f}%)")
         print(f"    Poor (≥ 20%):         {poor:4d} ({poor/total*100:5.1f}%)")
     
     # Parameter-specific statistics
-    print(f"\nParameter-Specific Constraint-Based MAPE:")
+    print("\nParameter-Specific Constraint-Based MAPE:")
     for param_type, values in param_stats.items():
         if values:
             print(f"\n  {param_type.upper()}:")

@@ -16,3 +16,8 @@ sweep_results*
 denoised_as_theoretical_q/
 denoised_on_experimental_q/
 theoretical_on_experimental_q_test/
+# Virtual environment
+.venv/
+
+# Cloned repositories
+vendor/

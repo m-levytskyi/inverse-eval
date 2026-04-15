@@ -149,6 +149,8 @@ def plot_simple_comparison(
     predicted_sld_x,
     predicted_sld_y,
     polished_sld_y,
+    true_sld_x=None,
+    true_sld_y=None,
     experiment_name="Analysis",
     show=True,
     priors_config=None,
@@ -167,6 +169,8 @@ def plot_simple_comparison(
         predicted_sld_x: SLD profile x-axis
         predicted_sld_y: Predicted SLD profile
         polished_sld_y: Polished SLD profile
+        true_sld_x: True SLD profile x-axis (optional)
+        true_sld_y: True SLD profile values (optional)
         experiment_name: Name for plot title
         show: Whether to show the plot
         priors_config: Configuration dictionary containing SLD fixing mode
@@ -179,16 +183,16 @@ def plot_simple_comparison(
         if fix_sld_mode != "none":
             display_name = f"{experiment_name} (SLD fixed: {fix_sld_mode})"
 
-    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    ax_r, ax_sld = axes
 
-    # Plot reflectivity curves
-    ax.set_yscale("log")
-    ax.set_xlabel("Q [$\\AA^{-1}$]", fontsize=14)
-    ax.set_ylabel("R(Q)", fontsize=14)
-    ax.tick_params(axis="both", which="both", labelsize=12, length=0)
+    # --- Reflectivity panel ---
+    ax_r.set_yscale("log")
+    ax_r.set_xlabel("Q [$\\AA^{-1}$]", fontsize=14)
+    ax_r.set_ylabel("R(Q)", fontsize=14)
+    ax_r.tick_params(axis="both", which="both", labelsize=12, length=0)
 
-    # Experimental data with error bars
-    ax.errorbar(
+    ax_r.errorbar(
         q_exp,
         curve_exp,
         yerr=sigmas_exp,
@@ -200,14 +204,23 @@ def plot_simple_comparison(
         label="Experimental",
         zorder=1,
     )
-
-    # Predicted curves
-    ax.plot(q_model, predicted_curve, lw=2, label="Predicted")
-    ax.plot(q_model, polished_curve, ls="--", lw=2, label="Polished")
-
-    ax.legend(loc="upper right", fontsize=12)
+    ax_r.plot(q_model, predicted_curve, lw=2, label="Predicted")
+    ax_r.plot(q_model, polished_curve, ls="--", lw=2, label="Polished")
+    ax_r.legend(loc="upper right", fontsize=12)
     if not hide_title:
-        ax.set_title(f"Reflectivity - {display_name}", fontsize=14)
+        ax_r.set_title(f"Reflectivity - {display_name}", fontsize=14)
+
+    # --- SLD profile panel ---
+    ax_sld.plot(predicted_sld_x, predicted_sld_y, lw=2, label="Predicted")
+    ax_sld.plot(predicted_sld_x, polished_sld_y, ls="--", lw=2, label="Polished")
+    if true_sld_x is not None and true_sld_y is not None:
+        ax_sld.plot(true_sld_x, true_sld_y, lw=1.5, ls=":", label="True")
+    ax_sld.set_xlabel("z [$\\AA$]", fontsize=14)
+    ax_sld.set_ylabel("SLD [$10^{-6}$ $\\AA^{-2}$]", fontsize=14)
+    ax_sld.tick_params(axis="both", which="both", labelsize=12, length=0)
+    ax_sld.legend(loc="upper right", fontsize=12)
+    if not hide_title:
+        ax_sld.set_title(f"SLD Profile - {display_name}", fontsize=14)
 
     plt.tight_layout()
 
@@ -444,6 +457,7 @@ def plot_batch_parameter_breakdown(
             "parameter_breakdown", layer_count, use_prominent_features
         )
         plot_file = Path(output_dir) / filename
+        plot_file.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(plot_file)
         plt.close()
         print(f"Parameter breakdown plot saved to: {plot_file}")
@@ -470,6 +484,9 @@ def create_batch_analysis_plots(
         Dictionary with paths to saved plots
     """
     plot_paths = {}
+
+    if save and output_dir is not None:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     plot_paths["mape_distribution"] = plot_batch_mape_distribution(
         batch_results,

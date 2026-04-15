@@ -144,10 +144,11 @@ class BatchInferencePipeline:
         else:
             self.priors_type = "narrow" if use_narrow_priors else "constraint_based"
 
-        # Create timestamped output directory in batch_inference_results
+        # Create timestamped output directory under the configured output_dir
         timestamp = datetime.now().strftime("%d%B%Y_%H_%M").lower()
+        self.base_output_dir = Path(output_dir)
         folder_name = self._generate_folder_name(timestamp)
-        self.output_dir = Path("batch_inference_results") / folder_name
+        self.output_dir = self.base_output_dir / folder_name
         ensure_directory_exists(self.output_dir)
 
         print(f"Output directory: {self.output_dir}")
@@ -187,7 +188,7 @@ class BatchInferencePipeline:
 
     def _get_next_index(self):
         """Get the next available index by scanning existing directories."""
-        batch_results_dir = Path("batch_inference_results")
+        batch_results_dir = self.base_output_dir
         if not batch_results_dir.exists():
             return 1
 
@@ -272,8 +273,7 @@ class BatchInferencePipeline:
             List of experiment IDs
         """
         if self.use_prominent_features:
-            print("\n🔍 PROMINENT FEATURES MODE ENABLED")
-            print("=" * 50)
+            print("\nPROMINENT FEATURES MODE ENABLED")
 
             # Find experiments with prominent peaks
             experiments_with_peaks = find_experiments_with_prominent_peaks(
@@ -283,7 +283,7 @@ class BatchInferencePipeline:
             )
 
             if not experiments_with_peaks:
-                print("⚠️  No experiments with prominent peaks found!")
+                print("No experiments with prominent peaks found!")
                 return []
 
             # Update experiment count based on filtered results
@@ -311,7 +311,7 @@ class BatchInferencePipeline:
 
                 if not filtered_ids:
                     print(
-                        "⚠️  None of the provided experiment IDs have prominent peaks!"
+                        "None of the provided experiment IDs have prominent peaks!"
                     )
                     return []
 
