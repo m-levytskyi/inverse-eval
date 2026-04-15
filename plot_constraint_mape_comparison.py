@@ -226,7 +226,6 @@ def plot_comparison_histogram(
 
     combined = np.array(anaklasis_mapes + panpe_baseline_mapes, dtype=float)
     x_max = float(np.percentile(combined, 99.5))
-    x_max = max(x_max, float(np.max(combined)))
     x_max = max(x_max, 1.0)
     bin_edges = np.linspace(0.0, x_max, bins + 1).tolist()
 
