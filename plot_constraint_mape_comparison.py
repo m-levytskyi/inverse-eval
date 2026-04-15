@@ -27,6 +27,7 @@ from error_calculation import calculate_parameter_metrics
 
 PARAM_NAMES_5 = ["thickness", "amb_rough", "sub_rough", "layer_sld", "sub_sld"]
 PICKLE_TO_REFLECTORCH_INDICES = [3, 1, 4, 2, 5]
+# Constraint MAPE uses fixed constraint widths by parameter type, so numeric bounds are placeholders.
 PLACEHOLDER_PRIOR_BOUNDS_5 = [[0.0, 1.0] for _ in PARAM_NAMES_5]
 
 
