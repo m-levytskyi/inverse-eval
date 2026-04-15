@@ -3,11 +3,19 @@ __pycache__/
 # Generated results (keep these ignored)
 batch_inference_results/
 paper_batches/
+paper_batch_jsons/
+NF_baseline_on_denoised_data/
+NF_baseline_on_new_exp_data/
+sweep_results*
 
 # Markdown files
 *.md
 !README.md
 
+1_new/
+denoised_as_theoretical_q/
+denoised_on_experimental_q/
+theoretical_on_experimental_q_test/
 # Virtual environment
 .venv/
 
