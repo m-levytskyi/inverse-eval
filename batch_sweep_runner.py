@@ -37,9 +37,11 @@ DEFAULT_CONFIG = {
     # Inference backend configuration
     "inference_backend": "nf",
     "nf_config_name": "example_nf_config_reflectorch.yaml",
+    "nf_root_dir": None,
     "nf_num_samples": 1000,
     "nf_disable_importance_sampling": False,
     "use_sigmas_as_input": False,
+    "use_theoretical": False,
     # Experiment configuration
     "num_experiments": None,
     "layer_count": 1,
@@ -128,12 +130,17 @@ class BatchPipelineSweep:
         if self.config["inference_backend"] == "nf":
             if self.config["nf_config_name"]:
                 cmd.extend(["--config-name", self.config["nf_config_name"]])
+            if self.config["nf_root_dir"]:
+                cmd.extend(["--nf-root-dir", self.config["nf_root_dir"]])
             cmd.extend(["--nf-num-samples", str(self.config["nf_num_samples"])])
             if self.config["nf_disable_importance_sampling"]:
                 cmd.append("--nf-disable-importance-sampling")
 
         if self.config["use_sigmas_as_input"]:
             cmd.append("--use-sigmas-input")
+
+        if self.config["use_theoretical"]:
+            cmd.append("--use-theoretical")
 
         start_time = time.time()
 
@@ -347,6 +354,12 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--nf-root-dir",
+        type=str,
+        help="NF backend: root directory containing configs/ and saved_models/",
+    )
+
+    parser.add_argument(
         "--nf-num-samples",
         type=int,
         help="NF backend: number of samples (default: 1000)",
@@ -362,6 +375,12 @@ def parse_arguments():
         "--use-sigmas-input",
         action="store_true",
         help="Use sigmas as additional input channel to neural network (requires 2-channel model)",
+    )
+
+    parser.add_argument(
+        "--use-theoretical",
+        action="store_true",
+        help="Use theoretical curves instead of experimental curves",
     )
 
     return parser.parse_args()
@@ -419,6 +438,9 @@ def main():
     if args.config_name:
         config["nf_config_name"] = args.config_name
 
+    if args.nf_root_dir:
+        config["nf_root_dir"] = args.nf_root_dir
+
     if args.nf_num_samples:
         config["nf_num_samples"] = args.nf_num_samples
 
@@ -427,6 +449,9 @@ def main():
 
     if args.use_sigmas_input:
         config["use_sigmas_as_input"] = True
+
+    if args.use_theoretical:
+        config["use_theoretical"] = True
 
     print("Starting automated batch pipeline parameter sweep...")
     print(f"Configuration: {json.dumps(config, indent=2)}")

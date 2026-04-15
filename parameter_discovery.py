@@ -706,7 +706,11 @@ def get_prior_bounds_for_experiment(
 
 
 def discover_batch_experiments(
-    data_directory, layer_count=None, num_experiments=None, experiment_ids=None
+    data_directory,
+    layer_count=None,
+    num_experiments=None,
+    experiment_ids=None,
+    use_theoretical=False,
 ):
     """
     Discover available experiments in the data directory for batch processing.
@@ -716,6 +720,7 @@ def discover_batch_experiments(
         layer_count: Number of layers to search for (1 or 2). If None, searches all
         num_experiments: Maximum number of experiments to return (None for all)
         experiment_ids: List of specific experiment IDs to validate (None for discovery)
+        use_theoretical: If True, discover theoretical curve files; otherwise experimental
 
     Returns:
         List of experiment IDs
@@ -734,6 +739,12 @@ def discover_batch_experiments(
         print(f"  Limiting to first {num_experiments} experiments")
 
     experiments = []
+    curve_suffix = "_theoretical_curve.dat" if use_theoretical else "_experimental_curve.dat"
+    curve_pattern = f"s*{curve_suffix}"
+
+    print(
+        f"  Discovery mode: {'theoretical' if use_theoretical else 'experimental'} curves"
+    )
 
     # Try MARIA dataset structure first
     maria_dataset_path = data_dir / "MARIA_VIPR_dataset"
@@ -753,10 +764,10 @@ def discover_batch_experiments(
                 print(f"  Checking layer directory: {layer_dir.name}")
 
                 # Find all experimental data files
-                exp_files = list(layer_dir.glob("s*_experimental_curve.dat"))
+                exp_files = list(layer_dir.glob(curve_pattern))
 
                 for exp_file in exp_files:
-                    exp_id = exp_file.name.replace("_experimental_curve.dat", "")
+                    exp_id = exp_file.name.replace(curve_suffix, "")
 
                     # Check if model file exists
                     model_file = layer_dir / f"{exp_id}_model.txt"
@@ -779,9 +790,9 @@ def discover_batch_experiments(
             if layer_count is not None:
                 layer_test_dir = test_data_path / str(layer_count)
                 if layer_test_dir.exists():
-                    exp_files = list(layer_test_dir.glob("s*_experimental_curve.dat"))
+                    exp_files = list(layer_test_dir.glob(curve_pattern))
                     for exp_file in exp_files:
-                        exp_id = exp_file.name.replace("_experimental_curve.dat", "")
+                        exp_id = exp_file.name.replace(curve_suffix, "")
                         experiments.append(exp_id)
                 else:
                     print(f"  Layer directory not found: {layer_test_dir}")
@@ -789,23 +800,21 @@ def discover_batch_experiments(
                 # Search all layer directories
                 for layer_dir in test_data_path.iterdir():
                     if layer_dir.is_dir() and layer_dir.name.isdigit():
-                        exp_files = list(layer_dir.glob("s*_experimental_curve.dat"))
+                        exp_files = list(layer_dir.glob(curve_pattern))
                         for exp_file in exp_files:
-                            exp_id = exp_file.name.replace(
-                                "_experimental_curve.dat", ""
-                            )
+                            exp_id = exp_file.name.replace(curve_suffix, "")
                             experiments.append(exp_id)
         else:
             print(f"  Directory not found: {test_data_path}")
 
             # Fallback: Search directly in data_directory
             print(f"  Searching directly in: {data_dir}")
-            exp_files = list(data_dir.glob("s*_experimental_curve.dat"))
+            exp_files = list(data_dir.glob(curve_pattern))
 
             if exp_files:
                 print(f"  Found {len(exp_files)} experiment files in root directory")
                 for exp_file in exp_files:
-                    exp_id = exp_file.name.replace("_experimental_curve.dat", "")
+                    exp_id = exp_file.name.replace(curve_suffix, "")
                     experiments.append(exp_id)
             else:
                 print("  No experiment files found in root directory")
