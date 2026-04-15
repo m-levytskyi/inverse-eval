@@ -417,6 +417,7 @@ def run_single_experiment(
     use_theoretical=False,
     inference_backend: Literal["predict", "nf"] = "predict",
     config_name: str | None = None,
+    nf_root_dir: str | None = None,
     nf_num_samples: int = 1000,
     nf_enable_importance_sampling: bool = True,
     clip_prediction: bool = True,
@@ -491,7 +492,12 @@ def run_single_experiment(
             config_name = "example_nf_config_reflectorch.yaml"
         else:
             config_name = "b_mc_point_neutron_conv_standard_L1_InputQDq"
-    inference_model = EasyInferenceModel(config_name=config_name, device="cpu")
+    # Allow explicit local model/config root when packaged configs are unavailable.
+    inference_model = EasyInferenceModel(
+        config_name=config_name,
+        root_dir=nf_root_dir,
+        device="cpu",
+    )
 
     # Run inference
     sigmas_for_inference = sigmas_exp if use_sigmas_input else None
