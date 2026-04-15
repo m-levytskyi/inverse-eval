@@ -22,55 +22,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from constraints_utils import get_constraint_ranges
 from error_calculation import calculate_parameter_metrics
 
 
 PARAM_NAMES_5 = ["thickness", "amb_rough", "sub_rough", "layer_sld", "sub_sld"]
 PICKLE_TO_REFLECTORCH_INDICES = [3, 1, 4, 2, 5]
-
-
-def get_constraint_based_prior_bounds_for_5params(true_vals_5, width=0.3):
-    """Compute constraint-based prior bounds for the 5 fitted parameters."""
-    param_types = ["thickness", "sub_rough", "amb_rough", "layer_sld", "sub_sld"]
-    model_constraints = get_constraint_ranges()
-
-    allowed_widths = {
-        "thickness": (0.01, 1000.0),
-        "amb_rough": (0.01, 60.0),
-        "sub_rough": (0.01, 60.0),
-        "layer_sld": (0.01, 5.0),
-        "sub_sld": (0.01, 5.0),
-    }
-
-    bounds = []
-    for param_value, param_type in zip(true_vals_5, param_types):
-        model_min, model_max = model_constraints.get(param_type, (-1e6, 1e6))
-        width_min, width_max = allowed_widths.get(param_type, (0.01, 1e6))
-
-        constraint_span = model_max - model_min
-        target_width = width * constraint_span
-        target_width = max(width_min, min(target_width, width_max))
-
-        half_width = target_width / 2
-        min_val = param_value - half_width
-        max_val = param_value + half_width
-
-        if max_val > model_max:
-            shift = max_val - model_max
-            max_val = model_max
-            min_val = max(min_val - shift, model_min)
-
-        if min_val < model_min:
-            shift = model_min - min_val
-            min_val = model_min
-            max_val = min(max_val + shift, model_max)
-
-        min_val = max(min_val, model_min)
-        max_val = min(max_val, model_max)
-        bounds.append([min_val, max_val])
-
-    return bounds
+PLACEHOLDER_PRIOR_BOUNDS_5 = [[0.0, 1.0] for _ in PARAM_NAMES_5]
 
 
 def load_constraint_mapes_from_summary(summary_file: Path) -> list[float]:
@@ -151,7 +108,6 @@ def load_anaklasis_constraint_mapes(pickle_file: Path) -> list[float]:
 
     targets = data[0]
     predictions = data[1]
-    width = float(data[4])
     bounds_flags = data[5]
 
     mapes: list[float] = []
@@ -169,14 +125,12 @@ def load_anaklasis_constraint_mapes(pickle_file: Path) -> list[float]:
         pred_vals[3] *= 1e6
         pred_vals[4] *= 1e6
 
-        prior_bounds = get_constraint_based_prior_bounds_for_5params(true_vals, width)
-
         with contextlib.redirect_stdout(io.StringIO()):
             metrics = calculate_parameter_metrics(
                 pred_params=pred_vals,
                 true_params=true_vals,
                 param_names=PARAM_NAMES_5,
-                prior_bounds=prior_bounds,
+                prior_bounds=PLACEHOLDER_PRIOR_BOUNDS_5,
                 priors_type="constraint_based",
             )
 
