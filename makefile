@@ -1,5 +1,5 @@
 # Makefile for evaluation_pipeline
-# - creates a local venv
+# - creates a local venv (prefers uv when available)
 # - clones nflows_reflectorch
 # - (optionally) pulls Git LFS models
 # - installs nflows_reflectorch editable into the venv
@@ -9,9 +9,20 @@ SHELL := /bin/bash
 .ONESHELL:
 .SHELLFLAGS := -eu -o pipefail -c
 
+PYTHON      ?= python3
 VENV        := .venv
 PY          := $(VENV)/bin/python
 PIP         := $(VENV)/bin/pip
+
+ifneq ($(shell command -v uv 2>/dev/null),)
+INSTALLER   := uv
+VENV_CREATE := uv venv --python $(PYTHON) $(VENV)
+PIP_INSTALL := uv pip install --python $(PY)
+else
+INSTALLER   := pip
+VENV_CREATE := $(PYTHON) -m venv $(VENV)
+PIP_INSTALL := $(PIP) install
+endif
 
 VENDOR_DIR  := vendor
 FW_DIR      := $(VENDOR_DIR)/nflows_reflectorch
@@ -23,7 +34,8 @@ FW_REF      ?= dev_ml
 
 REQ_FILE            := requirements.txt
 
-TORCH_WHEEL ?= cu118   # cu118 | cu121 | cpu
+# Supported torch wheel variants: cu118 | cu121 | cpu
+TORCH_WHEEL ?= cu118
 TORCH_REQ_cu118 := requirements.torch-cu118.txt
 TORCH_REQ_cu121 := requirements.torch-cu121.txt
 
@@ -46,17 +58,21 @@ help:
 	@echo "  TORCH_WHEEL=cu118|cu121|cpu"
 	@echo "  FW_REF=<branch|tag|commit>"
 	@echo "  FW_REPO_URL=<url>"
+	@echo ""
+	@echo "Installer:"
+	@echo "  Auto-detects uv and falls back to pip (current: $(INSTALLER))"
 
 setup: check-tools venv framework lfs install-framework deps
 
 check-tools:
 	@command -v git >/dev/null
-	@command -v python3 >/dev/null
-	@echo "OK: git + python3 found"
+	@command -v $(PYTHON) >/dev/null
+	@echo "OK: git + $(PYTHON) found"
+	@echo "Using installer: $(INSTALLER)"
 
 venv:
-	@test -d "$(VENV)" || python3 -m venv "$(VENV)"
-	$(PIP) install -U pip wheel setuptools
+	@test -d "$(VENV)" || $(VENV_CREATE)
+	$(PIP_INSTALL) -U pip wheel setuptools
 
 framework:
 	mkdir -p "$(VENDOR_DIR)"
@@ -83,22 +99,22 @@ lfs:
 	fi
 
 install-framework: venv framework
-	$(PIP) install -e "$(FW_DIR)"
+	$(PIP_INSTALL) -e "$(FW_DIR)"
 
 torch: venv
 ifeq ($(TORCH_WHEEL),cu118)
-	$(PIP) install -r $(TORCH_REQ_cu118)
+	$(PIP_INSTALL) -r $(TORCH_REQ_cu118)
 else ifeq ($(TORCH_WHEEL),cu121)
-	$(PIP) install -r $(TORCH_REQ_cu121)
+	$(PIP_INSTALL) -r $(TORCH_REQ_cu121)
 else ifeq ($(TORCH_WHEEL),cpu)
-	$(PIP) install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+	$(PIP_INSTALL) --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 else
 	@echo "Unknown TORCH_WHEEL=$(TORCH_WHEEL) (use cu118|cu121|cpu)"; exit 1
 endif
 
 deps: venv torch
 	@if [ -f "$(REQ_FILE)" ]; then \
-		$(PIP) install -r "$(REQ_FILE)"; \
+		$(PIP_INSTALL) -r "$(REQ_FILE)"; \
 	else \
 		echo "No $(REQ_FILE) found; skipping."; \
 	fi
