@@ -48,10 +48,12 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 ## Repository Structure
 
 ```
-evaluation_pipeline/
+inverse-eval/
 ├── README.md                     # This file
-├── Pipfile / Pipfile.lock        # Pipenv environment specification
-├── requirements.txt              # pip-compatible dependency list
+├── pyproject.toml                # Project metadata and tool configuration
+├── requirements.txt              # Base Python dependencies
+├── requirements.torch-*.txt      # CUDA-specific PyTorch pins
+├── makefile                      # Environment/bootstrap automation
 ├── config.py                     # Centralized path and parameter configuration
 ├── model_constraints.json        # Physical constraint bounds (per parameter type)
 ├── paper.mplstyle                # Matplotlib style matching thesis typography
@@ -122,7 +124,7 @@ evaluation_pipeline/
 
 ```bash
 git clone <this-repo-url>
-cd evaluation_pipeline
+cd inverse-eval
 ```
 
 ### 2. Set up the environment
@@ -132,6 +134,10 @@ make setup && make check-torch
 ```
 
 This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), installs PyTorch (CUDA 11.8 by default), and installs all remaining dependencies.
+
+If `uv` is available on your `PATH`, the `makefile` uses `uv venv` and `uv pip` automatically. Otherwise it falls back to the standard `python3 -m venv` + `pip` workflow.
+
+`pyproject.toml` is currently used for lightweight project metadata and `uv` configuration. Dependency installation still comes from `requirements.txt` plus the CUDA-specific `requirements.torch-*.txt` files.
 
 If `check-torch` reports a CUDA error, rerun with a different wheel:
 
@@ -515,5 +521,4 @@ Calculates MAPE variants:
 ### `find_prominent_peaks.py`
 
 Identifies experiments with prominent oscillation features using peak detection on the reflectivity curve. Used to create higher-difficulty evaluation subsets.
-
 
