@@ -16,8 +16,8 @@ PIP         := $(VENV)/bin/pip
 VENDOR_DIR  := vendor
 FW_DIR      := $(VENDOR_DIR)/nflows_reflectorch
 
-# Use HTTPS by default; switch to SSH if your supervisors use SSH keys:
-FW_REPO_URL ?= https://gitlab.lrz.de/thesis-levytskyi/nflows_reflectorch.git
+# Use HTTPS by default:
+FW_REPO_URL ?= https://github.com/m-levytskyi/reflectorch-nflows
 # Pin to a tag/commit for reproducibility:
 FW_REF      ?= dev_ml
 
