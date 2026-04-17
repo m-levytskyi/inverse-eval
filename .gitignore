@@ -6,6 +6,7 @@ paper_batches/
 
 # Markdown files
 *.md
+*.codex
 !README.md
 
 # Virtual environment
