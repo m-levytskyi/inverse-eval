@@ -3,6 +3,8 @@ __pycache__/
 # Generated results (keep these ignored)
 batch_inference_results/
 paper_batches/
+batch_results/
+sweep_results_*
 
 # Markdown files
 *.md
