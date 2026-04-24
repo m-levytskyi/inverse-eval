@@ -72,7 +72,7 @@ torch: venv
 deps: venv torch
 	$(call RUN_BOOTSTRAP,deps)
 
-check-torch: venv
+check-torch: torch
 	$(call RUN_BOOTSTRAP,check-torch --torch-wheel $(TORCH_WHEEL))
 
 clean:
