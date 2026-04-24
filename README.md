@@ -132,7 +132,7 @@ cd inverse-eval
 On macOS or Linux:
 
 ```bash
-make setup && make check-torch
+make setup
 ```
 
 On Windows:
