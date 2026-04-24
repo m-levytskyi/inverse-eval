@@ -493,8 +493,8 @@ def run_single_experiment(
                     "Provide --config-name for an NF model matching the requested layer_count."
                 )
             config_name = "example_nf_config_reflectorch.yaml"
-    else:
-        config_name = "b_mc_point_neutron_conv_standard_L1_InputQDq"
+        else:
+            config_name = "b_mc_point_neutron_conv_standard_L1_InputQDq"
     resolved_device = detect_torch_device(inference_device)
     print(f"Using inference device: {resolved_device}")
     inference_model = EasyInferenceModel(
