@@ -129,24 +129,34 @@ cd inverse-eval
 
 ### 2. Set up the environment
 
+On macOS or Linux:
+
 ```bash
 make setup && make check-torch
 ```
 
-This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), installs PyTorch (CUDA 11.8 by default), and installs all remaining dependencies.
+On Windows:
 
-If `uv` is available on your `PATH`, the `makefile` uses `uv venv` and `uv pip` automatically. Otherwise it falls back to the standard `python3 -m venv` + `pip` workflow.
+```powershell
+python bootstrap_windows.py
+```
+
+This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), pulls the required Git LFS assets, installs PyTorch CPU by default, installs the remaining dependencies, and prints the detected backend.
+
+If `uv` is available on your `PATH`, the bootstrap flow uses `uv venv` and `uv pip` automatically. Otherwise it falls back to the standard Python `venv` + `pip` workflow.
 
 `pyproject.toml` is currently used for lightweight project metadata and `uv` configuration. Dependency installation still comes from `requirements.txt` plus the CUDA-specific `requirements.torch-*.txt` files.
+
+Git LFS is required because the vendored `nflows_reflectorch` checkout uses LFS-tracked model files.
 
 If `check-torch` reports a CUDA error, rerun with a different wheel:
 
 ```bash
-# CUDA 12.1
-make setup TORCH_WHEEL=cu121 && make check-torch
-
 # CPU only
 make setup TORCH_WHEEL=cpu && make check-torch
+
+# CUDA 12.1
+make setup TORCH_WHEEL=cu121 && make check-torch
 ```
 
 ### 3. Activate the environment
@@ -154,6 +164,22 @@ make setup TORCH_WHEEL=cpu && make check-torch
 ```bash
 source .venv/bin/activate
 ```
+
+On Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+### Troubleshooting
+
+- Missing Python: install Python 3.10, 3.11, or 3.12 and reopen your terminal before retrying.
+- Wrong Python version: the bootstrap fails early and prints the detected version plus the supported range.
+- Missing Git: install Git and retry after reopening the terminal.
+- Missing Git LFS: install Git LFS, run `git lfs install` once, and rerun setup.
+- Torch wheel mismatch: fall back to CPU first with `make setup TORCH_WHEEL=cpu` or `python bootstrap_windows.py --torch-wheel cpu`.
+
+Other maintenance targets such as `make venv`, `make framework`, `make lfs`, `make deps`, `make clean`, and `make distclean` are still available for partial reruns and troubleshooting.
 
 ---
 
@@ -521,4 +547,3 @@ Calculates MAPE variants:
 ### `find_prominent_peaks.py`
 
 Identifies experiments with prominent oscillation features using peak detection on the reflectivity curve. Used to create higher-difficulty evaluation subsets.
-
