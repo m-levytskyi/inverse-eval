@@ -10,6 +10,7 @@ import torch
 import numpy as np
 from typing import Literal
 from reflectorch import EasyInferenceModel
+from device_utils import detect_torch_device
 
 # Import our modular utilities
 from plotting_utils import plot_simple_comparison
@@ -421,6 +422,7 @@ def run_single_experiment(
     nf_enable_importance_sampling: bool = True,
     clip_prediction: bool = True,
     use_sigmas_input: bool = False,
+    inference_device: str | None = None,
     data_directory: str = "data",
 ):
     """
@@ -441,6 +443,8 @@ def run_single_experiment(
         use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
         clip_prediction: Whether to clip predicted parameters to prior bounds (default: True)
         use_sigmas_input: Use sigmas as additional input channel to neural network (requires 2-channel model)
+        inference_device: Optional explicit torch device ("cpu", "cuda", or "mps").
+                         If None, automatically prefers CUDA, then MPS, then CPU.
         data_directory: Base data directory to search for experiment files (default: "data")
 
     Returns:
@@ -489,9 +493,14 @@ def run_single_experiment(
                     "Provide --config-name for an NF model matching the requested layer_count."
                 )
             config_name = "example_nf_config_reflectorch.yaml"
-        else:
-            config_name = "b_mc_point_neutron_conv_standard_L1_InputQDq"
-    inference_model = EasyInferenceModel(config_name=config_name, device="cpu")
+    else:
+        config_name = "b_mc_point_neutron_conv_standard_L1_InputQDq"
+    resolved_device = detect_torch_device(inference_device)
+    print(f"Using inference device: {resolved_device}")
+    inference_model = EasyInferenceModel(
+        config_name=config_name,
+        device=resolved_device,
+    )
 
     # Run inference
     sigmas_for_inference = sigmas_exp if use_sigmas_input else None
@@ -582,6 +591,7 @@ def run_single_experiment(
         "sigmas_exp": sigmas_exp,
         "q_model": q_model,
         "prior_bounds": prior_bounds,
+        "inference_device": resolved_device,
         "priors_config": {
             "priors_type": priors_type,
             "priors_deviation": priors_deviation,
