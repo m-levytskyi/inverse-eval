@@ -9,15 +9,20 @@ endif
 
 SHELL := /bin/sh
 
-BOOTSTRAP_PY := $(strip $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null))
-TORCH_WHEEL ?= auto
+BOOTSTRAP_PY := $(strip $(shell command -v python3 2>/dev/null))
+TORCH_WHEEL ?= cpu
 
 .PHONY: help setup venv framework install-framework deps torch lfs check-tools check-lfs check-torch clean distclean
 
 define RUN_BOOTSTRAP
 	@if [ -z "$(BOOTSTRAP_PY)" ]; then \
-		echo "Missing required tool: Python 3.10-3.12"; \
-		echo "Install Python, reopen the terminal, and retry."; \
+		echo "Missing required tool: python3 (Python 3.10-3.12)"; \
+		echo "Install Python 3, reopen the terminal, and retry."; \
+		exit 1; \
+	fi
+	@if ! "$(BOOTSTRAP_PY)" -c 'import sys; raise SystemExit(0 if ((3, 10) <= sys.version_info[:2] <= (3, 12)) else 1)' >/dev/null 2>&1; then \
+		echo "Unsupported Python interpreter: $(BOOTSTRAP_PY)"; \
+		echo "Require Python 3.10-3.12. Install a supported python3, reopen the terminal, and retry."; \
 		exit 1; \
 	fi
 	@"$(BOOTSTRAP_PY)" bootstrap.py $(1)
