@@ -178,6 +178,8 @@ On Windows PowerShell:
 - Missing Git: install Git and retry after reopening the terminal.
 - Missing Git LFS: install Git LFS, run `git lfs install` once, and rerun setup.
 - Torch wheel mismatch: fall back to CPU first with `make setup TORCH_WHEEL=cpu` or `python bootstrap_windows.py --torch-wheel cpu`.
+- Windows `c10.dll` or `WinError 1114`: install or repair the Microsoft Visual C++ Redistributable 2015-2022 (x64), reboot if prompted, then rerun the Windows bootstrap with the default CPU wheel.
+- Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `py -3.11 bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
 
 Other maintenance targets such as `make venv`, `make framework`, `make lfs`, `make deps`, `make clean`, and `make distclean` are still available for partial reruns and troubleshooting.
 
