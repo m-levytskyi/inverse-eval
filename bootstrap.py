@@ -6,9 +6,12 @@ Shared bootstrap logic for local workshop setup on macOS, Linux, and Windows.
 from __future__ import annotations
 
 import argparse
+import platform
+import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
@@ -24,9 +27,38 @@ FW_REF = "dev_ml"
 REQ_FILE = ROOT / "requirements.txt"
 TORCH_REQ_CU118 = ROOT / "requirements.torch-cu118.txt"
 TORCH_REQ_CU121 = ROOT / "requirements.torch-cu121.txt"
+TORCH_REQ_CU126 = ROOT / "requirements.torch-cu126.txt"
+TORCH_REQ_CU128 = ROOT / "requirements.torch-cu128.txt"
 
 MIN_PYTHON = (3, 10)
 MAX_PYTHON = (3, 12)
+TORCH_VERSION = "2.7.1"
+SUPPORTED_TORCH_WHEELS = ("auto", "cpu", "cu118", "cu121", "cu126", "cu128")
+
+
+@dataclass(frozen=True)
+class TorchBackend:
+    name: str
+    min_cuda: tuple[int, int] | None
+    req_file: Path | None
+
+
+@dataclass(frozen=True)
+class TorchSelection:
+    requested: str
+    resolved: str
+    reason: str
+
+
+TORCH_BACKENDS: dict[str, TorchBackend] = {
+    "cpu": TorchBackend(name="cpu", min_cuda=None, req_file=None),
+    "cu118": TorchBackend(name="cu118", min_cuda=(11, 8), req_file=TORCH_REQ_CU118),
+    "cu121": TorchBackend(name="cu121", min_cuda=(12, 1), req_file=TORCH_REQ_CU121),
+    "cu126": TorchBackend(name="cu126", min_cuda=(12, 6), req_file=TORCH_REQ_CU126),
+    "cu128": TorchBackend(name="cu128", min_cuda=(12, 8), req_file=TORCH_REQ_CU128),
+}
+
+CUDA_BACKEND_PREFERENCE = ("cu128", "cu126", "cu121", "cu118")
 
 
 class BootstrapError(RuntimeError):
@@ -75,6 +107,118 @@ def which(name: str) -> str | None:
 
 def uv_available() -> bool:
     return bool(which("uv"))
+
+
+def machine_arch() -> str:
+    return platform.machine().lower()
+
+
+def supports_explicit_cuda_install(platform_name: str, machine: str) -> bool:
+    return platform_name in {"linux", "win32"} and machine in {"x86_64", "amd64"}
+
+
+def detect_nvidia_smi_output() -> str | None:
+    if not which("nvidia-smi"):
+        return None
+
+    result = subprocess.run(
+        ["nvidia-smi"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def parse_cuda_version(text: str) -> tuple[int, int] | None:
+    match = re.search(r"CUDA Version:\s*(\d+)\.(\d+)", text)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def resolve_torch_backend(
+    requested_mode: str,
+    *,
+    platform_name: str | None = None,
+    machine: str | None = None,
+    nvidia_smi_output: str | None = None,
+) -> TorchSelection:
+    if requested_mode not in SUPPORTED_TORCH_WHEELS:
+        raise BootstrapError(
+            "Installing PyTorch",
+            f"Unsupported torch wheel selection: {requested_mode}",
+            likely_cause="The bootstrap command received an unsupported torch wheel value.",
+            next_step=f"Use one of: {', '.join(SUPPORTED_TORCH_WHEELS)}.",
+        )
+
+    platform_name = platform_name or sys.platform
+    machine = (machine or machine_arch()).lower()
+
+    if requested_mode != "auto":
+        if requested_mode.startswith("cu") and not supports_explicit_cuda_install(platform_name, machine):
+            raise BootstrapError(
+                "Installing PyTorch",
+                (
+                    f"CUDA wheel `{requested_mode}` is not supported on "
+                    f"{platform_name} ({machine})."
+                ),
+                likely_cause="CUDA wheels in this bootstrap are only supported on Linux/Windows x86_64 systems.",
+                next_step="Use `--torch-wheel cpu` on this machine, or rerun on a supported NVIDIA CUDA system.",
+            )
+        return TorchSelection(
+            requested=requested_mode,
+            resolved=requested_mode,
+            reason="Using the explicit torch wheel selection provided by the user.",
+        )
+
+    if platform_name == "darwin":
+        return TorchSelection(
+            requested=requested_mode,
+            resolved="cpu",
+            reason="macOS uses the default PyTorch wheel; Apple Silicon may still use the MPS runtime at execution time.",
+        )
+
+    if not supports_explicit_cuda_install(platform_name, machine):
+        return TorchSelection(
+            requested=requested_mode,
+            resolved="cpu",
+            reason=f"Auto mode falls back to CPU on unsupported platform/architecture {platform_name} ({machine}).",
+        )
+
+    smi_output = nvidia_smi_output if nvidia_smi_output is not None else detect_nvidia_smi_output()
+    if not smi_output:
+        return TorchSelection(
+            requested=requested_mode,
+            resolved="cpu",
+            reason="`nvidia-smi` was not available or did not return usable output, so auto mode fell back to CPU.",
+        )
+
+    cuda_version = parse_cuda_version(smi_output)
+    if cuda_version is None:
+        return TorchSelection(
+            requested=requested_mode,
+            resolved="cpu",
+            reason="The installed NVIDIA driver output did not include a parseable CUDA version, so auto mode fell back to CPU.",
+        )
+
+    for backend_name in CUDA_BACKEND_PREFERENCE:
+        backend = TORCH_BACKENDS[backend_name]
+        assert backend.min_cuda is not None
+        if cuda_version >= backend.min_cuda:
+            return TorchSelection(
+                requested=requested_mode,
+                resolved=backend_name,
+                reason=f"Detected CUDA {cuda_version[0]}.{cuda_version[1]} via `nvidia-smi`; selecting {backend_name}.",
+            )
+
+    return TorchSelection(
+        requested=requested_mode,
+        resolved="cpu",
+        reason=f"Detected CUDA {cuda_version[0]}.{cuda_version[1]}, which is older than the minimum supported CUDA 11.8 wheel, so auto mode fell back to CPU.",
+    )
 
 
 def announce(step_number: int, total_steps: int, label: str) -> None:
@@ -402,44 +546,43 @@ def install_framework() -> None:
     )
 
 
-def install_torch(torch_wheel: str) -> None:
+def install_torch(torch_wheel: str) -> TorchSelection:
     require_python_version()
     ensure_venv_exists()
+    selection = resolve_torch_backend(torch_wheel)
+    print(f"Requested torch wheel: {selection.requested}")
+    print(f"Resolved torch backend: {selection.resolved}")
+    print(f"Resolution details: {selection.reason}")
 
-    if torch_wheel == "cpu":
+    if selection.resolved == "cpu":
+        cpu_args = ["--upgrade", f"torch=={TORCH_VERSION}"]
+        if sys.platform != "darwin":
+            cpu_args.extend(
+                [
+                    "--index-url",
+                    "https://download.pytorch.org/whl/cpu",
+                ]
+            )
         pip_install(
-            [
-                "--upgrade",
-                "torch",
-                "torchvision",
-                "torchaudio",
-                "--index-url",
-                "https://download.pytorch.org/whl/cpu",
-            ],
+            cpu_args,
             step="Installing PyTorch",
-            likely_cause="PyTorch CPU wheels could not be downloaded or installed.",
-            next_step="Check your network connection, then retry. If you need a CUDA build, rerun with `TORCH_WHEEL=cu121` or `--torch-wheel cu121`.",
+            likely_cause="PyTorch CPU/default wheels could not be downloaded or installed.",
+            next_step=(
+                "Check your network connection, then retry. If you need a specific CUDA build, rerun with "
+                "`TORCH_WHEEL=cu121` or another supported CUDA override."
+            ),
         )
-        return
+        return selection
 
-    if torch_wheel == "cu118":
-        req_file = TORCH_REQ_CU118
-    elif torch_wheel == "cu121":
-        req_file = TORCH_REQ_CU121
-    else:
-        raise BootstrapError(
-            "Installing PyTorch",
-            f"Unsupported torch wheel selection: {torch_wheel}",
-            likely_cause="The bootstrap command received an unsupported torch wheel value.",
-            next_step="Use one of: cpu, cu118, cu121.",
-        )
-
+    backend = TORCH_BACKENDS[selection.resolved]
+    assert backend.req_file is not None
     pip_install(
-        ["-r", str(req_file)],
+        ["-r", str(backend.req_file)],
         step="Installing PyTorch",
-        likely_cause=f"The PyTorch requirements file `{req_file.name}` could not be installed.",
-        next_step="Verify that your machine supports that CUDA variant, or retry with the default CPU wheel.",
+        likely_cause=f"The PyTorch requirements file `{backend.req_file.name}` could not be installed.",
+        next_step="Verify that your machine supports that CUDA variant, or retry with `TORCH_WHEEL=cpu`.",
     )
+    return selection
 
 
 def install_deps() -> None:
@@ -458,11 +601,15 @@ def install_deps() -> None:
     )
 
 
-def check_torch() -> None:
+def check_torch(torch_wheel: str) -> None:
     require_python_version()
     ensure_venv_exists()
+    selection = resolve_torch_backend(torch_wheel)
     code = (
         "import torch; "
+        f"print('requested mode', {selection.requested!r}); "
+        f"print('resolved backend', {selection.resolved!r}); "
+        f"print('resolution details', {selection.reason!r}); "
         "print('torch', torch.__version__); "
         "print('cuda available', torch.cuda.is_available()); "
         "print('mps available', getattr(getattr(torch.backends, 'mps', None), 'is_available', lambda: False)()); "
@@ -503,7 +650,7 @@ def run_setup(torch_wheel: str) -> None:
         ("Installing framework package", install_framework),
         ("Installing PyTorch", lambda: install_torch(torch_wheel)),
         ("Installing project dependencies", install_deps),
-        ("Checking PyTorch backend", check_torch),
+        ("Checking PyTorch backend", lambda: check_torch(torch_wheel)),
     ]
 
     for index, (label, action) in enumerate(steps, start=1):
@@ -521,7 +668,7 @@ def run_single_action(action: str, torch_wheel: str) -> None:
         "install-framework": ("Installing framework package", install_framework),
         "torch": ("Installing PyTorch", lambda: install_torch(torch_wheel)),
         "deps": ("Installing project dependencies", install_deps),
-        "check-torch": ("Checking PyTorch backend", check_torch),
+        "check-torch": ("Checking PyTorch backend", lambda: check_torch(torch_wheel)),
         "clean": ("Removing virtual environment", clean),
         "distclean": ("Removing virtual environment and vendor checkout", distclean),
     }
@@ -554,9 +701,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--torch-wheel",
-        default="cpu",
-        choices=["cpu", "cu118", "cu121"],
-        help="PyTorch wheel variant to install when the selected action needs it.",
+        default="auto",
+        choices=list(SUPPORTED_TORCH_WHEELS),
+        help="PyTorch wheel variant to install. `auto` detects the best pinned backend for the current machine.",
     )
     return parser
 

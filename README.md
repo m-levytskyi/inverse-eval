@@ -141,7 +141,7 @@ On Windows:
 python bootstrap_windows.py
 ```
 
-This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), pulls the required Git LFS assets, installs PyTorch CPU by default, installs the remaining dependencies, and prints the detected backend.
+This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), pulls the required Git LFS assets, installs a repo-pinned PyTorch build, installs the remaining dependencies, and prints the detected backend.
 
 If `uv` is available on your `PATH`, the bootstrap flow uses `uv venv` and `uv pip` automatically. Otherwise it falls back to the standard Python `venv` + `pip` workflow.
 
@@ -149,15 +149,33 @@ If `uv` is available on your `PATH`, the bootstrap flow uses `uv venv` and `uv p
 
 Git LFS is required because the vendored `nflows_reflectorch` checkout uses LFS-tracked model files.
 
-If `check-torch` reports a CUDA error, rerun with a different wheel:
+By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. On macOS, the default wheel can still expose the `mps` device at runtime on Apple Silicon.
+
+If you want bootstrap to choose a pinned CUDA build automatically on Linux/Windows NVIDIA systems, use `auto`:
 
 ```bash
-# CPU only
+# Default behavior: best pinned backend for the current machine
+make setup && make check-torch
+
+# Equivalent explicit auto mode
+make setup TORCH_WHEEL=auto && make check-torch
+
+# Explicit CPU/default wheel
 make setup TORCH_WHEEL=cpu && make check-torch
 
-# CUDA 12.1
+# Explicit CUDA 12.1
 make setup TORCH_WHEEL=cu121 && make check-torch
 ```
+
+Supported wheel selections are `cpu`, `auto`, `cu118`, `cu121`, `cu126`, and `cu128`.
+
+`auto` behavior:
+
+- On macOS: installs the default PyTorch wheel and relies on MPS if available at runtime.
+- On Linux/Windows x86_64 with NVIDIA drivers: runs `nvidia-smi`, reads the reported CUDA version, and chooses the newest pinned backend not newer than that version.
+- On unsupported platforms, unsupported architectures, missing `nvidia-smi`, or unparsable driver output: falls back to `cpu`.
+
+The bootstrap only installs Python wheels. It does not install or repair NVIDIA drivers, CUDA toolkits, or other system dependencies.
 
 ### 3. Activate the environment
 
@@ -177,7 +195,8 @@ On Windows PowerShell:
 - Wrong Python version: the bootstrap fails early and prints the detected version plus the supported range.
 - Missing Git: install Git and retry after reopening the terminal.
 - Missing Git LFS: install Git LFS, run `git lfs install` once, and rerun setup.
-- Torch wheel mismatch: fall back to CPU first with `make setup TORCH_WHEEL=cpu` or `python bootstrap_windows.py --torch-wheel cpu`.
+- Torch wheel mismatch: rerun with `make setup TORCH_WHEEL=cpu` to force the CPU wheel, or keep the default `auto` mode and let bootstrap fall back automatically when CUDA is not usable.
+- Apple Silicon: use the default `cpu` wheel or `auto`; PyTorch can still report `device mps` after install.
 - Windows `c10.dll` or `WinError 1114`: install or repair the Microsoft Visual C++ Redistributable 2015-2022 (x64), reboot if prompted, then rerun the Windows bootstrap with the default CPU wheel.
 - Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `py -3.11 bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
 

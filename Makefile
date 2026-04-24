@@ -1,7 +1,7 @@
 # Makefile for evaluation_pipeline (macOS/Linux)
 # - delegates setup logic to bootstrap.py
 # - keeps the existing target names for workshop-friendly troubleshooting
-# - uses CPU PyTorch by default, with optional CUDA wheel overrides
+# - uses CPU/default PyTorch by default, with optional auto/CUDA wheel overrides
 
 ifeq ($(OS),Windows_NT)
 $(error Windows is not supported by this Makefile. Use: python bootstrap_windows.py)
@@ -10,7 +10,7 @@ endif
 SHELL := /bin/sh
 
 BOOTSTRAP_PY := $(strip $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null))
-TORCH_WHEEL ?= cpu
+TORCH_WHEEL ?= auto
 
 .PHONY: help setup venv framework install-framework deps torch lfs check-tools check-lfs check-torch clean distclean
 
@@ -40,8 +40,10 @@ help:
 	@echo "  make clean              Remove .venv"
 	@echo "  make distclean          Remove .venv and vendor/"
 	@echo ""
-	@echo "Advanced override:"
-	@echo "  TORCH_WHEEL=cpu|cu118|cu121 (default: $(TORCH_WHEEL))"
+	@echo "Torch wheel modes:"
+	@echo "  TORCH_WHEEL=cpu|auto|cu118|cu121|cu126|cu128 (default: $(TORCH_WHEEL))"
+	@echo "  auto selects the newest pinned CUDA backend supported by your NVIDIA driver,"
+	@echo "  or falls back to the default CPU/macOS wheel."
 
 setup:
 	$(call RUN_BOOTSTRAP,setup --torch-wheel $(TORCH_WHEEL))
@@ -71,7 +73,7 @@ deps: venv torch
 	$(call RUN_BOOTSTRAP,deps)
 
 check-torch: venv
-	$(call RUN_BOOTSTRAP,check-torch)
+	$(call RUN_BOOTSTRAP,check-torch --torch-wheel $(TORCH_WHEEL))
 
 clean:
 	$(call RUN_BOOTSTRAP,clean)
