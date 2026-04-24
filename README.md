@@ -113,6 +113,7 @@ inverse-eval/
 | Python | 3.10-3.12 |
 | make | any |
 | Git | any |
+| uv (optional, recommended) | any |
 | CUDA (optional) | 11.8+ (for GPU acceleration) |
 | LaTeX (optional) | for `text.usetex = True` in plots |
 
