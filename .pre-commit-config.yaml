@@ -1,0 +1,42 @@
+exclude: ^(vendor/|\.venv/|__pycache__/|dataset/|exp_data/|batch_results/|sweep_results_[^/]*/)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: ./.venv/bin/python -m ruff format
+        language: system
+        types_or: [python, pyi]
+
+      - id: ruff-check
+        name: ruff check
+        entry: ./.venv/bin/python -m ruff check --select F --fix
+        language: system
+        types_or: [python, pyi]
+
+      - id: pytest-unit
+        name: pytest unit
+        entry: ./.venv/bin/python -m pytest -q tests
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: ty-check
+        name: ty check
+        entry: ./.venv/bin/ty check bootstrap.py bootstrap_windows.py device_utils.py tests
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [manual]
