@@ -13,7 +13,6 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Code Quality](#code-quality)
-- [CI/CD Suggestions](#cicd-suggestions)
 - [Notebooks (Quick Start)](#notebooks-quick-start)
 - [Dataset Setup](#dataset-setup)
 - [Configuration](#configuration)
