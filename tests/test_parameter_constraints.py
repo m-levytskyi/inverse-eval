@@ -47,10 +47,16 @@ class ApplyPhysicalConstraintsTests(unittest.TestCase):
             result["predicted_params_array"], [-5.0]
         )
 
-    def test_returns_same_dict_object(self) -> None:
+    def test_returns_expected_values_for_valid_input(self) -> None:
         pred = self._make_prediction([100.0], [100.0], ["thickness"])
         result = parameter_constraints.apply_physical_constraints(pred)
-        self.assertIs(result, pred)
+        self.assertEqual(result["param_names"], ["thickness"])
+        np.testing.assert_array_almost_equal(
+            result["predicted_params_array"], [100.0]
+        )
+        np.testing.assert_array_almost_equal(
+            result["polished_params_array"], [100.0]
+        )
 
     def test_polished_also_clamped_independently(self) -> None:
         pred = {
@@ -101,14 +107,15 @@ class ValidatePhysicalParametersTests(unittest.TestCase):
         self.assertTrue(parameter_constraints.validate_physical_parameters(params, names))
 
     def test_experiment_id_in_output(self) -> None:
-        import io, sys
+        import contextlib
+        import io
         params = [-1.0]
         names = ["thickness"]
         captured = io.StringIO()
-        old_stdout = sys.stdout
-        sys.stdout = captured
-        parameter_constraints.validate_physical_parameters(params, names, experiment_id="exp_001")
-        sys.stdout = old_stdout
+        with contextlib.redirect_stdout(captured):
+            parameter_constraints.validate_physical_parameters(
+                params, names, experiment_id="exp_001"
+            )
         self.assertIn("exp_001", captured.getvalue())
 
 

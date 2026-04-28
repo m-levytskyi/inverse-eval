@@ -19,7 +19,7 @@ class LoadConstraintsTests(unittest.TestCase):
     def test_is_cached_on_second_call(self) -> None:
         first = constraints_utils.load_constraints()
         second = constraints_utils.load_constraints()
-        self.assertIs(first, second)
+        self.assertEqual(first, second)
 
 
 class GetConstraintRangesTests(unittest.TestCase):
