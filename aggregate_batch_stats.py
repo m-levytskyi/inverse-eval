@@ -35,6 +35,7 @@ BATCH_CATALOGUE = {
 # Setup-label parsing from directory name
 # ---------------------------------------------------------------------------
 
+
 def parse_setup(dir_name: str) -> dict:
     """
     Extract structured setup metadata from a batch directory name.
@@ -77,6 +78,7 @@ def parse_setup(dir_name: str) -> dict:
 # ---------------------------------------------------------------------------
 # Core aggregation
 # ---------------------------------------------------------------------------
+
 
 def load_batch(batch_dir: Path) -> dict:
     """Load batch_results.json from a batch directory."""
@@ -124,7 +126,9 @@ def collect_mape_arrays(batch_results: dict) -> dict:
         # by_type constraint MAPEs  (thickness / roughness / sld)
         for ptype, metrics in pm.get("by_type", {}).items():
             if "constraint_mape" in metrics:
-                arrays.setdefault(f"type:{ptype}", []).append(metrics["constraint_mape"])
+                arrays.setdefault(f"type:{ptype}", []).append(
+                    metrics["constraint_mape"]
+                )
 
         # individual parameter constraint MAPEs
         for pname, metrics in pm.get("by_parameter", {}).items():
@@ -139,15 +143,22 @@ def collect_mape_arrays(batch_results: dict) -> dict:
 def stat_dict(values: list) -> dict:
     """Return mean, median, std, min, max, n for a list of floats."""
     if not values:
-        return {"mean": None, "median": None, "std": None, "min": None, "max": None, "n": 0}
+        return {
+            "mean": None,
+            "median": None,
+            "std": None,
+            "min": None,
+            "max": None,
+            "n": 0,
+        }
     arr = np.array(values, dtype=float)
     return {
-        "mean":   float(np.mean(arr)),
+        "mean": float(np.mean(arr)),
         "median": float(np.median(arr)),
-        "std":    float(np.std(arr)),
-        "min":    float(np.min(arr)),
-        "max":    float(np.max(arr)),
-        "n":      int(len(arr)),
+        "std": float(np.std(arr)),
+        "min": float(np.min(arr)),
+        "max": float(np.max(arr)),
+        "n": int(len(arr)),
     }
 
 
@@ -230,6 +241,7 @@ def aggregate_category(
 # ---------------------------------------------------------------------------
 # Report formatting
 # ---------------------------------------------------------------------------
+
 
 def fmt(val, decimals=2) -> str:
     if val is None:
@@ -321,7 +333,7 @@ def build_markdown(results: dict) -> str:
     lines.append("")
 
     for category, cat_data in results.items():
-        lines.append(f"---")
+        lines.append("---")
         lines.append(f"## {category}")
         lines.append("")
         lines.append(aggregate_section(cat_data["aggregate"]))
@@ -337,6 +349,7 @@ def build_markdown(results: dict) -> str:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def run(
     base_dir: str = "batch_inference_results",

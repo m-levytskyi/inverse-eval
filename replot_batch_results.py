@@ -7,7 +7,6 @@ Supports both generic batch replotting and paper-specific categorized replotting
 """
 
 import json
-import sys
 import argparse
 from pathlib import Path
 from plotting_utils import create_batch_analysis_plots
@@ -208,8 +207,7 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
 
     if pickle_path is None:
         pickle_path = (
-            root_dir
-            / f"results_exp_{layer_count}L_fitconstraints0_width0.3_simple.pkl"
+            root_dir / f"results_exp_{layer_count}L_fitconstraints0_width0.3_simple.pkl"
         )
     else:
         pickle_path = Path(pickle_path)
