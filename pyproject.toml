@@ -17,6 +17,7 @@ select = ["F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ty.environment]
 python-version = "3.10"
