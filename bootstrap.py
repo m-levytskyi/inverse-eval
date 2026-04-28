@@ -25,6 +25,7 @@ FW_REPO_URL = "https://github.com/m-levytskyi/reflectorch-nflows"
 FW_REF = "dev_ml"
 
 REQ_FILE = ROOT / "requirements.txt"
+DEV_REQ_FILE = ROOT / "requirements-dev.txt"
 TORCH_REQ_CU118 = ROOT / "requirements.torch-cu118.txt"
 TORCH_REQ_CU121 = ROOT / "requirements.torch-cu121.txt"
 TORCH_REQ_CU126 = ROOT / "requirements.torch-cu126.txt"
@@ -158,7 +159,9 @@ def resolve_torch_backend(
     machine = (machine or machine_arch()).lower()
 
     if requested_mode != "auto":
-        if requested_mode.startswith("cu") and not supports_explicit_cuda_install(platform_name, machine):
+        if requested_mode.startswith("cu") and not supports_explicit_cuda_install(
+            platform_name, machine
+        ):
             raise BootstrapError(
                 "Installing PyTorch",
                 (
@@ -188,7 +191,11 @@ def resolve_torch_backend(
             reason=f"Auto mode falls back to CPU on unsupported platform/architecture {platform_name} ({machine}).",
         )
 
-    smi_output = nvidia_smi_output if nvidia_smi_output is not None else detect_nvidia_smi_output()
+    smi_output = (
+        nvidia_smi_output
+        if nvidia_smi_output is not None
+        else detect_nvidia_smi_output()
+    )
     if not smi_output:
         return TorchSelection(
             requested=requested_mode,
@@ -246,8 +253,10 @@ def run(
             f"Required command was not found: {exc.filename}",
             command=cmd,
             cwd=cwd,
-            likely_cause=likely_cause or "The required tool is not installed or not on PATH.",
-            next_step=next_step or "Install the missing tool, open a new terminal, and retry.",
+            likely_cause=likely_cause
+            or "The required tool is not installed or not on PATH.",
+            next_step=next_step
+            or "Install the missing tool, open a new terminal, and retry.",
         ) from exc
     except subprocess.CalledProcessError as exc:
         raise BootstrapError(
@@ -282,8 +291,10 @@ def capture(
             f"Required command was not found: {exc.filename}",
             command=cmd,
             cwd=cwd,
-            likely_cause=likely_cause or "The required tool is not installed or not on PATH.",
-            next_step=next_step or "Install the missing tool, open a new terminal, and retry.",
+            likely_cause=likely_cause
+            or "The required tool is not installed or not on PATH.",
+            next_step=next_step
+            or "Install the missing tool, open a new terminal, and retry.",
         ) from exc
     except subprocess.CalledProcessError as exc:
         raise BootstrapError(
@@ -341,7 +352,9 @@ def check_tools() -> None:
     )
     installer = "uv" if uv_available() else "pip"
 
-    print(f"OK: Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} at {sys.executable}")
+    print(
+        f"OK: Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} at {sys.executable}"
+    )
     print(f"OK: Git at {git_path}")
     print(f"OK: Git LFS at {lfs_path}")
     print(f"OK: Installer set to {installer}")
@@ -399,7 +412,9 @@ def ensure_venv_exists() -> None:
         )
 
 
-def pip_install(args: Sequence[str], *, step: str, likely_cause: str, next_step: str) -> None:
+def pip_install(
+    args: Sequence[str], *, step: str, likely_cause: str, next_step: str
+) -> None:
     ensure_venv_exists()
     if uv_available():
         run(
@@ -601,6 +616,24 @@ def install_deps() -> None:
     )
 
 
+def install_dev_deps() -> None:
+    require_python_version()
+    ensure_venv_exists()
+
+    if not DEV_REQ_FILE.exists():
+        print(
+            "No requirements-dev.txt found; skipping development dependency installation."
+        )
+        return
+
+    pip_install(
+        ["-r", str(DEV_REQ_FILE)],
+        step="Installing development dependencies",
+        likely_cause="The development requirements could not be installed into `.venv`.",
+        next_step="Check the package installation error above, then retry after fixing the dependency issue.",
+    )
+
+
 def check_torch(torch_wheel: str) -> None:
     require_python_version()
     ensure_venv_exists()
@@ -621,6 +654,79 @@ def check_torch(torch_wheel: str) -> None:
         step="Checking PyTorch backend",
         likely_cause="PyTorch is not installed correctly inside `.venv`, or the selected backend is unavailable.",
         next_step="Rerun `make torch` with a different wheel if needed, then retry `make check-torch`.",
+    )
+
+
+def install_hooks() -> None:
+    require_python_version()
+    ensure_venv_exists()
+    run(
+        [
+            str(venv_python()),
+            "-m",
+            "pre_commit",
+            "install",
+            "--hook-type",
+            "pre-commit",
+            "--hook-type",
+            "pre-push",
+        ],
+        step="Installing pre-commit hooks",
+        likely_cause="The `pre-commit` package is not installed in `.venv`.",
+        next_step="Run `make dev-deps` and retry `make install-hooks`.",
+    )
+
+
+def run_tests() -> None:
+    require_python_version()
+    ensure_venv_exists()
+    run(
+        [str(venv_python()), "-m", "pytest", "-q", "tests"],
+        step="Running tests",
+        likely_cause="Pytest failed or is not installed in `.venv`.",
+        next_step="Run `make deps dev-deps`, inspect the failing test output, and retry.",
+    )
+
+
+def run_lint() -> None:
+    require_python_version()
+    ensure_venv_exists()
+    run(
+        [str(venv_python()), "-m", "ruff", "check", "--select", "F", "."],
+        step="Running Ruff lint",
+        likely_cause="Ruff found correctness issues or is not installed in `.venv`.",
+        next_step="Fix the reported Ruff diagnostics, or run `make dev-deps` if Ruff is missing.",
+    )
+
+
+def run_type_check() -> None:
+    require_python_version()
+    ensure_venv_exists()
+    run(
+        [
+            str(venv_python()),
+            "-m",
+            "ty",
+            "check",
+            "bootstrap.py",
+            "bootstrap_windows.py",
+            "device_utils.py",
+            "tests",
+        ],
+        step="Running ty type check",
+        likely_cause="Ty found type issues or is not installed in `.venv`.",
+        next_step="Fix the reported ty diagnostics, or run `make dev-deps` if ty is missing.",
+    )
+
+
+def run_pre_commit() -> None:
+    require_python_version()
+    ensure_venv_exists()
+    run(
+        [str(venv_python()), "-m", "pre_commit", "run"],
+        step="Running pre-commit hooks",
+        likely_cause="A pre-commit hook failed or `pre-commit` is not installed in `.venv`.",
+        next_step="Fix the reported hook diagnostics, stage the changed files if needed, and retry.",
     )
 
 
@@ -650,6 +756,7 @@ def run_setup(torch_wheel: str) -> None:
         ("Installing framework package", install_framework),
         ("Installing PyTorch", lambda: install_torch(torch_wheel)),
         ("Installing project dependencies", install_deps),
+        ("Installing development dependencies", install_dev_deps),
         ("Checking PyTorch backend", lambda: check_torch(torch_wheel)),
     ]
 
@@ -668,7 +775,13 @@ def run_single_action(action: str, torch_wheel: str) -> None:
         "install-framework": ("Installing framework package", install_framework),
         "torch": ("Installing PyTorch", lambda: install_torch(torch_wheel)),
         "deps": ("Installing project dependencies", install_deps),
+        "dev-deps": ("Installing development dependencies", install_dev_deps),
         "check-torch": ("Checking PyTorch backend", lambda: check_torch(torch_wheel)),
+        "install-hooks": ("Installing pre-commit hooks", install_hooks),
+        "test": ("Running tests", run_tests),
+        "lint": ("Running Ruff lint", run_lint),
+        "type-check": ("Running ty type check", run_type_check),
+        "pre-commit": ("Running pre-commit hooks", run_pre_commit),
         "clean": ("Removing virtual environment", clean),
         "distclean": ("Removing virtual environment and vendor checkout", distclean),
     }
@@ -693,7 +806,13 @@ def build_parser() -> argparse.ArgumentParser:
             "install-framework",
             "torch",
             "deps",
+            "dev-deps",
             "check-torch",
+            "install-hooks",
+            "test",
+            "lint",
+            "type-check",
+            "pre-commit",
             "clean",
             "distclean",
         ],

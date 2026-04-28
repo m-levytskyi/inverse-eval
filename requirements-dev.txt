@@ -1,0 +1,5 @@
+# Development and quality tooling
+pre-commit
+pytest
+ruff
+ty

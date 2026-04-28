@@ -12,7 +12,7 @@ SHELL := /bin/sh
 BOOTSTRAP_PY := $(strip $(shell command -v python3 2>/dev/null))
 TORCH_WHEEL ?= cpu
 
-.PHONY: help setup venv framework install-framework deps torch lfs check-tools check-lfs check-torch clean distclean
+.PHONY: help setup venv framework install-framework deps dev-deps torch lfs check-tools check-lfs check-torch install-hooks test lint type-check pre-commit clean distclean
 
 define RUN_BOOTSTRAP
 	@if [ -z "$(BOOTSTRAP_PY)" ]; then \
@@ -32,6 +32,11 @@ help:
 	@echo "Main targets:"
 	@echo "  make setup              Full workshop setup: venv, framework, LFS, installs, torch check"
 	@echo "  make check-torch        Print torch backend/device status after setup"
+	@echo "  make install-hooks      Install pre-commit and pre-push hooks into .git/hooks"
+	@echo "  make test               Run the unit test suite"
+	@echo "  make lint               Run low-churn Ruff correctness checks"
+	@echo "  make type-check         Run the manual ty check"
+	@echo "  make pre-commit         Run pre-commit hooks on staged files"
 	@echo ""
 	@echo "Troubleshooting / partial reruns:"
 	@echo "  make check-tools        Verify Python, Git, Git LFS, and installer availability"
@@ -42,6 +47,7 @@ help:
 	@echo "  make install-framework  Install vendor/nflows_reflectorch editable into .venv"
 	@echo "  make torch              Install PyTorch using TORCH_WHEEL ($(TORCH_WHEEL))"
 	@echo "  make deps               Install requirements.txt into .venv"
+	@echo "  make dev-deps           Install requirements-dev.txt into .venv"
 	@echo "  make clean              Remove .venv"
 	@echo "  make distclean          Remove .venv and vendor/"
 	@echo ""
@@ -77,8 +83,26 @@ torch: venv
 deps: venv torch
 	$(call RUN_BOOTSTRAP,deps)
 
+dev-deps: venv
+	$(call RUN_BOOTSTRAP,dev-deps)
+
 check-torch: torch
 	$(call RUN_BOOTSTRAP,check-torch --torch-wheel $(TORCH_WHEEL))
+
+install-hooks: dev-deps
+	$(call RUN_BOOTSTRAP,install-hooks)
+
+test: deps dev-deps
+	$(call RUN_BOOTSTRAP,test)
+
+lint: dev-deps
+	$(call RUN_BOOTSTRAP,lint)
+
+type-check: deps dev-deps
+	$(call RUN_BOOTSTRAP,type-check)
+
+pre-commit: dev-deps
+	$(call RUN_BOOTSTRAP,pre-commit)
 
 clean:
 	$(call RUN_BOOTSTRAP,clean)

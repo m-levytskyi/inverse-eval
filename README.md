@@ -12,6 +12,7 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 - [Repository Structure](#repository-structure)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Code Quality](#code-quality)
 - [Notebooks (Quick Start)](#notebooks-quick-start)
 - [Dataset Setup](#dataset-setup)
 - [Configuration](#configuration)
@@ -52,8 +53,9 @@ inverse-eval/
 ├── README.md                     # This file
 ├── pyproject.toml                # Project metadata and tool configuration
 ├── requirements.txt              # Base Python dependencies
+├── requirements-dev.txt          # Development and quality tooling
 ├── requirements.torch-*.txt      # CUDA-specific PyTorch pins
-├── makefile                      # Environment/bootstrap automation
+├── Makefile                      # Environment/bootstrap automation
 ├── config.py                     # Centralized path and parameter configuration
 ├── model_constraints.json        # Physical constraint bounds (per parameter type)
 ├── paper.mplstyle                # Matplotlib style matching thesis typography
@@ -142,11 +144,11 @@ On Windows:
 python bootstrap_windows.py
 ```
 
-This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), pulls the required Git LFS assets, installs a repo-pinned PyTorch build, installs the remaining dependencies, and prints the detected backend.
+This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), pulls the required Git LFS assets, installs a repo-pinned PyTorch build, installs the remaining dependencies and development tools, and prints the detected backend.
 
 If `uv` is available on your `PATH`, the bootstrap flow uses `uv venv` and `uv pip` automatically. Otherwise it falls back to the standard Python `venv` + `pip` workflow.
 
-`pyproject.toml` is currently used for lightweight project metadata and `uv` configuration. Dependency installation still comes from `requirements.txt` plus the CUDA-specific `requirements.torch-*.txt` files.
+`pyproject.toml` is currently used for lightweight project metadata and tool configuration. Dependency installation still comes from `requirements.txt`, `requirements-dev.txt`, and the CUDA-specific `requirements.torch-*.txt` files.
 
 Git LFS is required because the vendored `nflows_reflectorch` checkout uses LFS-tracked model files.
 
@@ -190,6 +192,38 @@ On Windows PowerShell:
 .venv\Scripts\Activate.ps1
 ```
 
+### 4. Install development hooks
+
+After `make setup`, install the Git hooks:
+
+```bash
+make install-hooks
+```
+
+This installs the repo's pre-commit and pre-push hooks. The pre-commit hook runs file hygiene checks plus low-churn Ruff formatting and correctness checks on changed Python files. The pre-push hook runs:
+
+```bash
+pytest -q tests
+```
+
+Useful local quality targets:
+
+```bash
+make pre-commit   # run pre-commit hooks on staged files
+make lint         # run Ruff correctness checks
+make test         # run pytest -q tests
+make type-check   # run the manual ty check
+```
+
+On Windows, run the same helper actions directly:
+
+```powershell
+python bootstrap.py install-hooks
+python bootstrap.py lint
+python bootstrap.py test
+python bootstrap.py type-check
+```
+
 ### Troubleshooting
 
 - Missing Python: install Python 3.10, 3.11, or 3.12 and reopen your terminal before retrying.
@@ -201,8 +235,23 @@ On Windows PowerShell:
 - Windows `c10.dll` or `WinError 1114`: install or repair the Microsoft Visual C++ Redistributable 2015-2022 (x64), reboot if prompted, then rerun the Windows bootstrap with the default CPU wheel.
 - Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `py -3.11 bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
 
-Other maintenance targets such as `make venv`, `make framework`, `make lfs`, `make deps`, `make clean`, and `make distclean` are still available for partial reruns and troubleshooting.
+Other maintenance targets such as `make venv`, `make framework`, `make lfs`, `make deps`, `make dev-deps`, `make clean`, and `make distclean` are still available for partial reruns and troubleshooting.
 
+---
+
+## Code Quality
+
+- Generic hooks trim trailing whitespace, enforce final newlines, validate YAML/TOML/JSON, and detect merge-conflict markers.
+- Checked-in data directories are excluded from hook sweeps to avoid noisy dataset rewrites.
+- Ruff formatting runs on changed Python files.
+- Ruff linting is currently limited to `F` correctness diagnostics, avoiding a whole-repo import-order or line-length migration.
+- `ty` is configured as a manual hook over the type-clean maintenance surface: `bootstrap.py`, `bootstrap_windows.py`, `device_utils.py`, and `tests`.
+
+Run the manual type check through pre-commit when needed:
+
+```bash
+.venv/bin/python -m pre_commit run ty-check --hook-stage manual
+```
 ---
 
 ## Notebooks (Quick Start)
