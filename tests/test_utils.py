@@ -139,8 +139,8 @@ class FormatParameterValueTests(unittest.TestCase):
 
 
 class EnsureDirectoryExistsTests(unittest.TestCase):
-    def test_creates_new_directory(self, tmp_path=None) -> None:
-        import tempfile, os
+    def test_creates_new_directory(self) -> None:
+        import tempfile
 
         with tempfile.TemporaryDirectory() as base:
             new_dir = Path(base) / "subdir" / "nested"

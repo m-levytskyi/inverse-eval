@@ -54,6 +54,8 @@ class GetConstraintWidthsTests(unittest.TestCase):
             self.assertGreater(width, 0, f"Width for {name} must be positive")
 
     def test_thickness_width_is_999(self) -> None:
+        # The model_constraints.json defines thickness constraint as [1.0, 1000.0],
+        # giving a width of 1000.0 - 1.0 = 999.0 Å.
         widths = constraints_utils.get_constraint_widths()
         self.assertAlmostEqual(widths["thickness"], 999.0)
 
