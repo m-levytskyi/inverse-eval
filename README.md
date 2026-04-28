@@ -12,6 +12,7 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 - [Repository Structure](#repository-structure)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Code Quality](#code-quality)
 - [Notebooks (Quick Start)](#notebooks-quick-start)
 - [Dataset Setup](#dataset-setup)
 - [Configuration](#configuration)
@@ -48,10 +49,13 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 ## Repository Structure
 
 ```
-evaluation_pipeline/
+inverse-eval/
 ├── README.md                     # This file
-├── Pipfile / Pipfile.lock        # Pipenv environment specification
-├── requirements.txt              # pip-compatible dependency list
+├── pyproject.toml                # Project metadata and tool configuration
+├── requirements.txt              # Base Python dependencies
+├── requirements-dev.txt          # Development and quality tooling
+├── requirements.torch-*.txt      # CUDA-specific PyTorch pins
+├── Makefile                      # Environment/bootstrap automation
 ├── config.py                     # Centralized path and parameter configuration
 ├── model_constraints.json        # Physical constraint bounds (per parameter type)
 ├── paper.mplstyle                # Matplotlib style matching thesis typography
@@ -111,6 +115,7 @@ evaluation_pipeline/
 | Python | 3.10-3.12 |
 | make | any |
 | Git | any |
+| uv (optional, recommended) | any |
 | CUDA (optional) | 11.8+ (for GPU acceleration) |
 | LaTeX (optional) | for `text.usetex = True` in plots |
 
@@ -122,26 +127,58 @@ evaluation_pipeline/
 
 ```bash
 git clone <this-repo-url>
-cd evaluation_pipeline
+cd inverse-eval
 ```
 
 ### 2. Set up the environment
 
+On macOS or Linux:
+
 ```bash
+make setup
+```
+
+On Windows:
+
+```powershell
+python bootstrap_windows.py
+```
+
+This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), pulls the required Git LFS assets, installs a repo-pinned PyTorch build, installs the remaining dependencies and development tools, and prints the detected backend.
+
+If `uv` is available on your `PATH`, the bootstrap flow uses `uv venv` and `uv pip` automatically. Otherwise it falls back to the standard Python `venv` + `pip` workflow.
+
+`pyproject.toml` is currently used for lightweight project metadata and tool configuration. Dependency installation still comes from `requirements.txt`, `requirements-dev.txt`, and the CUDA-specific `requirements.torch-*.txt` files.
+
+Git LFS is required because the vendored `nflows_reflectorch` checkout uses LFS-tracked model files.
+
+By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. On macOS, the default wheel can still expose the `mps` device at runtime on Apple Silicon.
+
+If you want bootstrap to choose a pinned CUDA build automatically on Linux/Windows NVIDIA systems, use `auto`:
+
+```bash
+# Default behavior: best pinned backend for the current machine
 make setup && make check-torch
-```
 
-This creates a local `.venv`, clones and installs `nflows_reflectorch` (editable), installs PyTorch (CUDA 11.8 by default), and installs all remaining dependencies.
+# Equivalent explicit auto mode
+make setup TORCH_WHEEL=auto && make check-torch
 
-If `check-torch` reports a CUDA error, rerun with a different wheel:
-
-```bash
-# CUDA 12.1
-make setup TORCH_WHEEL=cu121 && make check-torch
-
-# CPU only
+# Explicit CPU/default wheel
 make setup TORCH_WHEEL=cpu && make check-torch
+
+# Explicit CUDA 12.1
+make setup TORCH_WHEEL=cu121 && make check-torch
 ```
+
+Supported wheel selections are `cpu`, `auto`, `cu118`, `cu121`, `cu126`, and `cu128`.
+
+`auto` behavior:
+
+- On macOS: installs the default PyTorch wheel and relies on MPS if available at runtime.
+- On Linux/Windows x86_64 with NVIDIA drivers: runs `nvidia-smi`, reads the reported CUDA version, and chooses the newest pinned backend not newer than that version.
+- On unsupported platforms, unsupported architectures, missing `nvidia-smi`, or unparsable driver output: falls back to `cpu`.
+
+The bootstrap only installs Python wheels. It does not install or repair NVIDIA drivers, CUDA toolkits, or other system dependencies.
 
 ### 3. Activate the environment
 
@@ -149,6 +186,72 @@ make setup TORCH_WHEEL=cpu && make check-torch
 source .venv/bin/activate
 ```
 
+On Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+### 4. Install development hooks
+
+After `make setup`, install the Git hooks:
+
+```bash
+make install-hooks
+```
+
+This installs the repo's pre-commit and pre-push hooks. The pre-commit hook runs file hygiene checks plus low-churn Ruff formatting and correctness checks on changed Python files. The pre-push hook runs:
+
+```bash
+pytest -q tests
+```
+
+Useful local quality targets:
+
+```bash
+make pre-commit   # run pre-commit hooks on staged files
+make lint         # run Ruff correctness checks
+make test         # run pytest -q tests
+make type-check   # run the manual ty check
+```
+
+On Windows, run the same helper actions directly:
+
+```powershell
+python bootstrap.py install-hooks
+python bootstrap.py lint
+python bootstrap.py test
+python bootstrap.py type-check
+```
+
+### Troubleshooting
+
+- Missing Python: install Python 3.10, 3.11, or 3.12 and reopen your terminal before retrying.
+- Wrong Python version: the bootstrap fails early and prints the detected version plus the supported range.
+- Missing Git: install Git and retry after reopening the terminal.
+- Missing Git LFS: install Git LFS, run `git lfs install` once, and rerun setup.
+- Torch wheel mismatch: rerun with `make setup TORCH_WHEEL=cpu` to force the CPU wheel, or keep the default `auto` mode and let bootstrap fall back automatically when CUDA is not usable.
+- Apple Silicon: use the default `cpu` wheel or `auto`; PyTorch can still report `device mps` after install.
+- Windows `c10.dll` or `WinError 1114`: install or repair the Microsoft Visual C++ Redistributable 2015-2022 (x64), reboot if prompted, then rerun the Windows bootstrap with the default CPU wheel.
+- Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `py -3.11 bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
+
+Other maintenance targets such as `make venv`, `make framework`, `make lfs`, `make deps`, `make dev-deps`, `make clean`, and `make distclean` are still available for partial reruns and troubleshooting.
+
+---
+
+## Code Quality
+
+- Generic hooks trim trailing whitespace, enforce final newlines, validate YAML/TOML/JSON, and detect merge-conflict markers.
+- Checked-in data directories are excluded from hook sweeps to avoid noisy dataset rewrites.
+- Ruff formatting runs on changed Python files.
+- Ruff linting is currently limited to `F` correctness diagnostics, avoiding a whole-repo import-order or line-length migration.
+- `ty` is configured as a manual hook over the type-clean maintenance surface: `bootstrap.py`, `bootstrap_windows.py`, `device_utils.py`, and `tests`.
+
+Run the manual type check through pre-commit when needed:
+
+```bash
+.venv/bin/python -m pre_commit run ty-check --hook-stage manual
+```
 ---
 
 ## Notebooks (Quick Start)
@@ -515,5 +618,3 @@ Calculates MAPE variants:
 ### `find_prominent_peaks.py`
 
 Identifies experiments with prominent oscillation features using peak detection on the reflectivity curve. Used to create higher-difficulty evaluation subsets.
-
-

@@ -1,5 +1,5 @@
-# Baseline NF configuration sweep for theoretical curves
-# Smoke-test config: 20 experiments on dataset/test
+# Baseline NF configuration sweep
+# Corresponds to: auto_batch_sweep.py
 
 prior_deviations: [30]
 sld_modes: ["none"]
@@ -11,10 +11,9 @@ nf_config_name: "example_nf_config_reflectorch.yaml"
 nf_num_samples: 1000
 nf_disable_importance_sampling: false
 use_sigmas_as_input: false
-use_theoretical: true
 
-num_experiments: 20
+num_experiments: null
 layer_count: 1
-data_directory: "dataset/test"
+data_directory: "vendor/nflows_reflectorch/dataset/synthetic_inference_test"
 
-sweep_results_dir: "sweep_results_nf_baseline_theoretical_test"
+sweep_results_dir: "sweep_results_nf_baseline_synthetic"
