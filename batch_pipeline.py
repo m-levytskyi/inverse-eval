@@ -86,7 +86,6 @@ class BatchInferencePipeline:
         use_theoretical=False,
         inference_backend="predict",
         config_name=None,
-        nf_root_dir=None,
         nf_num_samples=1000,
         nf_enable_importance_sampling=True,
         use_sigmas_input=False,
@@ -112,7 +111,6 @@ class BatchInferencePipeline:
             use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
             inference_backend: Inference backend: "predict" (default) or "nf"
             config_name: Optional reflectorch config name (overrides backend default)
-            nf_root_dir: Optional root directory containing configs/ and saved_models/
             nf_num_samples: NF backend only: number of samples
             nf_enable_importance_sampling: NF backend only: importance sampling toggle
             use_sigmas_input: Use sigmas as additional input channel to neural network (requires 2-channel model)
@@ -132,7 +130,6 @@ class BatchInferencePipeline:
         self.use_theoretical = use_theoretical
         self.inference_backend = inference_backend
         self.config_name = config_name
-        self.nf_root_dir = nf_root_dir
         self.nf_num_samples = nf_num_samples
         self.nf_enable_importance_sampling = nf_enable_importance_sampling
         self.use_sigmas_input = use_sigmas_input
@@ -167,8 +164,6 @@ class BatchInferencePipeline:
         print(f"Inference backend: {self.inference_backend}")
         if self.config_name:
             print(f"Model config: {self.config_name}")
-        if self.nf_root_dir:
-            print(f"NF root dir: {self.nf_root_dir}")
         if self.inference_backend == "nf":
             print(f"NF num samples: {self.nf_num_samples}")
             print(
@@ -369,7 +364,6 @@ class BatchInferencePipeline:
                 use_theoretical=self.use_theoretical,
                 inference_backend=self.inference_backend,
                 config_name=self.config_name,
-                nf_root_dir=self.nf_root_dir,
                 nf_num_samples=self.nf_num_samples,
                 nf_enable_importance_sampling=self.nf_enable_importance_sampling,
                 use_sigmas_input=self.use_sigmas_input,
@@ -743,12 +737,6 @@ def parse_arguments():
         help="Optional reflectorch config name (overrides backend default)",
     )
     parser.add_argument(
-        "--nf-root-dir",
-        type=str,
-        default=None,
-        help="NF backend: root directory containing configs/ and saved_models/",
-    )
-    parser.add_argument(
         "--nf-num-samples",
         type=int,
         default=1000,
@@ -793,7 +781,6 @@ def main():
         priors_type=args.priors_type,
         inference_backend=args.inference_backend,
         config_name=args.config_name,
-        nf_root_dir=args.nf_root_dir,
         nf_num_samples=args.nf_num_samples,
         nf_enable_importance_sampling=not args.nf_disable_importance_sampling,
         use_sigmas_input=args.use_sigmas_input,

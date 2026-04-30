@@ -418,7 +418,6 @@ def run_single_experiment(
     use_theoretical=False,
     inference_backend: Literal["predict", "nf"] = "predict",
     config_name: str | None = None,
-    nf_root_dir: str | None = None,
     nf_num_samples: int = 1000,
     nf_enable_importance_sampling: bool = True,
     clip_prediction: bool = True,

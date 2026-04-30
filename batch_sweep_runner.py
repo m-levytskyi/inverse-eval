@@ -37,7 +37,6 @@ DEFAULT_CONFIG = {
     # Inference backend configuration
     "inference_backend": "nf",
     "nf_config_name": "example_nf_config_reflectorch.yaml",
-    "nf_root_dir": None,
     "nf_num_samples": 1000,
     "nf_disable_importance_sampling": False,
     "use_sigmas_as_input": False,
@@ -130,8 +129,6 @@ class BatchPipelineSweep:
         if self.config["inference_backend"] == "nf":
             if self.config["nf_config_name"]:
                 cmd.extend(["--config-name", self.config["nf_config_name"]])
-            if self.config["nf_root_dir"]:
-                cmd.extend(["--nf-root-dir", self.config["nf_root_dir"]])
             cmd.extend(["--nf-num-samples", str(self.config["nf_num_samples"])])
             if self.config["nf_disable_importance_sampling"]:
                 cmd.append("--nf-disable-importance-sampling")
@@ -354,12 +351,6 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--nf-root-dir",
-        type=str,
-        help="NF backend: root directory containing configs/ and saved_models/",
-    )
-
-    parser.add_argument(
         "--nf-num-samples",
         type=int,
         help="NF backend: number of samples (default: 1000)",
@@ -437,9 +428,6 @@ def main():
 
     if args.config_name:
         config["nf_config_name"] = args.config_name
-
-    if args.nf_root_dir:
-        config["nf_root_dir"] = args.nf_root_dir
 
     if args.nf_num_samples:
         config["nf_num_samples"] = args.nf_num_samples
