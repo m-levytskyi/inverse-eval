@@ -11,6 +11,10 @@ sweep_results_*
 *.codex
 !README.md
 
+1_new/
+denoised_as_theoretical_q/
+denoised_on_experimental_q/
+theoretical_on_experimental_q_test/
 # Virtual environment
 .venv/
 

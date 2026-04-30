@@ -40,6 +40,7 @@ DEFAULT_CONFIG = {
     "nf_num_samples": 1000,
     "nf_disable_importance_sampling": False,
     "use_sigmas_as_input": False,
+    "use_theoretical": False,
     # Experiment configuration
     "num_experiments": None,
     "layer_count": 1,
@@ -134,6 +135,9 @@ class BatchPipelineSweep:
 
         if self.config["use_sigmas_as_input"]:
             cmd.append("--use-sigmas-input")
+
+        if self.config["use_theoretical"]:
+            cmd.append("--use-theoretical")
 
         start_time = time.time()
 
@@ -364,6 +368,12 @@ def parse_arguments():
         help="Use sigmas as additional input channel to neural network (requires 2-channel model)",
     )
 
+    parser.add_argument(
+        "--use-theoretical",
+        action="store_true",
+        help="Use theoretical curves instead of experimental curves",
+    )
+
     return parser.parse_args()
 
 
@@ -427,6 +437,9 @@ def main():
 
     if args.use_sigmas_input:
         config["use_sigmas_as_input"] = True
+
+    if args.use_theoretical:
+        config["use_theoretical"] = True
 
     print("Starting automated batch pipeline parameter sweep...")
     print(f"Configuration: {json.dumps(config, indent=2)}")
