@@ -139,6 +139,12 @@ def compare_dataset(
 ) -> list[CurveComparison]:
     comparisons: list[CurveComparison] = []
 
+    if len(curve_files) > r_clean.shape[0]:
+        raise ValueError(
+            f"More curve files ({len(curve_files)}) than rows in R_clean "
+            f"({r_clean.shape[0]}). Ensure the pickle and curve directory match."
+        )
+
     for row_idx, curve_file in enumerate(curve_files):
         exp_id = _extract_experiment_id(curve_file)
 

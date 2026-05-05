@@ -62,7 +62,7 @@ def parse_setup_from_dir_name(dir_name: str) -> dict:
         elif token == "PROMINENT":
             prominent = True
         elif token == "backSLDfix":
-            fix_sld = "back"
+            fix_sld = "backing"
         elif token == "allSLDfix":
             fix_sld = "all"
 
@@ -368,6 +368,12 @@ def run(
     if not pkl_file.exists():
         raise FileNotFoundError(f"Pickle file not found: {pkl_file}")
 
+    if not nf_dir.is_dir():
+        raise FileNotFoundError(
+            f"PANPE baseline directory not found: {nf_dir}\n"
+            "Run copy_paper_batch_jsons.py first to populate this directory."
+        )
+
     nf_batch = find_matching_batch_dir(nf_dir, prior_width, fix_sld, prominent)
     nf_summary = nf_batch / "batch_summary_1layer.json"
 
@@ -430,7 +436,7 @@ def main():
     parser.add_argument("--prior-width", type=int, default=30, help="Constraint width in percent")
     parser.add_argument(
         "--fix-sld",
-        choices=["none", "back", "all"],
+        choices=["none", "backing", "all"],
         default="none",
         help="SLD fix mode for PANPE baseline batch selection",
     )

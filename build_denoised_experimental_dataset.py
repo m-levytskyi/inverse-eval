@@ -153,6 +153,12 @@ def main() -> int:
         positions = np.linspace(0, len(exp_files) - 1, num=min(args.plot_count, len(exp_files)), dtype=int)
         selected_for_plots = [exp_files[i] for i in np.unique(positions)]
 
+    if len(exp_files) > r_denoised.shape[0]:
+        raise ValueError(
+            f"More experimental files ({len(exp_files)}) than rows in R_denoised "
+            f"({r_denoised.shape[0]}). Ensure the pickle and input directory match."
+        )
+
     for row_idx, exp_file in enumerate(exp_files):
         exp_id = extract_experiment_id(exp_file)
 
