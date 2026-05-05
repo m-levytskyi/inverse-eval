@@ -139,18 +139,11 @@ def compare_dataset(
 ) -> list[CurveComparison]:
     comparisons: list[CurveComparison] = []
 
-    for curve_file in curve_files:
+    for row_idx, curve_file in enumerate(curve_files):
         exp_id = _extract_experiment_id(curve_file)
-        exp_idx = _extract_experiment_index(exp_id)
-
-        if exp_idx >= r_clean.shape[0]:
-            raise IndexError(
-                f"Experiment {exp_id} maps to index {exp_idx}, "
-                f"but R_clean has only {r_clean.shape[0]} rows."
-            )
 
         q_file, r_file = load_theoretical_curve(curve_file)
-        r_ref = r_clean[exp_idx]
+        r_ref = r_clean[row_idx]
 
         if r_file.shape[0] != r_ref.shape[0]:
             raise ValueError(

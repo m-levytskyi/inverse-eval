@@ -153,14 +153,8 @@ def main() -> int:
         positions = np.linspace(0, len(exp_files) - 1, num=min(args.plot_count, len(exp_files)), dtype=int)
         selected_for_plots = [exp_files[i] for i in np.unique(positions)]
 
-    for exp_file in exp_files:
+    for row_idx, exp_file in enumerate(exp_files):
         exp_id = extract_experiment_id(exp_file)
-        idx = experiment_index(exp_id)
-
-        if idx >= r_denoised.shape[0]:
-            raise IndexError(
-                f"{exp_id} maps to index {idx}, but R_denoised has {r_denoised.shape[0]} rows"
-            )
 
         exp_data = np.loadtxt(exp_file, comments="#")
         if exp_data.ndim != 2 or exp_data.shape[1] < 2:
@@ -170,7 +164,7 @@ def main() -> int:
         r_exp = exp_data[:, 1]
 
         # Interpolate denoised curve to exactly match each experiment's q grid and range.
-        curve_denoised = r_denoised[idx]
+        curve_denoised = r_denoised[row_idx]
         r_interp = np.interp(
             q_exp,
             q_ref,
