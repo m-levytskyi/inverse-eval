@@ -208,7 +208,7 @@ make install-hooks
 This installs the repo's pre-commit and pre-push hooks. The pre-commit hook runs file hygiene checks plus low-churn Ruff formatting and correctness checks on changed Python files. The pre-push hook runs:
 
 ```bash
-pytest -q tests
+.venv/bin/python -m pytest -q tests
 ```
 
 Useful local quality targets:
