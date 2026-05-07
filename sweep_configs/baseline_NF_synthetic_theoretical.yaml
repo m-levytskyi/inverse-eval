@@ -15,6 +15,6 @@ use_theoretical: true
 
 num_experiments: null
 layer_count: 1
-data_directory: "vendor/nflows_reflectorch/dataset/synthetic_inference_test"
+data_directory: "synthetic_inference_test"
 
 sweep_results_dir: "sweep_results_nf_baseline_synthetic_theoretical"

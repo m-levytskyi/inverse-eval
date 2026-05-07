@@ -154,7 +154,7 @@ def calculate_parameter_metrics(
     constraint_based_percentage_errors = None
     overall_constraint_mape = None
 
-    if priors_type == "constraint_based" and prior_bounds is not None:
+    if priors_type == "constraint_based":
         print(
             "Calculating constraint-based MAPE (normalized by constraint interval width)"
         )
@@ -242,13 +242,14 @@ def calculate_parameter_metrics(
             param_metrics["constraint_percentage_error"] = float(
                 constraint_based_percentage_errors[i]
             )
-            param_metrics["prior_bounds"] = [
-                float(prior_bounds[i][0]),
-                float(prior_bounds[i][1]),
-            ]
-            param_metrics["prior_width"] = float(
-                prior_bounds[i][1] - prior_bounds[i][0]
-            )
+            if prior_bounds is not None:
+                param_metrics["prior_bounds"] = [
+                    float(prior_bounds[i][0]),
+                    float(prior_bounds[i][1]),
+                ]
+                param_metrics["prior_width"] = float(
+                    prior_bounds[i][1] - prior_bounds[i][0]
+                )
 
             # Add constraint width from centralized definition
             try:
