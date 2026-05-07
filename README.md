@@ -208,8 +208,12 @@ make install-hooks
 This installs the repo's pre-commit and pre-push hooks. The pre-commit hook runs file hygiene checks plus low-churn Ruff formatting and correctness checks on changed Python files. The pre-push hook runs:
 
 ```bash
-.venv/bin/python -m pytest -q tests
+python scripts/run_in_venv.py -m pytest -q tests
 ```
+
+The hook wrapper resolves `.venv/bin/python` on macOS/Linux and
+`.venv\Scripts\python.exe` on Windows, so Git hooks use the repo environment on
+both platforms.
 
 Useful local quality targets:
 
@@ -255,7 +259,7 @@ Other maintenance targets such as `make venv`, `make framework`, `make lfs`, `ma
 Run the manual type check through pre-commit when needed:
 
 ```bash
-.venv/bin/python -m pre_commit run ty-check --hook-stage manual
+python scripts/run_in_venv.py -m pre_commit run ty-check --hook-stage manual
 ```
 ---
 

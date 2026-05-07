@@ -29,16 +29,16 @@ repos:
 
       - id: pytest-unit
         name: pytest unit
-        entry: .venv/bin/python -m pytest -q tests
-        language: system
+        entry: python scripts/run_in_venv.py -m pytest -q tests
+        language: python
         always_run: true
         pass_filenames: false
         stages: [pre-push]
 
       - id: ty-check
         name: ty check
-        entry: .venv/bin/python -m ty check bootstrap.py bootstrap_windows.py device_utils.py tests
-        language: system
+        entry: python scripts/run_in_venv.py -m ty check bootstrap.py bootstrap_windows.py device_utils.py tests
+        language: python
         always_run: true
         pass_filenames: false
         stages: [manual]
