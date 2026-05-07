@@ -192,6 +192,11 @@ On Windows PowerShell:
 .venv\Scripts\Activate.ps1
 ```
 
+Use this root `.venv` for both evaluation and training. The vendored
+`vendor/nflows_reflectorch` checkout is installed into this environment in
+editable mode by setup, so you should not create or activate
+`vendor/nflows_reflectorch/.venv`.
+
 ### 4. Install development hooks
 
 After `make setup`, install the Git hooks:
@@ -273,11 +278,21 @@ jupyter lab notebooks/
 
 ## Dataset Setup
 
-The dataset is included in the repository root under `dataset/`. By default, `config.py` points to:
+The repository root is the canonical data home. Standard train/test data lives
+under `dataset/`, and derived datasets used by both training and evaluation
+should also live at the root under their historical names, for example
+`denoised_as_theoretical_q/`. By default, `config.py` points to:
 
 ```python
 DATA_DIRECTORY = "dataset/test"
 ```
+
+Training and evaluation commands are expected to run from the `inverse-eval`
+root. This keeps relative paths in reflectorch configs stable:
+`data_dir: "dataset/train"` resolves to the root train split, and
+`data_dir: "denoised_as_theoretical_q"` resolves to the root derived dataset.
+The duplicate data inside `vendor/nflows_reflectorch` is treated as legacy
+checkout state; do not rely on it for new workflows.
 
 ### Dataset Layout
 
@@ -332,6 +347,22 @@ YAML files in `sweep_configs/` define automated multi-run parameter sweeps:
 
 ## Running Experiments
 
+All commands in this section are intended to run from the `inverse-eval` root
+through the root `.venv`.
+
+### Train a reflectorch model
+
+Use the Makefile wrapper so training runs from the root and uses
+`.venv/bin/python`:
+
+```bash
+make train CONFIG=nf_config_mixed.yaml
+```
+
+The `CONFIG` value is the config filename in
+`vendor/nflows_reflectorch/configs/`, matching reflectorch's normal config
+lookup.
+
 ### Single experiment
 
 ```python
@@ -347,7 +378,7 @@ print(results["param_metrics"]["overall"]["constraint_mape"])
 ### Single batch (CLI)
 
 ```bash
-python batch_pipeline.py \
+.venv/bin/python batch_pipeline.py \
   --layer-count 1 \
   --num-experiments 100 \
   --priors-type constraint_based \
@@ -374,7 +405,7 @@ Key flags:
 ### Full parameter sweep
 
 ```bash
-python batch_sweep_runner.py --config sweep_configs/baseline.yaml
+make sweep CONFIG=sweep_configs/baseline.yaml
 ```
 
 This runs `len(prior_deviations) × len(sld_modes) × len(prominent_features)` pipeline instances automatically (18 runs with default settings). Results are saved to `sweep_results_nf_baseline/sweep_<timestamp>/`.
@@ -382,13 +413,13 @@ This runs `len(prior_deviations) × len(sld_modes) × len(prominent_features)` p
 To run the Q-weighted model sweep:
 
 ```bash
-python batch_sweep_runner.py --config sweep_configs/qweighted.yaml
+make sweep CONFIG=sweep_configs/qweighted.yaml
 ```
 
 ### Re-generate plots from saved results
 
 ```bash
-python replot_batch_results.py --batch-id 075 --base-dir batch_inference_results
+.venv/bin/python replot_batch_results.py --batch-id 075 --base-dir batch_inference_results
 ```
 
 ---
@@ -415,7 +446,7 @@ Completed batch inference runs are required. The relevant batch groups used in t
 
 ```bash
 # NF Baseline
-python batch_pipeline.py \
+.venv/bin/python batch_pipeline.py \
   --data-directory dataset/test \
   --priors-type constraint_based \
   --priors-deviation 30 \
@@ -425,7 +456,7 @@ python batch_pipeline.py \
   --nf-num-samples 1000
 
 # NF + Q-Weighted + dR
-python batch_pipeline.py \
+.venv/bin/python batch_pipeline.py \
   --data-directory dataset/test \
   --priors-type constraint_based \
   --priors-deviation 30 \
@@ -436,7 +467,7 @@ python batch_pipeline.py \
   --use-sigmas-input
 
 # NF + Mean Conditioned
-python batch_pipeline.py \
+.venv/bin/python batch_pipeline.py \
   --data-directory dataset/test \
   --priors-type constraint_based \
   --priors-deviation 30 \
@@ -449,7 +480,7 @@ python batch_pipeline.py \
 After each run, regenerate the plots:
 
 ```bash
-python replot_batch_results.py --results-dir batch_inference_results/<batch_dir>
+.venv/bin/python replot_batch_results.py --results-dir batch_inference_results/<batch_dir>
 ```
 
 Or programmatically:
@@ -563,7 +594,7 @@ Core single-experiment workflow.
 ### `batch_pipeline.py`
 
 ```bash
-python batch_pipeline.py [OPTIONS]
+.venv/bin/python batch_pipeline.py [OPTIONS]
 ```
 
 | Class / Function | Description |
@@ -574,7 +605,7 @@ python batch_pipeline.py [OPTIONS]
 ### `batch_sweep_runner.py`
 
 ```bash
-python batch_sweep_runner.py --config sweep_configs/baseline.yaml
+make sweep CONFIG=sweep_configs/baseline.yaml
 ```
 
 | Class / Function | Description |
