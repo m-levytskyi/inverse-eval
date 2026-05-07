@@ -352,15 +352,23 @@ YAML files in `sweep_configs/` define automated multi-run parameter sweeps:
 ## Running Experiments
 
 All commands in this section are intended to run from the `inverse-eval` root
-through the root `.venv`.
+with the root `.venv` active. On Windows, activate with
+`.venv\Scripts\Activate.ps1` first, then replace any `.venv/bin/python`
+prefix with plain `python` (the activated environment puts the right
+interpreter on your `PATH`).
 
 ### Train a reflectorch model
 
-Use the Makefile wrapper so training runs from the root and uses
-`.venv/bin/python`:
+On macOS/Linux use the Makefile wrapper:
 
 ```bash
 make train CONFIG=nf_config_mixed.yaml
+```
+
+On Windows (PowerShell, with `.venv` activated):
+
+```powershell
+python -m reflectorch.train nf_config_mixed.yaml
 ```
 
 The `CONFIG` value is the config filename in
@@ -408,16 +416,32 @@ Key flags:
 
 ### Full parameter sweep
 
+On macOS/Linux:
+
 ```bash
 make sweep CONFIG=sweep_configs/baseline.yaml
+```
+
+On Windows (PowerShell, with `.venv` activated):
+
+```powershell
+python batch_sweep_runner.py --config sweep_configs/baseline.yaml
 ```
 
 This runs `len(prior_deviations) × len(sld_modes) × len(prominent_features)` pipeline instances automatically (18 runs with default settings). Results are saved to `sweep_results_nf_baseline/sweep_<timestamp>/`.
 
 To run the Q-weighted model sweep:
 
+On macOS/Linux:
+
 ```bash
 make sweep CONFIG=sweep_configs/qweighted.yaml
+```
+
+On Windows (PowerShell, with `.venv` activated):
+
+```powershell
+python batch_sweep_runner.py --config sweep_configs/qweighted.yaml
 ```
 
 ### Re-generate plots from saved results
@@ -597,8 +621,16 @@ Core single-experiment workflow.
 
 ### `batch_pipeline.py`
 
+macOS/Linux (with `.venv` activated, or using the explicit path):
+
 ```bash
 .venv/bin/python batch_pipeline.py [OPTIONS]
+```
+
+Windows (PowerShell, with `.venv` activated):
+
+```powershell
+python batch_pipeline.py [OPTIONS]
 ```
 
 | Class / Function | Description |
@@ -608,8 +640,16 @@ Core single-experiment workflow.
 
 ### `batch_sweep_runner.py`
 
+macOS/Linux:
+
 ```bash
 make sweep CONFIG=sweep_configs/baseline.yaml
+```
+
+Windows (PowerShell, with `.venv` activated):
+
+```powershell
+python batch_sweep_runner.py --config sweep_configs/baseline.yaml
 ```
 
 | Class / Function | Description |
