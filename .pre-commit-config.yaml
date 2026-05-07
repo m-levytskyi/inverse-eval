@@ -29,7 +29,7 @@ repos:
 
       - id: pytest-unit
         name: pytest unit
-        entry: python -m pytest -q tests
+        entry: .venv/bin/python -m pytest -q tests
         language: system
         always_run: true
         pass_filenames: false
@@ -37,7 +37,7 @@ repos:
 
       - id: ty-check
         name: ty check
-        entry: python -m ty check bootstrap.py bootstrap_windows.py device_utils.py tests
+        entry: .venv/bin/python -m ty check bootstrap.py bootstrap_windows.py device_utils.py tests
         language: system
         always_run: true
         pass_filenames: false
