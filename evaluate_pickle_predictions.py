@@ -255,7 +255,7 @@ def main():
     )
 
     if not batch_results:
-        logger.info("ERROR: No valid experiments to evaluate")
+        logger.error("No valid experiments to evaluate")
         return
 
     # Generate plots using reflectorch plotting utilities

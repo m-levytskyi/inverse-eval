@@ -166,6 +166,7 @@ def calculate_parameter_metrics(
     # Calculate constraint-based MAPE if using constraint-based priors
     constraint_based_percentage_errors = None
     overall_constraint_mape = None
+    constraint_widths = None
 
     if priors_type == "constraint_based":
         logger.info(
@@ -173,11 +174,11 @@ def calculate_parameter_metrics(
         )
 
         constraint_based_percentage_errors = np.zeros_like(errors)
+        constraint_widths = get_constraint_widths()
 
         for i in range(len(errors)):
             param_name = param_names[i]
 
-            constraint_widths = get_constraint_widths()
             constraint_width = constraint_widths.get(param_name)
             if constraint_width is None:
                 raise ValueError(
@@ -266,7 +267,7 @@ def calculate_parameter_metrics(
                 )
 
             # Add constraint width from centralized definition if configured.
-            constraint_width = get_constraint_widths().get(param_name)
+            constraint_width = constraint_widths.get(param_name)
             if constraint_width is not None:
                 param_metrics["constraint_width"] = constraint_width
             else:
