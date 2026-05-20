@@ -10,6 +10,7 @@ import sys
 import argparse
 import json
 import time
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -62,6 +63,9 @@ PRIORS_TYPE = "narrow" if USE_NARROW_PRIORS else "broad"
 DEFAULT_USE_PROMINENT_FEATURES = False  # Prominent features analysis
 
 # =============================================================================
+
+
+logger = logging.getLogger(__name__)
 
 
 class BatchInferencePipeline:
@@ -148,36 +152,36 @@ class BatchInferencePipeline:
         self.output_dir = self.base_output_dir / folder_name
         ensure_directory_exists(self.output_dir)
 
-        print(f"Output directory: {self.output_dir}")
-        print(f"Layer count: {self.layer_count}")
+        logger.info(f"Output directory: {self.output_dir}")
+        logger.info(f"Layer count: {self.layer_count}")
         if experiment_ids:
-            print(f"Processing specific experiments: {experiment_ids}")
+            logger.info(f"Processing specific experiments: {experiment_ids}")
         else:
-            print(f"Processing first {self.num_experiments} experiments")
-        print(
+            logger.info(f"Processing first {self.num_experiments} experiments")
+        logger.info(
             f"Preprocessing: {'enabled' if self.enable_preprocessing else 'disabled'}"
         )
-        print(
+        logger.info(
             f"Physical constraints: {'enabled' if self.apply_constraints else 'disabled'}"
         )
-        print(f"Prior bounds: {self.priors_type}")
-        print(f"Inference backend: {self.inference_backend}")
+        logger.info(f"Prior bounds: {self.priors_type}")
+        logger.info(f"Inference backend: {self.inference_backend}")
         if self.config_name:
-            print(f"Model config: {self.config_name}")
+            logger.info(f"Model config: {self.config_name}")
         if self.inference_backend == "nf":
-            print(f"NF num samples: {self.nf_num_samples}")
-            print(
+            logger.info(f"NF num samples: {self.nf_num_samples}")
+            logger.info(
                 f"NF importance sampling: {'enabled' if self.nf_enable_importance_sampling else 'disabled'}"
             )
-        print(
+        logger.info(
             f"Data source: {'THEORETICAL curves' if self.use_theoretical else 'EXPERIMENTAL curves'}"
         )
-        print(f"SLD fixing mode: {self.fix_sld_mode}")
+        logger.info(f"SLD fixing mode: {self.fix_sld_mode}")
         if self.use_narrow_priors:
-            print(
+            logger.info(
                 f"Narrow priors deviation: ±{self.narrow_priors_deviation * 100:.1f}%"
             )
-        print(
+        logger.info(
             f"Prominent features: {'enabled' if self.use_prominent_features else 'disabled'}"
         )
 
@@ -268,7 +272,7 @@ class BatchInferencePipeline:
             List of experiment IDs
         """
         if self.use_prominent_features:
-            print("\nPROMINENT FEATURES MODE ENABLED")
+            logger.info("\nPROMINENT FEATURES MODE ENABLED")
 
             # Find experiments with prominent peaks
             experiments_with_peaks = find_experiments_with_prominent_peaks(
@@ -278,19 +282,19 @@ class BatchInferencePipeline:
             )
 
             if not experiments_with_peaks:
-                print("No experiments with prominent peaks found!")
+                logger.info("No experiments with prominent peaks found!")
                 return []
 
             # Update experiment count based on filtered results
             original_num = self.num_experiments
             self.num_experiments = len(experiments_with_peaks)
 
-            print("\nPROMINENT FEATURES FILTERING RESULTS:")
-            print(
+            logger.info("\nPROMINENT FEATURES FILTERING RESULTS:")
+            logger.info(
                 f"  Found {len(experiments_with_peaks)} experiments with prominent peaks"
             )
-            print(f"  Original request: {original_num} experiments")
-            print(f"  Updated count: {self.num_experiments} experiments")
+            logger.info(f"  Original request: {original_num} experiments")
+            logger.info(f"  Updated count: {self.num_experiments} experiments")
 
             # If specific experiment_ids were provided, filter them
             if self.experiment_ids:
@@ -300,12 +304,12 @@ class BatchInferencePipeline:
                     for exp_id in self.experiment_ids
                     if exp_id in experiments_with_peaks
                 ]
-                print("  Filtering provided experiment IDs...")
-                print(f"  Provided: {len(self.experiment_ids)} experiments")
-                print(f"  With prominent peaks: {len(filtered_ids)} experiments")
+                logger.info("  Filtering provided experiment IDs...")
+                logger.info(f"  Provided: {len(self.experiment_ids)} experiments")
+                logger.info(f"  With prominent peaks: {len(filtered_ids)} experiments")
 
                 if not filtered_ids:
-                    print(
+                    logger.info(
                         "None of the provided experiment IDs have prominent peaks!"
                     )
                     return []
@@ -314,10 +318,10 @@ class BatchInferencePipeline:
             else:
                 # Use the first N experiments with peaks
                 selected_experiments = experiments_with_peaks[: self.num_experiments]
-                print(
+                logger.info(
                     f"  Selected first {len(selected_experiments)} experiments with peaks"
                 )
-                print(f"  Examples: {selected_experiments[:5]}")
+                logger.info(f"  Examples: {selected_experiments[:5]}")
                 return selected_experiments
 
         else:
@@ -340,9 +344,9 @@ class BatchInferencePipeline:
         Returns:
             Dictionary with results and metadata
         """
-        print(f"\n{'=' * 60}")
-        print(f"Processing experiment: {experiment_id}")
-        print(f"{'=' * 60}")
+        logger.info(f"\n{'=' * 60}")
+        logger.info(f"Processing experiment: {experiment_id}")
+        logger.info(f"{'=' * 60}")
 
         start_time = time.time()
 
@@ -378,12 +382,14 @@ class BatchInferencePipeline:
             results["priors_used"] = self.priors_type
             results["fallback_applied"] = False
 
-            print(f"  {experiment_id} completed successfully in {processing_time:.1f}s")
+            logger.info(
+                f"  {experiment_id} completed successfully in {processing_time:.1f}s"
+            )
             return results
 
         except Exception as error:
             error_msg = str(error)
-            print(f"  Failed: {error_msg}")
+            logger.exception("  Failed: %s", error_msg)
 
             # No fallback - fail immediately
             processing_time = time.time() - start_time
@@ -405,7 +411,7 @@ class BatchInferencePipeline:
         Returns:
             Dictionary of results
         """
-        print(f"\nProcessing {len(experiments)} experiments sequentially...")
+        logger.info(f"\nProcessing {len(experiments)} experiments sequentially...")
 
         all_results = {}
         successful_count = 0
@@ -414,7 +420,7 @@ class BatchInferencePipeline:
         start_time = time.time()
 
         for i, exp_id in enumerate(experiments, 1):
-            print(f"\nProgress: {i}/{len(experiments)} experiments")
+            logger.info(f"\nProgress: {i}/{len(experiments)} experiments")
 
             # Check for outliers if using constraint-based priors
             if self.priors_type == "constraint_based":
@@ -438,15 +444,15 @@ class BatchInferencePipeline:
                         )
 
                         if not is_within:
-                            print(f"  OUTLIER DETECTED: {exp_id}")
-                            print("  True parameters outside constraint bounds:")
+                            logger.info(f"  OUTLIER DETECTED: {exp_id}")
+                            logger.info("  True parameters outside constraint bounds:")
                             for (
                                 param_name,
                                 value,
                                 min_bound,
                                 max_bound,
                             ) in outlier_params:
-                                print(
+                                logger.info(
                                     f"    {param_name}: {value:.3f} not in [{min_bound:.3f}, {max_bound:.3f}]"
                                 )
 
@@ -469,8 +475,8 @@ class BatchInferencePipeline:
                             outlier_count += 1
                             continue  # Skip processing this experiment
 
-                except Exception as e:
-                    print(f"  Warning: Could not check for outliers: {e}")
+                except (OSError, ValueError, KeyError) as e:
+                    logger.warning("  Could not check for outliers: %s", e)
                     # Continue with normal processing if outlier check fails
 
             # Process experiment normally
@@ -485,13 +491,13 @@ class BatchInferencePipeline:
         end_time = time.time()
         total_time = end_time - start_time
 
-        print("\nSequential processing completed!")
-        print(f"  Total time: {total_time:.1f} seconds")
-        print(f"  Successful: {successful_count}")
-        print(f"  Failed: {failed_count}")
+        logger.info("\nSequential processing completed!")
+        logger.info(f"  Total time: {total_time:.1f} seconds")
+        logger.info(f"  Successful: {successful_count}")
+        logger.info(f"  Failed: {failed_count}")
         if outlier_count > 0:
-            print(f"  Excluded as outliers: {outlier_count}")
-        print(
+            logger.info(f"  Excluded as outliers: {outlier_count}")
+        logger.info(
             f"  Average time per experiment: {total_time / len(experiments):.1f} seconds"
         )
 
@@ -499,7 +505,7 @@ class BatchInferencePipeline:
 
     def save_results(self, all_results):
         """Save batch processing results to files."""
-        print(f"Saving results to {self.output_dir}")
+        logger.info(f"Saving results to {self.output_dir}")
 
         # Save detailed results as JSON
         results_file = self.output_dir / "batch_results.json"
@@ -510,7 +516,7 @@ class BatchInferencePipeline:
         with open(results_file, "w", encoding="utf-8") as f:
             json.dump(json_results, f, indent=2)
 
-        print(f"  Detailed results saved to: {results_file}")
+        logger.info(f"  Detailed results saved to: {results_file}")
 
         # Separate failed experiments and outliers
         failed_results = {
@@ -530,10 +536,10 @@ class BatchInferencePipeline:
             with open(failed_file, "w", encoding="utf-8") as f:
                 json.dump(failed_json_results, f, indent=2)
 
-            print(f"  Failed experiments saved to: {failed_file}")
-            print(f"  Total failed experiments: {len(failed_results)}")
+            logger.info(f"  Failed experiments saved to: {failed_file}")
+            logger.info(f"  Total failed experiments: {len(failed_results)}")
         else:
-            print("  No failed experiments to save")
+            logger.info("  No failed experiments to save")
 
         # Save outliers to separate file
         if outlier_results:
@@ -543,8 +549,8 @@ class BatchInferencePipeline:
             with open(outlier_file, "w", encoding="utf-8") as f:
                 json.dump(outlier_json_results, f, indent=2)
 
-            print(f"  Outlier experiments saved to: {outlier_file}")
-            print(f"  Total outlier experiments: {len(outlier_results)}")
+            logger.info(f"  Outlier experiments saved to: {outlier_file}")
+            logger.info(f"  Total outlier experiments: {len(outlier_results)}")
 
         # Create and save summary statistics
         successful_results = {
@@ -567,7 +573,7 @@ class BatchInferencePipeline:
             with open(summary_file, "w", encoding="utf-8") as f:
                 json.dump(summary, f, indent=2)
 
-            print(f"  Summary statistics saved to: {summary_file}")
+            logger.info(f"  Summary statistics saved to: {summary_file}")
 
             # Print summary to console
             print_summary_statistics(summary)
@@ -585,8 +591,8 @@ class BatchInferencePipeline:
 
     def run(self):
         """Run the complete batch processing pipeline."""
-        print("STARTING BATCH INFERENCE PIPELINE")
-        print("=" * 60)
+        logger.info("STARTING BATCH INFERENCE PIPELINE")
+        logger.info("=" * 60)
 
         start_time = time.time()
 
@@ -594,7 +600,7 @@ class BatchInferencePipeline:
         experiments = self.discover_experiments()
 
         if not experiments:
-            print("No experiments found!")
+            logger.info("No experiments found!")
             return None
 
         # Process experiments sequentially
@@ -615,7 +621,7 @@ class BatchInferencePipeline:
         # Create plots with outlier and failure statistics
         if successful_results:
             try:
-                print("\nCreating analysis plots...")
+                logger.info("\nCreating analysis plots...")
                 create_batch_analysis_plots(
                     successful_results,
                     layer_count=self.layer_count,
@@ -628,25 +634,25 @@ class BatchInferencePipeline:
                     failed_count=failed_count,
                     outlier_count=outlier_count,
                 )
-                print("Analysis plots completed")
-            except Exception as e:
-                print(f"Warning: Failed to create plots: {e}")
+                logger.info("Analysis plots completed")
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.exception("Failed to create plots: %s", e)
 
         end_time = time.time()
         total_pipeline_time = end_time - start_time
 
         # Final summary
-        print(f"\n{'=' * 60}")
-        print("BATCH PIPELINE COMPLETED")
-        print(f"{'=' * 60}")
-        print(f"Total time: {total_pipeline_time:.1f} seconds")
-        print(f"Successful experiments: {successful_count}/{total_count}")
+        logger.info(f"\n{'=' * 60}")
+        logger.info("BATCH PIPELINE COMPLETED")
+        logger.info(f"{'=' * 60}")
+        logger.info(f"Total time: {total_pipeline_time:.1f} seconds")
+        logger.info(f"Successful experiments: {successful_count}/{total_count}")
         if outlier_count > 0:
-            print(f"Excluded as outliers: {outlier_count}")
+            logger.info(f"Excluded as outliers: {outlier_count}")
         if failed_count > 0:
-            print(f"Failed experiments: {failed_count}")
-        print(f"Success rate: {successful_count / total_count * 100:.1f}%")
-        print(f"Results saved to: {self.output_dir}")
+            logger.info(f"Failed experiments: {failed_count}")
+        logger.info(f"Success rate: {successful_count / total_count * 100:.1f}%")
+        logger.info(f"Results saved to: {self.output_dir}")
 
         return all_results
 
@@ -763,6 +769,7 @@ def parse_arguments():
 
 def main():
     """Main function to run the batch inference pipeline."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = parse_arguments()
 
     # Create batch pipeline
@@ -791,13 +798,13 @@ def main():
     try:
         results = batch_pipeline.run()
         if results is None:
-            print("\nBatch pipeline failed: No experiments found")
+            logger.info("\nBatch pipeline failed: No experiments found")
             sys.exit(1)
-        print("\nBatch pipeline completed successfully!")
+        logger.info("\nBatch pipeline completed successfully!")
     except KeyboardInterrupt:
-        print("\nBatch pipeline interrupted by user")
-    except Exception as e:
-        print(f"\nBatch pipeline failed: {e}")
+        logger.warning("\nBatch pipeline interrupted by user")
+    except (OSError, ValueError, KeyError, RuntimeError) as e:
+        logger.exception("\nBatch pipeline failed: %s", e)
         sys.exit(1)
 
 

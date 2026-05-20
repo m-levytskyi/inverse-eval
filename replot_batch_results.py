@@ -8,8 +8,12 @@ Supports both generic batch replotting and paper-specific categorized replotting
 
 import json
 import argparse
+import logging
 from pathlib import Path
 from plotting_utils import create_batch_analysis_plots
+
+
+logger = logging.getLogger(__name__)
 
 
 def replot_batch_results(results_dir, output_dir=None):
@@ -27,10 +31,10 @@ def replot_batch_results(results_dir, output_dir=None):
 
     batch_results_file = results_dir / "batch_results.json"
     if not batch_results_file.exists():
-        print(f"Error: {batch_results_file} not found!")
+        logger.info(f"Error: {batch_results_file} not found!")
         return []
 
-    print(f"Loading batch results from: {batch_results_file}")
+    logger.info(f"Loading batch results from: {batch_results_file}")
     with open(batch_results_file, "r") as f:
         batch_results = json.load(f)
 
@@ -48,10 +52,10 @@ def replot_batch_results(results_dir, output_dir=None):
         layer_count = 1
 
     successful = {k: v for k, v in batch_results.items() if v.get("success", False)}
-    print(
+    logger.info(
         f"Processing {len(successful)}/{len(batch_results)} successful experiments ({layer_count} layer(s))"
     )
-    print(f"Saving plots to: {output_dir}")
+    logger.info(f"Saving plots to: {output_dir}")
 
     try:
         plot_paths = create_batch_analysis_plots(
@@ -61,16 +65,13 @@ def replot_batch_results(results_dir, output_dir=None):
             save=True,
         )
         saved = [str(p) for p in plot_paths.values() if p is not None]
-        print(f"\nRegenerated {len(saved)} plots:")
+        logger.info(f"\nRegenerated {len(saved)} plots:")
         for path in saved:
-            print(f"  - {path}")
+            logger.info(f"  - {path}")
         return saved
 
-    except Exception as e:
-        print(f"Error creating plots: {e}")
-        import traceback
-
-        traceback.print_exc()
+    except (OSError, ValueError, RuntimeError) as e:
+        logger.exception("Error creating plots: %s", e)
         return []
 
 
@@ -136,10 +137,10 @@ def replot_batch_paper(batch_id, base_output_dir="paper_batches"):
     batch_dir = find_batch_directory(batch_id)
 
     if not batch_dir:
-        print(f"Batch {batch_id} not found")
+        logger.info(f"Batch {batch_id} not found")
         return []
 
-    print(f"\nProcessing batch {batch_id}: {batch_dir.name}")
+    logger.info(f"\nProcessing batch {batch_id}: {batch_dir.name}")
 
     category = get_batch_category(batch_id)
     output_dir = Path(base_output_dir) / category / batch_dir.name
@@ -169,8 +170,8 @@ def replot_paper_batches(batch_ids=None):
         batch_ids.extend(range(360, 378))  # NF mean conditioned sweep: 360-377
 
     batch_ids = sorted(set(batch_ids))
-    print(f"Replotting {len(batch_ids)} batches")
-    print(f"Batch IDs: {batch_ids}")
+    logger.info(f"Replotting {len(batch_ids)} batches")
+    logger.info(f"Batch IDs: {batch_ids}")
 
     success_count = 0
     for batch_id in batch_ids:
@@ -178,10 +179,10 @@ def replot_paper_batches(batch_ids=None):
             result = replot_batch_paper(batch_id)
             if result:
                 success_count += 1
-        except Exception as e:
-            print(f"Error processing batch {batch_id}: {e}")
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.exception("Error processing batch %s: %s", batch_id, e)
 
-    print(f"\nCompleted: {success_count}/{len(batch_ids)} batches")
+    logger.info(f"\nCompleted: {success_count}/{len(batch_ids)} batches")
     return success_count
 
 
@@ -213,12 +214,12 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
         pickle_path = Path(pickle_path)
 
     if not pickle_path.exists():
-        print(f"Error: {pickle_path} not found!")
+        logger.info(f"Error: {pickle_path} not found!")
         return []
 
     manifest_path = anaklasis_dir / f"manifest_exp_{layer_count}L.pkl"
     if not manifest_path.exists():
-        print(f"Error: {manifest_path} not found!")
+        logger.info(f"Error: {manifest_path} not found!")
         return []
 
     # Import conversion functions from root directory
@@ -235,7 +236,7 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
 
     # Validate: convert_pickle_to_batch_results only supports fitconstraints=0 (6 params)
     if targets.shape[1] != 6:
-        print(
+        logger.info(
             f"Error: Pickle has {targets.shape[1]} parameters per experiment. "
             f"Only fitconstraints=0 (6 parameters) is supported."
         )
@@ -249,7 +250,7 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
     )
 
     if not batch_results:
-        print("Error: No valid experiments after conversion")
+        logger.info("Error: No valid experiments after conversion")
         return []
 
     if output_dir is None:
@@ -261,11 +262,11 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     successful = {k: v for k, v in batch_results.items() if v.get("success", False)}
-    print(
+    logger.info(
         f"Processing {len(successful)} experiments "
         f"({layer_count} layer(s), {outlier_count} outliers excluded)"
     )
-    print(f"Saving plots to: {output_dir}")
+    logger.info(f"Saving plots to: {output_dir}")
 
     try:
         plot_paths = create_batch_analysis_plots(
@@ -275,20 +276,19 @@ def replot_anaklasis(pickle_path=None, output_dir=None, layer_count=1):
             save=True,
         )
         saved = [str(p) for p in plot_paths.values() if p is not None]
-        print(f"\nRegenerated {len(saved)} plots:")
+        logger.info(f"\nRegenerated {len(saved)} plots:")
         for path in saved:
-            print(f"  - {path}")
+            logger.info(f"  - {path}")
         return saved
 
-    except Exception as e:
-        print(f"Error creating plots: {e}")
-        import traceback
-
-        traceback.print_exc()
+    except (OSError, ValueError, RuntimeError) as e:
+        logger.exception("Error creating plots: %s", e)
         return []
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = argparse.ArgumentParser(
         description="Re-run plotting utilities on completed batch results"
     )

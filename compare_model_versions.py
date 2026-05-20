@@ -10,6 +10,7 @@ The baseline model appears as grey background bars, q-weighted as colored foregr
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 from collections import defaultdict
@@ -17,6 +18,9 @@ from plotting_utils import (
     plot_model_comparison_histogram,
     plot_parameter_comparison_grid,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def load_batch_summary(batch_dir: Path) -> Dict:
@@ -276,14 +280,16 @@ def generate_comparison_plots(
         base_dir: Base directory containing batch results
         output_dir: Output directory for plots
     """
-    print(f"\n{'=' * 80}")
-    print("MODEL COMPARISON: Q-Weighted vs Baseline")
-    print(f"{'=' * 80}")
-    print(
+    logger.info(f"\n{'=' * 80}")
+    logger.info("MODEL COMPARISON: Q-Weighted vs Baseline")
+    logger.info(f"{'=' * 80}")
+    logger.info(
         f"Baseline batches: {baseline_range[0]}-{baseline_range[1]} (Generated data only)"
     )
-    print(f"Q-Weighted batches: {qweighted_range[0]}-{qweighted_range[1]} (Mixed data)")
-    print()
+    logger.info(
+        f"Q-Weighted batches: {qweighted_range[0]}-{qweighted_range[1]} (Mixed data)"
+    )
+    logger.info("")
 
     # Find batch directories
     all_batches = sorted(
@@ -300,14 +306,14 @@ def generate_comparison_plots(
         elif qweighted_range[0] <= batch_num <= qweighted_range[1]:
             qweighted_batches.append(batch_dir)
 
-    print(f"Found {len(baseline_batches)} baseline batches")
-    print(f"Found {len(qweighted_batches)} q-weighted batches")
-    print()
+    logger.info(f"Found {len(baseline_batches)} baseline batches")
+    logger.info(f"Found {len(qweighted_batches)} q-weighted batches")
+    logger.info("")
 
     # Find matching pairs
     matches = find_matching_batches(baseline_batches, qweighted_batches)
-    print(f"Found {len(matches)} matching batch pairs")
-    print()
+    logger.info(f"Found {len(matches)} matching batch pairs")
+    logger.info("")
 
     # Create output directory structure
     for subdir in ["mape", "mape_prom", "param_mape", "param_mape_prom"]:
@@ -315,10 +321,10 @@ def generate_comparison_plots(
 
     # Generate plots for each matching pair
     for baseline_path, qweighted_path, config in matches:
-        print("\nProcessing pair:")
-        print(f"  Baseline: {baseline_path.name}")
-        print(f"  Q-Weighted: {qweighted_path.name}")
-        print(
+        logger.info("\nProcessing pair:")
+        logger.info(f"  Baseline: {baseline_path.name}")
+        logger.info(f"  Q-Weighted: {qweighted_path.name}")
+        logger.info(
             f"  Config: {config['constraint']}% constraint, SLD fix: {config['sld_fix_mode']}, "
             f"Prominent: {config['prominent']}"
         )
@@ -334,11 +340,11 @@ def generate_comparison_plots(
             baseline_meta = get_batch_metadata(baseline_path)
             qweighted_meta = get_batch_metadata(qweighted_path)
 
-            print(f"  Baseline: {len(baseline_mapes)} MAPEs extracted")
-            print(f"  Q-Weighted: {len(qweighted_mapes)} MAPEs extracted")
+            logger.info(f"  Baseline: {len(baseline_mapes)} MAPEs extracted")
+            logger.info(f"  Q-Weighted: {len(qweighted_mapes)} MAPEs extracted")
 
             if not baseline_mapes or not qweighted_mapes:
-                print("  Skipping - insufficient data")
+                logger.info("  Skipping - insufficient data")
                 continue
 
             # Determine output filenames
@@ -384,19 +390,18 @@ def generate_comparison_plots(
                 priors_type=baseline_meta.get("priors_type", "constraint_based"),
             )
 
-        except Exception as e:
-            print(f"  ERROR: {e}")
-            import traceback
-
-            traceback.print_exc()
+        except (OSError, ValueError, KeyError, RuntimeError) as e:
+            logger.exception("  Error processing pair: %s", e)
             continue
 
-    print(f"\n{'=' * 80}")
-    print(f"Comparison complete! Plots saved to: {output_dir}")
-    print(f"{'=' * 80}")
+    logger.info(f"\n{'=' * 80}")
+    logger.info(f"Comparison complete! Plots saved to: {output_dir}")
+    logger.info(f"{'=' * 80}")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     # Configuration
     baseline_range = (269, 286)  # Baseline model (generated data only)
     qweighted_range = (233, 250)  # Q-weighted model (mixed data)

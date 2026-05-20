@@ -7,6 +7,10 @@ calculating statistics, and detecting edge cases.
 """
 
 import numpy as np
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def create_summary_statistics(
@@ -146,21 +150,29 @@ def print_mape_distribution(successful_results, show_traditional=False):
         c_poor = sum(1 for m in constraint_mape_values if m >= 20)
         print("\nCONSTRAINT-BASED MAPE DISTRIBUTION:")
         print("-" * 35)
-        print(f"Excellent (< 5%):    {c_excellent} ({100 * c_excellent / c_total:.1f}%)")
+        print(
+            f"Excellent (< 5%):    {c_excellent} ({100 * c_excellent / c_total:.1f}%)"
+        )
         print(f"Good (5-10%):        {c_good} ({100 * c_good / c_total:.1f}%)")
-        print(f"Acceptable (10-20%): {c_acceptable} ({100 * c_acceptable / c_total:.1f}%)")
+        print(
+            f"Acceptable (10-20%): {c_acceptable} ({100 * c_acceptable / c_total:.1f}%)"
+        )
         print(f"Poor (>= 20%):       {c_poor} ({100 * c_poor / c_total:.1f}%)")
         print("\nStatistics:")
-        print(f"Mean:   {np.mean(constraint_mape_values):.1f}% +/- {np.std(constraint_mape_values):.1f}%")
+        print(
+            f"Mean:   {np.mean(constraint_mape_values):.1f}% +/- {np.std(constraint_mape_values):.1f}%"
+        )
         print(f"Median: {np.median(constraint_mape_values):.1f}%")
-        print(f"Range:  {np.min(constraint_mape_values):.1f}% - {np.max(constraint_mape_values):.1f}%")
+        print(
+            f"Range:  {np.min(constraint_mape_values):.1f}% - {np.max(constraint_mape_values):.1f}%"
+        )
 
 
 def detect_edge_cases(successful_results):
     """Detect edge cases with poor performance using real MAPE values."""
     edge_cases = []
 
-    print("\nDEBUG - Edge case detection:")
+    logger.debug("Edge case detection:")
 
     for exp_name, result in successful_results.items():
         if "param_metrics" not in result or not result["param_metrics"]:
@@ -177,7 +189,7 @@ def detect_edge_cases(successful_results):
                 overall_mape = param_metrics["overall"]["mape"]
 
         if overall_mape is not None:
-            print(f"  {exp_name}: {overall_mape:.1f}% MAPE")
+            logger.debug("  %s: %.1f%% MAPE", exp_name, overall_mape)
 
             # Flag as edge case if MAPE > 50%
             if overall_mape > 50:
@@ -206,31 +218,20 @@ def detect_edge_cases(successful_results):
     edge_cases.sort(key=lambda x: x["overall_mape"], reverse=True)
 
     if edge_cases:
-        print(
-            f"\n🚨 Edge Cases Detected ({len(edge_cases)} experiments with MAPE > 50%):"
+        logger.warning(
+            "Edge cases detected (%s experiments with MAPE > 50%%):",
+            len(edge_cases),
         )
-        print("-" * 80)
         for i, case in enumerate(edge_cases[:5], 1):  # Show top 5 worst
-            print(f"{i}. {case['experiment']}")
-            print(f"   Overall MAPE: {case['overall_mape']:.1f}%")
+            logger.warning("%s. %s", i, case["experiment"])
+            logger.warning("   Overall MAPE: %.1f%%", case["overall_mape"])
             if case["thickness_mape"] is not None:
-                print(f"   Thickness: {case['thickness_mape']:.1f}%")
+                logger.warning("   Thickness: %.1f%%", case["thickness_mape"])
             if case["roughness_mape"] is not None:
-                print(f"   Roughness: {case['roughness_mape']:.1f}%")
+                logger.warning("   Roughness: %.1f%%", case["roughness_mape"])
             if case["sld_mape"] is not None:
-                print(f"   SLD: {case['sld_mape']:.1f}%")
-            print()
+                logger.warning("   SLD: %.1f%%", case["sld_mape"])
     else:
-        print("\nNo edge cases detected (all experiments < 50% MAPE)")
+        logger.info("No edge cases detected (all experiments < 50%% MAPE)")
 
     return edge_cases
-
-
-if __name__ == "__main__":
-    print("Batch analysis module loaded successfully.")
-    print("Available functions:")
-    print("  - create_summary_statistics()")
-    print("  - print_summary_statistics()")
-    print("  - print_mape_distribution()")
-    print("  - detect_edge_cases()")
-    print("Note: Plotting functions are available in plotting_utils module")

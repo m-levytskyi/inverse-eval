@@ -7,7 +7,12 @@ goodness-of-fit measures for comparing predicted and experimental data.
 """
 
 import numpy as np
-from constraints_utils import get_constraint_width
+import logging
+
+from constraints_utils import get_constraint_widths
+
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_fit_metrics(y_exp, y_pred, sigma_exp, q_exp, q_model):
@@ -24,11 +29,13 @@ def calculate_fit_metrics(y_exp, y_pred, sigma_exp, q_exp, q_model):
     Returns:
         Dictionary with calculated metrics
     """
-    print("Calculating fit metrics (R-squared, MSE, L1 loss)")
+    logger.info("Calculating fit metrics (R-squared, MSE, L1 loss)")
 
     # Interpolate predicted curve to experimental Q points for comparison
-    print(
-        f"Interpolating predicted curve ({len(y_pred)} pts) to experimental Q points ({len(q_exp)} pts)"
+    logger.info(
+        "Interpolating predicted curve (%s pts) to experimental Q points (%s pts)",
+        len(y_pred),
+        len(q_exp),
     )
     y_pred_interp = np.interp(q_exp, q_model, y_pred)
 
@@ -64,7 +71,7 @@ def calculate_fit_metrics(y_exp, y_pred, sigma_exp, q_exp, q_model):
         "max_relative_error": float(max_relative_error),
     }
 
-    print(f"Calculated fit metrics: {metrics}")
+    logger.info("Calculated fit metrics: %s", metrics)
     return metrics
 
 
@@ -89,14 +96,16 @@ def calculate_parameter_metrics(
     Returns:
         Dictionary with calculated parameter metrics
     """
-    print("Calculating parameter metrics (MAPE, MSE)")
-    print(f"  - Predicted params: {pred_params}")
-    print(f"  - True params: {true_params}")
-    print(f"  - Param names: {param_names}")
+    logger.info("Calculating parameter metrics (MAPE, MSE)")
+    logger.info("  - Predicted params: %s", pred_params)
+    logger.info("  - True params: %s", true_params)
+    logger.info("  - Param names: %s", param_names)
 
     if len(pred_params) != len(true_params):
-        print(
-            f"WARNING: Parameter count mismatch. Predicted: {len(pred_params)}, True: {len(true_params)}"
+        logger.warning(
+            "Parameter count mismatch. Predicted: %s, True: %s",
+            len(pred_params),
+            len(true_params),
         )
         return {"overall": {"mape": -1, "mse": -1}, "by_type": {}, "by_parameter": {}}
 
@@ -114,8 +123,11 @@ def calculate_parameter_metrics(
         true_converted = true_val
 
         if "sld" in param_name.lower():
-            print(
-                f"SLD comparison for {param_name} - Pred: {pred_val:.6f}, True: {true_val:.6f} (no conversion needed)"
+            logger.info(
+                "SLD comparison for %s - Pred: %.6f, True: %.6f (no conversion needed)",
+                param_name,
+                pred_val,
+                true_val,
             )
 
         pred_params_converted.append(pred_converted)
@@ -142,8 +154,9 @@ def calculate_parameter_metrics(
         percentage_errors[zero_mask] = np.abs(
             errors[zero_mask]
         )  # Absolute error for zeros
-        print(
-            f"WARNING: Zero true values found for parameters: {[param_names[i] for i in np.where(zero_mask)[0]]}"
+        logger.warning(
+            "Zero true values found for parameters: %s",
+            [param_names[i] for i in np.where(zero_mask)[0]],
         )
 
     # Overall metrics
@@ -155,7 +168,7 @@ def calculate_parameter_metrics(
     overall_constraint_mape = None
 
     if priors_type == "constraint_based":
-        print(
+        logger.info(
             "Calculating constraint-based MAPE (normalized by constraint interval width)"
         )
 
@@ -164,10 +177,9 @@ def calculate_parameter_metrics(
         for i in range(len(errors)):
             param_name = param_names[i]
 
-            # Get constraint width from centralized definition
-            try:
-                constraint_width = get_constraint_width(param_name)
-            except KeyError:
+            constraint_widths = get_constraint_widths()
+            constraint_width = constraint_widths.get(param_name)
+            if constraint_width is None:
                 raise ValueError(
                     f"Unknown parameter type: {param_name}. "
                     f"Please add to model_constraints.json"
@@ -181,7 +193,9 @@ def calculate_parameter_metrics(
             )
 
         overall_constraint_mape = np.mean(constraint_based_percentage_errors)
-        print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
+        logger.info(
+            "  - Overall Constraint-based MAPE: %.2f%%", overall_constraint_mape
+        )
 
     # Metrics by parameter type
     by_type = {}
@@ -251,11 +265,12 @@ def calculate_parameter_metrics(
                     prior_bounds[i][1] - prior_bounds[i][0]
                 )
 
-            # Add constraint width from centralized definition
-            try:
-                param_metrics["constraint_width"] = get_constraint_width(param_name)
-            except KeyError:
-                pass  # Skip if parameter not found
+            # Add constraint width from centralized definition if configured.
+            constraint_width = get_constraint_widths().get(param_name)
+            if constraint_width is not None:
+                param_metrics["constraint_width"] = constraint_width
+            else:
+                logger.debug("No constraint width configured for %s", param_name)
 
         by_parameter[param_name] = param_metrics
 
@@ -270,11 +285,13 @@ def calculate_parameter_metrics(
         metrics["overall"]["constraint_mape"] = float(overall_constraint_mape)
         metrics["priors_type"] = priors_type
 
-    print("Parameter metrics calculated:")
-    print(f"  - Overall MAPE: {overall_mape:.2f}%")
+    logger.info("Parameter metrics calculated:")
+    logger.info("  - Overall MAPE: %.2f%%", overall_mape)
     if overall_constraint_mape is not None:
-        print(f"  - Overall Constraint-based MAPE: {overall_constraint_mape:.2f}%")
-    print(f"  - Overall MSE: {overall_mse:.6f}")
+        logger.info(
+            "  - Overall Constraint-based MAPE: %.2f%%", overall_constraint_mape
+        )
+    logger.info("  - Overall MSE: %.6f", overall_mse)
 
     return metrics
 

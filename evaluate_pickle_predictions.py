@@ -17,6 +17,7 @@ Pickle file: results_exp_1L_fitconstraints0_width0.3_simple.pkl
 """
 
 import pickle
+import logging
 import numpy as np
 from pathlib import Path
 
@@ -25,9 +26,12 @@ from plotting_utils import plot_batch_mape_distribution, plot_batch_parameter_br
 from constraints_utils import get_constraint_ranges
 
 
+logger = logging.getLogger(__name__)
+
+
 def load_pickle_data(pickle_file="results_exp_1L_fitconstraints0_width0.3_simple.pkl"):
     """Load pickle prediction data."""
-    print(f"Loading pickle file: {pickle_file}")
+    logger.info(f"Loading pickle file: {pickle_file}")
     with open(pickle_file, "rb") as f:
         data = pickle.load(f)
 
@@ -38,22 +42,22 @@ def load_pickle_data(pickle_file="results_exp_1L_fitconstraints0_width0.3_simple
     width = data[4]  # 0.3 = 30% constraint-based
     bounds_flags = data[5]  # Out of bounds indicator
 
-    print(f"  Loaded {len(indices)} experiments")
-    print(f"  fitconstraints: {fitconstraints} (0=all params)")
-    print(f"  width: {width} (constraint deviation)")
-    print(f"  Out of bounds: {np.sum(bounds_flags)} experiments")
+    logger.info(f"  Loaded {len(indices)} experiments")
+    logger.info(f"  fitconstraints: {fitconstraints} (0=all params)")
+    logger.info(f"  width: {width} (constraint deviation)")
+    logger.info(f"  Out of bounds: {np.sum(bounds_flags)} experiments")
 
     return targets, predictions, indices, bounds_flags, width
 
 
 def load_manifest(manifest_file="manifest_exp_1L.pkl"):
     """Load manifest to get experiment IDs."""
-    print(f"Loading manifest: {manifest_file}")
+    logger.info(f"Loading manifest: {manifest_file}")
     with open(manifest_file, "rb") as f:
         manifest = pickle.load(f)
 
     samples = manifest["samples"]
-    print(f"  Loaded {len(samples)} manifest entries")
+    logger.info(f"  Loaded {len(samples)} manifest entries")
 
     return samples
 
@@ -142,7 +146,7 @@ def convert_pickle_to_batch_results(
 
     Note: We only use 5 parameters (excluding sld_fronting) to match reflectorch.
     """
-    print("\nConverting pickle predictions to batch_results format...")
+    logger.info("\nConverting pickle predictions to batch_results format...")
 
     batch_results = {}
     outlier_count = 0
@@ -222,22 +226,24 @@ def convert_pickle_to_batch_results(
         }
 
         if (pkl_pos + 1) % 500 == 0:
-            print(f"  Processed {pkl_pos + 1}/{len(indices)} experiments...")
+            logger.info(f"  Processed {pkl_pos + 1}/{len(indices)} experiments...")
 
-    print("\nConversion complete:")
-    print(f"  Total experiments in pickle: {len(indices)}")
-    print(f"  Outliers (excluded): {outlier_count}")
-    print(f"  Valid experiments: {len(batch_results)}")
+    logger.info("\nConversion complete:")
+    logger.info(f"  Total experiments in pickle: {len(indices)}")
+    logger.info(f"  Outliers (excluded): {outlier_count}")
+    logger.info(f"  Valid experiments: {len(batch_results)}")
 
     return batch_results, outlier_count
 
 
 def main():
     """Main execution function."""
-    print("=" * 80)
-    print("PICKLE PREDICTIONS EVALUATION")
-    print("Using Reflectorch Pipeline with Constraint-Based Priors")
-    print("=" * 80)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    logger.info("=" * 80)
+    logger.info("PICKLE PREDICTIONS EVALUATION")
+    logger.info("Using Reflectorch Pipeline with Constraint-Based Priors")
+    logger.info("=" * 80)
 
     # Load data
     targets, predictions, indices, bounds_flags, width = load_pickle_data()
@@ -249,18 +255,18 @@ def main():
     )
 
     if not batch_results:
-        print("ERROR: No valid experiments to evaluate")
+        logger.info("ERROR: No valid experiments to evaluate")
         return
 
     # Generate plots using reflectorch plotting utilities
-    print("\n" + "=" * 80)
-    print("GENERATING MAPE DISTRIBUTION PLOTS")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("GENERATING MAPE DISTRIBUTION PLOTS")
+    logger.info("=" * 80)
 
     output_dir = Path(".")
 
     # 1. Overall MAPE histogram
-    print("\n1. Overall MAPE Distribution...")
+    logger.info("\n1. Overall MAPE Distribution...")
     plot_path_overall = plot_batch_mape_distribution(
         batch_results=batch_results,
         layer_count=1,
@@ -273,10 +279,10 @@ def main():
     )
 
     if plot_path_overall:
-        print(f"   Saved to: {plot_path_overall}")
+        logger.info(f"   Saved to: {plot_path_overall}")
 
     # 2. Parameter-specific MAPE breakdown
-    print("\n2. Parameter-Specific MAPE Breakdown...")
+    logger.info("\n2. Parameter-Specific MAPE Breakdown...")
     plot_path_params = plot_batch_parameter_breakdown(
         batch_results=batch_results,
         layer_count=1,
@@ -289,12 +295,12 @@ def main():
     )
 
     if plot_path_params:
-        print(f"   Saved to: {plot_path_params}")
+        logger.info(f"   Saved to: {plot_path_params}")
 
     # Print summary statistics
-    print("\n" + "=" * 80)
-    print("SUMMARY STATISTICS")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("SUMMARY STATISTICS")
+    logger.info("=" * 80)
 
     constraint_mapes = []
     param_stats = {"thickness": [], "roughness": [], "sld": []}
@@ -319,13 +325,13 @@ def main():
                         )
 
     if constraint_mapes:
-        print("\nOverall Constraint-Based MAPE Statistics:")
-        print(f"  Total experiments: {len(constraint_mapes)}")
-        print(f"  Mean: {np.mean(constraint_mapes):.2f}%")
-        print(f"  Median: {np.median(constraint_mapes):.2f}%")
-        print(f"  Std Dev: {np.std(constraint_mapes):.2f}%")
-        print(f"  Min: {np.min(constraint_mapes):.2f}%")
-        print(f"  Max: {np.max(constraint_mapes):.2f}%")
+        logger.info("\nOverall Constraint-Based MAPE Statistics:")
+        logger.info(f"  Total experiments: {len(constraint_mapes)}")
+        logger.info(f"  Mean: {np.mean(constraint_mapes):.2f}%")
+        logger.info(f"  Median: {np.median(constraint_mapes):.2f}%")
+        logger.info(f"  Std Dev: {np.std(constraint_mapes):.2f}%")
+        logger.info(f"  Min: {np.min(constraint_mapes):.2f}%")
+        logger.info(f"  Max: {np.max(constraint_mapes):.2f}%")
 
         # Distribution
         excellent = sum(1 for m in constraint_mapes if m < 5)
@@ -334,30 +340,30 @@ def main():
         poor = sum(1 for m in constraint_mapes if m >= 20)
 
         total = len(constraint_mapes)
-        print("\n  Distribution:")
-        print(
+        logger.info("\n  Distribution:")
+        logger.info(
             f"    Excellent (< 5%):     {excellent:4d} ({excellent / total * 100:5.1f}%)"
         )
-        print(f"    Good (5-10%):         {good:4d} ({good / total * 100:5.1f}%)")
-        print(
+        logger.info(f"    Good (5-10%):         {good:4d} ({good / total * 100:5.1f}%)")
+        logger.info(
             f"    Acceptable (10-20%):  {acceptable:4d} ({acceptable / total * 100:5.1f}%)"
         )
-        print(f"    Poor (≥ 20%):         {poor:4d} ({poor / total * 100:5.1f}%)")
+        logger.info(f"    Poor (≥ 20%):         {poor:4d} ({poor / total * 100:5.1f}%)")
 
     # Parameter-specific statistics
-    print("\nParameter-Specific Constraint-Based MAPE:")
+    logger.info("\nParameter-Specific Constraint-Based MAPE:")
     for param_type, values in param_stats.items():
         if values:
-            print(f"\n  {param_type.upper()}:")
-            print(f"    Count: {len(values)}")
-            print(f"    Mean: {np.mean(values):.2f}%")
-            print(f"    Median: {np.median(values):.2f}%")
-            print(f"    Std: {np.std(values):.2f}%")
-            print(f"    Range: [{np.min(values):.2f}%, {np.max(values):.2f}%]")
+            logger.info(f"\n  {param_type.upper()}:")
+            logger.info(f"    Count: {len(values)}")
+            logger.info(f"    Mean: {np.mean(values):.2f}%")
+            logger.info(f"    Median: {np.median(values):.2f}%")
+            logger.info(f"    Std: {np.std(values):.2f}%")
+            logger.info(f"    Range: [{np.min(values):.2f}%, {np.max(values):.2f}%]")
 
-    print("\n" + "=" * 80)
-    print("Evaluation complete!")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("Evaluation complete!")
+    logger.info("=" * 80)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import io
 import json
+import logging
 import pickle
 from pathlib import Path
 
@@ -27,6 +28,9 @@ from error_calculation import calculate_parameter_metrics
 
 PARAM_NAMES_5 = ["thickness", "amb_rough", "sub_rough", "layer_sld", "sub_sld"]
 PICKLE_TO_REFLECTORCH_INDICES = [3, 1, 4, 2, 5]
+
+
+logger = logging.getLogger(__name__)
 
 
 def load_constraint_mapes_from_summary(summary_file: Path) -> list[float]:
@@ -116,7 +120,9 @@ def load_anaklasis_constraint_mapes(pickle_file: Path) -> list[float]:
             continue
 
         true_vals = [float(targets[position][i]) for i in PICKLE_TO_REFLECTORCH_INDICES]
-        pred_vals = [float(predictions[position][i]) for i in PICKLE_TO_REFLECTORCH_INDICES]
+        pred_vals = [
+            float(predictions[position][i]) for i in PICKLE_TO_REFLECTORCH_INDICES
+        ]
 
         # Convert SLD units to 10^-6 Å^-2
         true_vals[3] *= 1e6
@@ -172,7 +178,9 @@ def plot_comparison_histogram(
     bins: int,
 ):
     if not anaklasis_mapes or not panpe_baseline_mapes:
-        raise ValueError("Both Anaklasis and PANPE baseline MAPE lists must be non-empty.")
+        raise ValueError(
+            "Both Anaklasis and PANPE baseline MAPE lists must be non-empty."
+        )
 
     fig, ax = plt.subplots(figsize=(9.2, 5.2))
 
@@ -244,7 +252,9 @@ def plot_random_style_range_comparison(
     prominent: bool,
 ):
     if not anaklasis_mapes or not panpe_baseline_mapes:
-        raise ValueError("Both Anaklasis and PANPE baseline MAPE lists must be non-empty.")
+        raise ValueError(
+            "Both Anaklasis and PANPE baseline MAPE lists must be non-empty."
+        )
 
     mape_ranges, range_labels = _get_mape_ranges_and_labels()
     anaklasis_counts = _count_mapes_in_ranges(anaklasis_mapes, mape_ranges)
@@ -312,7 +322,9 @@ def plot_median_comparison_bar(
     prominent: bool,
 ):
     if not anaklasis_mapes or not panpe_baseline_mapes:
-        raise ValueError("Both Anaklasis and PANPE baseline MAPE lists must be non-empty.")
+        raise ValueError(
+            "Both Anaklasis and PANPE baseline MAPE lists must be non-empty."
+        )
 
     anaklasis_median = float(np.median(anaklasis_mapes))
     panpe_median = float(np.median(panpe_baseline_mapes))
@@ -380,14 +392,14 @@ def run(
     if not nf_summary.exists():
         raise FileNotFoundError(f"Missing summary file: {nf_summary}")
 
-    print(f"Using PANPE baseline batch: {nf_batch.name}")
-    print(f"Using anaklasis pickle: {pkl_file.name}")
+    logger.info(f"Using PANPE baseline batch: {nf_batch.name}")
+    logger.info(f"Using anaklasis pickle: {pkl_file.name}")
 
     anaklasis_mapes = load_anaklasis_constraint_mapes(pkl_file)
     panpe_baseline_mapes = load_constraint_mapes_from_summary(nf_summary)
 
-    print(f"{'Anaklasis':<22} -> {summary_stats(anaklasis_mapes)}")
-    print(f"{'PANPE baseline':<22} -> {summary_stats(panpe_baseline_mapes)}")
+    logger.info(f"{'Anaklasis':<22} -> {summary_stats(anaklasis_mapes)}")
+    logger.info(f"{'PANPE baseline':<22} -> {summary_stats(panpe_baseline_mapes)}")
 
     output_path = root / output
     output_random_style_path = root / output_random_style
@@ -423,17 +435,21 @@ def run(
         prominent=prominent,
     )
 
-    print(f"Saved overlap histogram plot -> {output_path}")
-    print(f"Saved random-style comparison plot -> {output_random_style_path}")
-    print(f"Saved median comparison plot -> {output_median_path}")
+    logger.info(f"Saved overlap histogram plot -> {output_path}")
+    logger.info(f"Saved random-style comparison plot -> {output_random_style_path}")
+    logger.info(f"Saved median comparison plot -> {output_median_path}")
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = argparse.ArgumentParser(
         description="Plot constraint MAPE histogram for PANPE baseline vs Anaklasis."
     )
     parser.add_argument("--base-dir", default=".", help="Project root directory")
-    parser.add_argument("--prior-width", type=int, default=30, help="Constraint width in percent")
+    parser.add_argument(
+        "--prior-width", type=int, default=30, help="Constraint width in percent"
+    )
     parser.add_argument(
         "--fix-sld",
         choices=["none", "backing", "all"],

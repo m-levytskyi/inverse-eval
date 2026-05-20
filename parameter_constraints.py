@@ -4,6 +4,11 @@
 Parameter constraints utility for ensuring physical validity of ReflecTorch predictions.
 """
 
+import logging
+
+
+logger = logging.getLogger(__name__)
+
 
 def apply_physical_constraints(prediction_dict, layer_count=1):
     """
@@ -24,7 +29,7 @@ def apply_physical_constraints(prediction_dict, layer_count=1):
     param_names = prediction_dict.get("param_names", [])
 
     if predicted_params is None or polished_params is None:
-        print("⚠️  Warning: Could not find parameter arrays in prediction_dict")
+        logger.warning("Could not find parameter arrays in prediction_dict")
         return prediction_dict
 
     # Define constraints based on parameter names
@@ -47,22 +52,28 @@ def apply_physical_constraints(prediction_dict, layer_count=1):
 
         # Check predicted parameters
         if constrained_predicted[param_idx] < min_val:
-            print(
-                f"⚠️  Constraint violation in predicted {param_name}: {constrained_predicted[param_idx]:.4f} < {min_val}"
+            logger.warning(
+                "Constraint violation in predicted %s: %.4f < %s",
+                param_name,
+                constrained_predicted[param_idx],
+                min_val,
             )
             constrained_predicted[param_idx] = min_val
             violations_found = True
 
         # Check polished parameters
         if constrained_polished[param_idx] < min_val:
-            print(
-                f"⚠️  Constraint violation in polished {param_name}: {constrained_polished[param_idx]:.4f} < {min_val}"
+            logger.warning(
+                "Constraint violation in polished %s: %.4f < %s",
+                param_name,
+                constrained_polished[param_idx],
+                min_val,
             )
             constrained_polished[param_idx] = min_val
             violations_found = True
 
     if violations_found:
-        print("Applied physical constraints to prevent negative values")
+        logger.info("Applied physical constraints to prevent negative values")
 
         # Update prediction dictionary
         prediction_dict["predicted_params_array"] = constrained_predicted
@@ -97,9 +108,9 @@ def validate_physical_parameters(params, param_names, experiment_id="unknown"):
             violations.append(f"{param_name}: {value:.4f} < 0")
 
     if violations:
-        print(f"Physical constraint violations in {experiment_id}:")
+        logger.warning("Physical constraint violations in %s:", experiment_id)
         for violation in violations:
-            print(f"  - {violation}")
+            logger.warning("  - %s", violation)
         return False
 
     return True
@@ -130,16 +141,20 @@ def get_parameter_constraints_info():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     # Print constraint information
-    print("PARAMETER CONSTRAINTS FOR REFLECTORCH PREDICTIONS")
-    print("=" * 60)
+    logger.info("PARAMETER CONSTRAINTS FOR REFLECTORCH PREDICTIONS")
+    logger.info("=" * 60)
 
     constraints = get_parameter_constraints_info()
 
     for param_type, info in constraints.items():
-        print(f"\n{param_type.upper()}:")
-        print(f"  Minimum value: {info['min_value']} {info['unit']}")
-        print(f"  Reason: {info['reason']}")
+        logger.info("\n%s:", param_type.upper())
+        logger.info("  Minimum value: %s %s", info["min_value"], info["unit"])
+        logger.info("  Reason: %s", info["reason"])
 
-    print("\nThese constraints prevent the 'Negative roughness encountered' and")
-    print("'Negative thickness encountered' errors by ensuring physical validity.")
+    logger.info("\nThese constraints prevent the 'Negative roughness encountered' and")
+    logger.info(
+        "'Negative thickness encountered' errors by ensuring physical validity."
+    )
