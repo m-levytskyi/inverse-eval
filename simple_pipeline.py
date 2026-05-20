@@ -8,6 +8,7 @@ the core workflow for analyzing a single reflectometry experiment.
 
 import torch
 import numpy as np
+import logging
 from typing import Literal
 from reflectorch import EasyInferenceModel
 from device_utils import detect_torch_device
@@ -33,6 +34,9 @@ from nf_statistics import compute_nf_sample_statistics
 torch.manual_seed(42)
 
 
+logger = logging.getLogger(__name__)
+
+
 def load_experimental_data(
     data_file_path,
     enable_preprocessing=True,
@@ -41,10 +45,10 @@ def load_experimental_data(
     remove_singles=False,
 ):
     """Load and parse experimental data from file with optional preprocessing."""
-    print(f"Loading experimental data from: {data_file_path}")
+    logger.info(f"Loading experimental data from: {data_file_path}")
 
     data = np.loadtxt(data_file_path, skiprows=1)
-    print(f"Data shape: {data.shape}")
+    logger.info(f"Data shape: {data.shape}")
 
     q_exp = data[..., 0]
     curve_exp = data[..., 1]
@@ -53,19 +57,21 @@ def load_experimental_data(
     if data.shape[1] == 2:
         # Simple 2-column data (Q, R): create minimal dummy error bars
         sigmas_exp = np.full_like(curve_exp, 1e-6)
-        print("Detected 2-column data (Q, R) - using minimal dummy errors")
+        logger.info("Detected 2-column data (Q, R) - using minimal dummy errors")
     elif data.shape[1] == 3:
         # Theoretical data: create minimal dummy error bars
         sigmas_exp = np.full_like(curve_exp, 1e-6)
-        print("Detected theoretical data (3 columns) - using minimal dummy errors")
+        logger.info(
+            "Detected theoretical data (3 columns) - using minimal dummy errors"
+        )
     else:
         # Experimental data: use actual error bars
         sigmas_exp = data[..., 2]
-        print("Detected experimental data (4 columns) - using actual errors")
+        logger.info("Detected experimental data (4 columns) - using actual errors")
 
-    print(f"Raw Q range: {q_exp.min():.4f} - {q_exp.max():.4f} Å⁻¹")
-    print(f"Raw curve shape: {curve_exp.shape}")
-    print(
+    logger.info(f"Raw Q range: {q_exp.min():.4f} - {q_exp.max():.4f} Å⁻¹")
+    logger.info(f"Raw curve shape: {curve_exp.shape}")
+    logger.info(
         f"Raw relative error range: {(sigmas_exp / curve_exp).min():.4f} - {(sigmas_exp / curve_exp).max():.4f}"
     )
 
@@ -83,9 +89,9 @@ def load_experimental_data(
         else (q_exp, curve_exp, sigmas_exp)
     )
 
-    print(f"Final Q range: {q_exp.min():.4f} - {q_exp.max():.4f} Å⁻¹")
-    print(f"Final curve shape: {curve_exp.shape}")
-    print(
+    logger.info(f"Final Q range: {q_exp.min():.4f} - {q_exp.max():.4f} Å⁻¹")
+    logger.info(f"Final curve shape: {curve_exp.shape}")
+    logger.info(
         f"Final relative error range: {(sigmas_exp / curve_exp).min():.4f} - {(sigmas_exp / curve_exp).max():.4f}"
     )
 
@@ -105,7 +111,7 @@ def run_inference(
     sigmas_exp=None,
 ):
     """Run the inference prediction."""
-    print("Performing inference prediction...")
+    logger.info("Performing inference prediction...")
 
     # Interpolate data to model grid
     if sigmas_exp is not None:
@@ -114,16 +120,16 @@ def run_inference(
                 q_exp, curve_exp, sigmas_exp=sigmas_exp
             )
         )
-        print(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
-        print(f"Interpolated curve shape: {exp_curve_interp.shape}")
-        print(f"Interpolated sigmas shape: {sigmas_interp.shape}")
+        logger.info(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
+        logger.info(f"Interpolated curve shape: {exp_curve_interp.shape}")
+        logger.info(f"Interpolated sigmas shape: {sigmas_interp.shape}")
     else:
         q_model, exp_curve_interp = inference_model.interpolate_data_to_model_q(
             q_exp, curve_exp
         )
         sigmas_interp = None
-        print(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
-        print(f"Interpolated curve shape: {exp_curve_interp.shape}")
+        logger.info(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
+        logger.info(f"Interpolated curve shape: {exp_curve_interp.shape}")
 
     # Perform prediction
     predict_kwargs = {
@@ -145,10 +151,10 @@ def run_inference(
 
     # Apply physical constraints to prevent negative thickness/roughness (if enabled)
     if apply_constraints:
-        print("Applying physical constraints...")
+        logger.info("Applying physical constraints...")
         prediction_dict = apply_physical_constraints(prediction_dict)
     else:
-        print("Physical constraints disabled - skipping constraint application")
+        logger.info("Physical constraints disabled - skipping constraint application")
 
     return q_model, prediction_dict
 
@@ -321,7 +327,7 @@ def run_nf_inference(
     sigmas_exp=None,
 ):
     """Run NF inference via `preprocess_and_sample` and adapt to the standard schema."""
-    print("Performing NF inference (preprocess_and_sample)...")
+    logger.info("Performing NF inference (preprocess_and_sample)...")
 
     if sigmas_exp is not None:
         q_model, exp_curve_interp, sigmas_interp = (
@@ -329,24 +335,26 @@ def run_nf_inference(
                 q_exp, curve_exp, sigmas_exp=sigmas_exp
             )
         )
-        print(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
+        logger.info(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
         if q_model.max() < 0.05:
-            print(
-                f"⚠️  WARNING: Model Q max ({q_model.max():.4f}) is very low! Inference may be unreliable."
+            logger.warning(
+                "Model Q max (%.4f) is very low; inference may be unreliable.",
+                q_model.max(),
             )
-        print(f"Interpolated curve shape: {exp_curve_interp.shape}")
-        print(f"Interpolated sigmas shape: {sigmas_interp.shape}")
+        logger.info(f"Interpolated curve shape: {exp_curve_interp.shape}")
+        logger.info(f"Interpolated sigmas shape: {sigmas_interp.shape}")
     else:
         q_model, exp_curve_interp = inference_model.interpolate_data_to_model_q(
             q_exp, curve_exp
         )
         sigmas_interp = None
-        print(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
+        logger.info(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
         if q_model.max() < 0.05:
-            print(
-                f"⚠️  WARNING: Model Q max ({q_model.max():.4f}) is very low! Inference may be unreliable."
+            logger.warning(
+                "Model Q max (%.4f) is very low; inference may be unreliable.",
+                q_model.max(),
             )
-        print(f"Interpolated curve shape: {exp_curve_interp.shape}")
+        logger.info(f"Interpolated curve shape: {exp_curve_interp.shape}")
 
     preprocess_kwargs = {
         "reflectivity_curve": exp_curve_interp,
@@ -366,7 +374,7 @@ def run_nf_inference(
     nf_prediction_dict = inference_model.preprocess_and_sample(**preprocess_kwargs)
 
     # Compute NF sample statistics before selecting best sample
-    print("Computing NF sample statistics...")
+    logger.info("Computing NF sample statistics...")
     nf_stats = compute_nf_sample_statistics(
         predicted_params_array=nf_prediction_dict["predicted_params_array"],
         log_prob=nf_prediction_dict["log_likelihoods"],
@@ -378,10 +386,10 @@ def run_nf_inference(
     prediction_dict.update(nf_stats)
 
     if apply_constraints:
-        print("Applying physical constraints...")
+        logger.info("Applying physical constraints...")
         prediction_dict = apply_physical_constraints(prediction_dict)
     else:
-        print("Physical constraints disabled - skipping constraint application")
+        logger.info("Physical constraints disabled - skipping constraint application")
 
     q_pred = np.asarray(prediction_dict["q_plot_pred"])
     return q_pred, prediction_dict
@@ -389,8 +397,8 @@ def run_nf_inference(
 
 def display_results(prediction_dict):
     """Display prediction results in a formatted way."""
-    print("\nPrediction Results:")
-    print("-" * 50)
+    logger.info("\nPrediction Results:")
+    logger.info("-" * 50)
 
     pred_params = prediction_dict["predicted_params_array"]
     polished_params = prediction_dict["polished_params_array"]
@@ -399,7 +407,7 @@ def display_results(prediction_dict):
     for param_name, pred_val, polished_val in zip(
         param_names, pred_params, polished_params
     ):
-        print(
+        logger.info(
             f"{param_name.ljust(18)} -> Predicted: {pred_val:.3f}    Polished: {polished_val:.3f}"
         )
 
@@ -496,7 +504,7 @@ def run_single_experiment(
         else:
             config_name = "b_mc_point_neutron_conv_standard_L1_InputQDq"
     resolved_device = detect_torch_device(inference_device)
-    print(f"Using inference device: {resolved_device}")
+    logger.info(f"Using inference device: {resolved_device}")
     inference_model = EasyInferenceModel(
         config_name=config_name,
         device=resolved_device,
@@ -608,10 +616,10 @@ def main():
     experiment_name = "s007384"
     layer_count = 1
 
-    print(f"Running inference for experiment: {experiment_name}")
-    print(f"Layer count: {layer_count}")
-    print("Running with 99% constraint-based priors and preprocessing OFF.")
-    print("=" * 60)
+    logger.info(f"Running inference for experiment: {experiment_name}")
+    logger.info(f"Layer count: {layer_count}")
+    logger.info("Running with 99% constraint-based priors and preprocessing OFF.")
+    logger.info("=" * 60)
 
     # Run the experiment with specified settings
     results = run_single_experiment(
@@ -660,18 +668,11 @@ def main():
         show=True,
     )
 
-    print(f"\nInference completed for experiment {experiment_name}")
+    logger.info(f"\nInference completed for experiment {experiment_name}")
 
 
 if __name__ == "__main__":
-    print("Simple pipeline module loaded successfully.")
-    print("Available functions:")
-    print("  - run_single_experiment() - Main function for processing one experiment")
-    print("  - load_experimental_data() - Load and preprocess data from file")
-    print("  - run_inference() - Run reflectorch inference")
-    print("  - display_results() - Display prediction results")
-    print("\nTo run the example:")
-    print("  main()")
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     # Optionally run the main function
     import sys
@@ -679,4 +680,4 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--run-example":
         main()
     else:
-        print("\nUse --run-example to run the built-in example")
+        logger.info("\nUse --run-example to run the built-in example")

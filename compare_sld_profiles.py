@@ -13,11 +13,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import argparse
+import logging
 
 # Import existing utilities
 from sld_profile_utils import sld_profile
-from plot_sld_profile import plot_sld_profile
 from parameter_discovery import parse_true_parameters_from_model_file
+
+
+logger = logging.getLogger(__name__)
+
+
+def plot_sld_profile(z_values, sld_values, label, ax):
+    """Plot an SLD profile on an existing axis."""
+    ax.plot(z_values, sld_values, label=label)
+    ax.set_xlabel("Depth (Å)")
+    ax.set_ylabel("SLD (10⁻⁶ Å⁻²)")
 
 
 def load_sld_dat_file(dat_file_path):
@@ -30,7 +40,7 @@ def load_sld_dat_file(dat_file_path):
     Returns:
         Tuple of (z_values, sld_values) in Å and 10^-6 Å^-2 units
     """
-    print(f"Loading SLD profile from: {dat_file_path}")
+    logger.info(f"Loading SLD profile from: {dat_file_path}")
 
     if not Path(dat_file_path).exists():
         raise FileNotFoundError(f"DAT file not found: {dat_file_path}")
@@ -41,9 +51,11 @@ def load_sld_dat_file(dat_file_path):
     z_values = data[:, 0]  # Depth in Å
     sld_values = data[:, 1] * 1e6  # Convert to 10^-6 Å^-2 units for plotting
 
-    print(f"Loaded {len(z_values)} data points")
-    print(f"Depth range: {z_values.min():.1f} to {z_values.max():.1f} Å")
-    print(f"SLD range: {sld_values.min():.2f} to {sld_values.max():.2f} ×10⁻⁶ Å⁻²")
+    logger.info(f"Loaded {len(z_values)} data points")
+    logger.info(f"Depth range: {z_values.min():.1f} to {z_values.max():.1f} Å")
+    logger.info(
+        f"SLD range: {sld_values.min():.2f} to {sld_values.max():.2f} ×10⁻⁶ Å⁻²"
+    )
 
     return z_values, sld_values
 
@@ -60,26 +72,26 @@ def calculate_sld_from_model(model_file_path, z_range=None, n_points=1000):
     Returns:
         Tuple of (z_values, sld_profile, params_dict) or (None, None, None) if parsing fails
     """
-    print(f"Calculating SLD profile from model: {model_file_path}")
+    logger.info(f"Calculating SLD profile from model: {model_file_path}")
 
     # Parse true parameters using existing utility
     true_params_dict = parse_true_parameters_from_model_file(model_file_path)
 
     if not true_params_dict:
-        print("Failed to parse model parameters")
+        logger.warning("Failed to parse model parameters")
         return None, None, None
 
     # Determine layer count and get parameters
     layer_key = "2_layer" if "2_layer" in true_params_dict else "1_layer"
     if layer_key not in true_params_dict:
-        print("No valid layer interpretation found")
+        logger.info("No valid layer interpretation found")
         return None, None, None
 
     params = true_params_dict[layer_key]["params"]
     param_names = true_params_dict[layer_key]["param_names"]
 
-    print(f"Using {layer_key} model")
-    print(f"Parameters: {dict(zip(param_names, params))}")
+    logger.info(f"Using {layer_key} model")
+    logger.info(f"Parameters: {dict(zip(param_names, params))}")
 
     # Extract parameters based on layer count
     if layer_key == "1_layer":
@@ -137,8 +149,10 @@ def calculate_sld_from_model(model_file_path, z_range=None, n_points=1000):
     # The sld_profile function returns values in Å^-2, convert to 10^-6 Å^-2 units for plotting
     sld_profile_calc = sld_profile_calc * 1e6
 
-    print(f"Calculated SLD profile over range {z_range[0]:.1f} to {z_range[1]:.1f} Å")
-    print(
+    logger.info(
+        f"Calculated SLD profile over range {z_range[0]:.1f} to {z_range[1]:.1f} Å"
+    )
+    logger.info(
         f"SLD range: {sld_profile_calc.min():.2f} to {sld_profile_calc.max():.2f} ×10⁻⁶ Å⁻²"
     )
 
@@ -172,8 +186,8 @@ def compare_sld_profiles(
     dat_file = data_dir / f"{experiment_id}_sld_profile.dat"
     model_file = data_dir / f"{experiment_id}_model.txt"
 
-    print(f"Comparing SLD profiles for experiment {experiment_id}")
-    print("=" * 60)
+    logger.info(f"Comparing SLD profiles for experiment {experiment_id}")
+    logger.info("=" * 60)
 
     try:
         # Load data from .dat file
@@ -185,7 +199,7 @@ def compare_sld_profiles(
         )
 
         if z_calc is None or sld_calc is None:
-            print("Failed to calculate SLD profile from model")
+            logger.warning("Failed to calculate SLD profile from model")
             return None
 
         # Create comparison plot using existing utility
@@ -274,17 +288,17 @@ def compare_sld_profiles(
             output_dir.mkdir(parents=True, exist_ok=True)
             plot_path = output_dir / f"{experiment_id}_sld_comparison.png"
             plt.savefig(plot_path, dpi=150, bbox_inches="tight")
-            print(f"Plot saved to: {plot_path}")
+            logger.info(f"Plot saved to: {plot_path}")
 
         # Show plot if requested
         if show:
             plt.show()
 
-        print("SLD profile comparison completed successfully")
+        logger.info("SLD profile comparison completed successfully")
         return fig
 
-    except Exception as e:
-        print(f"Error during SLD profile comparison: {e}")
+    except (OSError, ValueError, KeyError) as e:
+        logger.exception("Error during SLD profile comparison: %s", e)
         return None
 
 
@@ -302,7 +316,7 @@ def discover_experiments_in_directory(data_dir):
     experiment_ids = []
 
     if not data_dir.exists():
-        print(f"Data directory does not exist: {data_dir}")
+        logger.info(f"Data directory does not exist: {data_dir}")
         return experiment_ids
 
     # Look for files matching pattern: {experiment_id}_sld_profile.dat
@@ -315,12 +329,12 @@ def discover_experiments_in_directory(data_dir):
         if model_file.exists():
             experiment_ids.append(exp_id)
         else:
-            print(
+            logger.warning(
                 f"Warning: Found {dat_file.name} but no corresponding {exp_id}_model.txt"
             )
 
     experiment_ids.sort()  # Sort for consistent ordering
-    print(f"Found {len(experiment_ids)} complete experiment pairs in {data_dir}")
+    logger.info(f"Found {len(experiment_ids)} complete experiment pairs in {data_dir}")
 
     return experiment_ids
 
@@ -343,21 +357,21 @@ def batch_process_directory(
     Returns:
         Dictionary of experiment_id -> figure object (or None if failed)
     """
-    print(f"Batch processing experiments in: {data_dir}")
-    print(f"Output directory: {output_dir}")
-    print("=" * 80)
+    logger.info(f"Batch processing experiments in: {data_dir}")
+    logger.info(f"Output directory: {output_dir}")
+    logger.info("=" * 80)
 
     # Discover all experiments in the directory
     experiment_ids = discover_experiments_in_directory(data_dir)
 
     if not experiment_ids:
-        print("No experiments found to process")
+        logger.info("No experiments found to process")
         return {}
 
     # Limit number of experiments if specified
     if max_experiments is not None and max_experiments > 0:
         experiment_ids = experiment_ids[:max_experiments]
-        print(
+        logger.info(
             f"Processing first {len(experiment_ids)} experiments (limited by max_experiments)"
         )
 
@@ -407,28 +421,34 @@ def batch_compare_sld_profiles(
     """
     results = {}
 
-    print(f"Running batch SLD profile comparison for {len(experiment_ids)} experiments")
-    print("=" * 80)
+    logger.info(
+        f"Running batch SLD profile comparison for {len(experiment_ids)} experiments"
+    )
+    logger.info("=" * 80)
 
     for i, exp_id in enumerate(experiment_ids):
-        print(f"\nProcessing {i + 1}/{len(experiment_ids)}: {exp_id}")
+        logger.info(f"\nProcessing {i + 1}/{len(experiment_ids)}: {exp_id}")
         try:
             fig = compare_sld_profiles(exp_id, data_dir, output_dir, save, show)
             results[exp_id] = fig
-        except Exception as e:
-            print(f"Failed to process {exp_id}: {e}")
+        except (OSError, ValueError, KeyError) as e:
+            logger.exception("Failed to process %s: %s", exp_id, e)
             results[exp_id] = None
 
     # Summary
     successful = sum(1 for fig in results.values() if fig is not None)
-    print("\n" + "=" * 80)
-    print(f"Batch comparison completed: {successful}/{len(experiment_ids)} successful")
+    logger.info("\n" + "=" * 80)
+    logger.info(
+        f"Batch comparison completed: {successful}/{len(experiment_ids)} successful"
+    )
 
     return results
 
 
 def main():
     """Main function for command-line usage."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = argparse.ArgumentParser(
         description="Compare SLD profiles from .dat file and model.txt parameters"
     )
@@ -464,7 +484,7 @@ def main():
 
     # If no experiment IDs provided, process entire directory
     if not args.experiment_ids:
-        print("No experiment IDs provided. Processing entire directory...")
+        logger.info("No experiment IDs provided. Processing entire directory...")
         results = batch_process_directory(
             data_dir=args.data_dir,
             output_dir=args.output_dir,
@@ -475,7 +495,7 @@ def main():
         # Check if any failed
         failed = [exp_id for exp_id, fig in results.items() if fig is None]
         if failed:
-            print(f"Failed experiments: {failed}")
+            logger.info(f"Failed experiments: {failed}")
             return 1
         return 0
 
@@ -495,7 +515,7 @@ def main():
         # Check if any failed
         failed = [exp_id for exp_id, fig in results.items() if fig is None]
         if failed:
-            print(f"Failed experiments: {failed}")
+            logger.info(f"Failed experiments: {failed}")
             return 1
     else:
         # Single experiment
@@ -508,7 +528,7 @@ def main():
         )
 
         if fig is None:
-            print("Failed to generate comparison plot")
+            logger.info("Failed to generate comparison plot")
             return 1
 
     return 0

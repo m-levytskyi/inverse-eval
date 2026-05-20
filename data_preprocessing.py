@@ -7,6 +7,10 @@ neutron reflectometry data before analysis.
 """
 
 import numpy as np
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def remove_negative_values(q_exp, curve_exp, sigmas_exp):
@@ -25,7 +29,7 @@ def remove_negative_values(q_exp, curve_exp, sigmas_exp):
     negative_count = np.sum(~positive_mask)
 
     if negative_count > 0:
-        print(f"Removing {negative_count} points with negative intensity")
+        logger.info("Removing %s points with negative intensity", negative_count)
 
         q_exp = q_exp[positive_mask]
         curve_exp = curve_exp[positive_mask]
@@ -56,13 +60,13 @@ def filter_high_error_points(
     Returns:
         Tuple of filtered (q_exp, curve_exp, sigmas_exp)
     """
-    print(f"Filtering high error points (threshold: {error_threshold * 100}%)")
+    logger.info("Filtering high error points (threshold: %s%%)", error_threshold * 100)
 
     # Calculate relative errors
     relative_errors = sigmas_exp / curve_exp
     high_error_mask = relative_errors > error_threshold
 
-    print(f"Found {np.sum(high_error_mask)} points with high relative error")
+    logger.info("Found %s points with high relative error", np.sum(high_error_mask))
 
     # Find consecutive high-error regions
     consecutive_count = 0
@@ -79,8 +83,9 @@ def filter_high_error_points(
 
     # Truncate at first long consecutive high-error region
     if truncation_index < len(q_exp):
-        print(
-            f"Truncating data at index {truncation_index} due to consecutive high-error points"
+        logger.info(
+            "Truncating data at index %s due to consecutive high-error points",
+            truncation_index,
         )
         q_exp = q_exp[:truncation_index]
         curve_exp = curve_exp[:truncation_index]
@@ -100,7 +105,9 @@ def filter_high_error_points(
                     isolated_high_error.append(i)
 
         if isolated_high_error:
-            print(f"Removing {len(isolated_high_error)} isolated high-error points")
+            logger.info(
+                "Removing %s isolated high-error points", len(isolated_high_error)
+            )
             keep_mask = np.ones(len(q_exp), dtype=bool)
             keep_mask[isolated_high_error] = False
 
@@ -133,8 +140,8 @@ def preprocess_experimental_data(
     Returns:
         Tuple of preprocessed (q_exp, curve_exp, sigmas_exp)
     """
-    print("Starting comprehensive data preprocessing")
-    print(f"Initial data points: {len(q_exp)}")
+    logger.info("Starting comprehensive data preprocessing")
+    logger.info("Initial data points: %s", len(q_exp))
 
     original_count = len(q_exp)
 
@@ -155,15 +162,10 @@ def preprocess_experimental_data(
     removed_count = original_count - final_count
     removal_percentage = (removed_count / original_count) * 100
 
-    print("Preprocessing complete:")
-    print(f"  Original points: {original_count}")
-    print(f"  Final points: {final_count}")
-    print(f"  Removed: {removed_count} ({removal_percentage:.1f}%)")
-    print(f"  Q range: {q_exp.min():.4f} - {q_exp.max():.4f} Å⁻¹")
+    logger.info("Preprocessing complete:")
+    logger.info("  Original points: %s", original_count)
+    logger.info("  Final points: %s", final_count)
+    logger.info("  Removed: %s (%.1f%%)", removed_count, removal_percentage)
+    logger.info("  Q range: %.4f - %.4f Å⁻¹", q_exp.min(), q_exp.max())
 
     return q_exp, curve_exp, sigmas_exp
-
-
-if __name__ == "__main__":
-    print("Data preprocessing module loaded successfully.")
-    print("Use preprocess_experimental_data() function to process your data.")

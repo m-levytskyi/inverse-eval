@@ -12,8 +12,12 @@ Usage:
 """
 
 import argparse
+import logging
 import shutil
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 WORKSPACE = Path(__file__).parent
 BATCH_RESULTS_DIR = WORKSPACE / "batch_inference_results"
@@ -34,11 +38,7 @@ MODEL_GROUP_NAMES = [
 
 def collect_paper_batch_names(model_group_dir: Path) -> list[str]:
     """Return names of all batch subdirectories inside a model-group folder."""
-    return [
-        entry.name
-        for entry in sorted(model_group_dir.iterdir())
-        if entry.is_dir()
-    ]
+    return [entry.name for entry in sorted(model_group_dir.iterdir()) if entry.is_dir()]
 
 
 def copy_jsons(batch_src: Path, batch_dest: Path, dry_run: bool) -> list[str]:
@@ -59,7 +59,7 @@ def copy_jsons(batch_src: Path, batch_dest: Path, dry_run: bool) -> list[str]:
 
 def main(dry_run: bool = False) -> None:
     if dry_run:
-        print("[DRY RUN] No files will be written.\n")
+        logger.info("[DRY RUN] No files will be written.\n")
 
     total_copied = 0
     total_missing = 0
@@ -67,41 +67,49 @@ def main(dry_run: bool = False) -> None:
     for group_name in MODEL_GROUP_NAMES:
         group_paper_dir = PAPER_BATCHES_DIR / group_name
         if not group_paper_dir.is_dir():
-            print(f"[SKIP] paper_batches/{group_name}/ not found")
+            logger.info(f"[SKIP] paper_batches/{group_name}/ not found")
             continue
 
         batch_names = collect_paper_batch_names(group_paper_dir)
         if not batch_names:
-            print(f"[SKIP] paper_batches/{group_name}/ is empty")
+            logger.info(f"[SKIP] paper_batches/{group_name}/ is empty")
             continue
 
-        print(f"\n{group_name}/ ({len(batch_names)} batches)")
+        logger.info(f"\n{group_name}/ ({len(batch_names)} batches)")
 
         for batch_name in batch_names:
             src = BATCH_RESULTS_DIR / batch_name
             dest = DEST_DIR / group_name / batch_name
 
             if not src.is_dir():
-                print(f"  [MISSING] {batch_name}")
+                logger.info(f"  [MISSING] {batch_name}")
                 total_missing += 1
                 continue
 
             copied = copy_jsons(src, dest, dry_run)
             if copied:
                 status = "DRY" if dry_run else "COPY"
-                print(f"  [{status}] {batch_name} -> {len(copied)} JSON file(s)")
+                logger.info(f"  [{status}] {batch_name} -> {len(copied)} JSON file(s)")
                 total_copied += len(copied)
             else:
-                print(f"  [NO JSON] {batch_name}")
+                logger.info(f"  [NO JSON] {batch_name}")
 
-    print(f"\nDone. {total_copied} JSON file(s) {'would be ' if dry_run else ''}copied, "
-          f"{total_missing} batch folder(s) not found in batch_inference_results/.")
+    logger.info(
+        f"\nDone. {total_copied} JSON file(s) {'would be ' if dry_run else ''}copied, "
+        f"{total_missing} batch folder(s) not found in batch_inference_results/."
+    )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print what would be copied without writing any files.")
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be copied without writing any files.",
+    )
     args = parser.parse_args()
     main(dry_run=args.dry_run)

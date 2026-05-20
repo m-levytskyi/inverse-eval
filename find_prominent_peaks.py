@@ -2,9 +2,13 @@ from pathlib import Path
 import glob
 import tqdm
 import os
+import logging
 
 import numpy as np
 import matplotlib.pyplot as plt
+
+
+logger = logging.getLogger(__name__)
 
 
 def load_experimental_data(data_path):
@@ -125,16 +129,18 @@ def find_experiments_with_prominent_peaks(
         if found:
             filepaths = found
             if verbose:
-                print(f"Found {len(filepaths)} files using pattern: {pattern}")
+                logger.info(f"Found {len(filepaths)} files using pattern: {pattern}")
             break
 
     if verbose:
-        print(f"Scanning {len(filepaths)} experiments for prominent peaks...")
-        print(f"Layer count: {layer_count}")
-        print(
+        logger.info(f"Scanning {len(filepaths)} experiments for prominent peaks...")
+        logger.info(f"Layer count: {layer_count}")
+        logger.info(
             f"Parameters: prominence≥{min_prominence}, rise≥{min_rise}, width≥{min_width}"
         )
-        print(f"Analyzing: {'first half' if analyze_first_half else 'full curve'}")
+        logger.info(
+            f"Analyzing: {'first half' if analyze_first_half else 'full curve'}"
+        )
 
     experiments_with_peaks = []
     experiments_without_peaks = []
@@ -155,26 +161,28 @@ def find_experiments_with_prominent_peaks(
                 all_peaks.extend(peaks)
             else:
                 experiments_without_peaks.append(exp_id)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             if verbose:
-                print(f"Warning: Failed to process {exp_id}: {e}")
+                logger.warning("Failed to process %s: %s", exp_id, e)
             experiments_without_peaks.append(exp_id)
 
     if verbose:
-        print("\nResults:")
-        print(f"  Experiments with prominent peaks: {len(experiments_with_peaks)}")
-        print(
+        logger.info("\nResults:")
+        logger.info(
+            f"  Experiments with prominent peaks: {len(experiments_with_peaks)}"
+        )
+        logger.info(
             f"  Experiments without prominent peaks: {len(experiments_without_peaks)}"
         )
-        print(f"  Examples with peaks: {experiments_with_peaks[:5]}")
+        logger.info(f"  Examples with peaks: {experiments_with_peaks[:5]}")
 
         if all_peaks:
             prominences = [p["prominence"] for p in all_peaks]
-            print(f"  Peak statistics: {len(all_peaks)} total peaks")
-            print(
+            logger.info(f"  Peak statistics: {len(all_peaks)} total peaks")
+            logger.info(
                 f"    Prominence range: {np.min(prominences):.3f} - {np.max(prominences):.3f}"
             )
-            print(f"    Mean prominence: {np.mean(prominences):.3f}")
+            logger.info(f"    Mean prominence: {np.mean(prominences):.3f}")
 
     return experiments_with_peaks
 
@@ -265,6 +273,7 @@ def _create_peaks_plot(
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     layers_count = 2
     filepaths = sorted(
@@ -292,10 +301,10 @@ def main():
         else:
             negative_curves.append((exp_id, r))
 
-    print(
+    logger.info(
         f"Positive curves: {len(positive_curves)}, e.g {[exp_id for exp_id, _ in positive_curves[:5]]}"
     )
-    print(
+    logger.info(
         f"Negative curves: {len(negative_curves)}, e.g {[exp_id for exp_id, _ in negative_curves[:5]]}"
     )
 
@@ -303,20 +312,20 @@ def main():
         prominences = [p["prominence"] for p in all_peaks]
         widths = [p["width"] for p in all_peaks]
 
-        print("\n--- Peak Statistics ---")
-        print("\nProminence:")
-        print(f"  Min: {np.min(prominences):.4f}")
-        print(f"  Max: {np.max(prominences):.4f}")
-        print(f"  Mean: {np.mean(prominences):.4f}")
-        print(f"  Std Dev: {np.std(prominences):.4f}")
-        print(f"  Median: {np.median(prominences):.4f}")
+        logger.info("\n--- Peak Statistics ---")
+        logger.info("\nProminence:")
+        logger.info(f"  Min: {np.min(prominences):.4f}")
+        logger.info(f"  Max: {np.max(prominences):.4f}")
+        logger.info(f"  Mean: {np.mean(prominences):.4f}")
+        logger.info(f"  Std Dev: {np.std(prominences):.4f}")
+        logger.info(f"  Median: {np.median(prominences):.4f}")
 
-        print("\nWidth:")
-        print(f"  Min: {np.min(widths)}")
-        print(f"  Max: {np.max(widths)}")
-        print(f"  Mean: {np.mean(widths):.4f}")
-        print(f"  Std Dev: {np.std(widths):.4f}")
-        print(f"  Median: {np.median(widths)}")
+        logger.info("\nWidth:")
+        logger.info(f"  Min: {np.min(widths)}")
+        logger.info(f"  Max: {np.max(widths)}")
+        logger.info(f"  Mean: {np.mean(widths):.4f}")
+        logger.info(f"  Std Dev: {np.std(widths):.4f}")
+        logger.info(f"  Median: {np.median(widths)}")
 
 
 if __name__ == "__main__":

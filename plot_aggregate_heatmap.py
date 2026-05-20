@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import matplotlib
 import matplotlib.ticker
 import matplotlib.pyplot as plt
@@ -24,26 +25,29 @@ matplotlib.use("pdf")
 paper_mplstyle = Path(__file__).parent / "paper.mplstyle"
 plt.style.use(["science", str(paper_mplstyle)])
 
+
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 PARAM_LABELS = {
-    "overall":         "Overall",
+    "overall": "Overall",
     "param:thickness": "Thickness",
     "param:amb_rough": "Ambient roughness",
     "param:sub_rough": "Substrate roughness",
     "param:layer_sld": "Layer SLD",
-    "param:sub_sld":   "Sub. SLD",
+    "param:sub_sld": "Sub. SLD",
 }
 
 MODEL_LABELS = {
-    "reflectorch":                          r"reflectorch",
-    "NF_baseline":                          r"NF baseline",
-    "NF_qweighted":                         r"NF q-weighted $\alpha2\beta3$",
+    "reflectorch": r"reflectorch",
+    "NF_baseline": r"NF baseline",
+    "NF_qweighted": r"NF q-weighted $\alpha2\beta3$",
     "NF_qweighted_exp1_alpha2_beta2_sweep": r"NF q-wt $\alpha2\beta2$",
     "NF_qweighted_exp2_alpha4_beta4_sweep": r"NF q-wt $\alpha4\beta4$",
-    "NF_mean_conditioned_sweep":            r"NF mean-cond.",
+    "NF_mean_conditioned_sweep": r"NF mean-cond.",
 }
 
 TARGET_SETUP = "width30_sldnone"
@@ -52,16 +56,25 @@ TARGET_SETUP = "width30_sldnone"
 # Matplotlib gallery helpers (from matplotlib.org/stable/gallery/…/image_annotated_heatmap.html)
 # ---------------------------------------------------------------------------
 
+
 def _contrast_color(im, val) -> str:
     """Return 'black' or 'white' based on WCAG relative luminance of the cell color."""
     rgba = im.cmap(im.norm(val))
+
     def linearize(c):
         return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-    lum = 0.2126 * linearize(rgba[0]) + 0.7152 * linearize(rgba[1]) + 0.0722 * linearize(rgba[2])
+
+    lum = (
+        0.2126 * linearize(rgba[0])
+        + 0.7152 * linearize(rgba[1])
+        + 0.0722 * linearize(rgba[2])
+    )
     return "black" if lum > 0.179 else "white"
 
 
-def heatmap(data, row_labels, col_labels, ax=None, cbar_kw=None, cbarlabel="", **kwargs):
+def heatmap(
+    data, row_labels, col_labels, ax=None, cbar_kw=None, cbarlabel="", **kwargs
+):
     if ax is None:
         ax = plt.gca()
     if cbar_kw is None:
@@ -71,8 +84,13 @@ def heatmap(data, row_labels, col_labels, ax=None, cbar_kw=None, cbarlabel="", *
     cbar = ax.figure.colorbar(im, ax=ax, **cbar_kw)
     cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
 
-    ax.set_xticks(range(data.shape[1]), labels=col_labels,
-                  rotation=-30, ha="right", rotation_mode="anchor")
+    ax.set_xticks(
+        range(data.shape[1]),
+        labels=col_labels,
+        rotation=-30,
+        ha="right",
+        rotation_mode="anchor",
+    )
     ax.set_yticks(range(data.shape[0]), labels=row_labels)
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
     ax.spines[:].set_visible(False)
@@ -108,10 +126,15 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}", **textkw):
 # Data
 # ---------------------------------------------------------------------------
 
+
 def build_matrix(stats: dict) -> tuple[np.ndarray, list[str], list[str]]:
     param_keys = list(PARAM_LABELS.keys())
     # preserve insertion order of MODEL_LABELS, skip models absent from stats
-    models = [m for m in MODEL_LABELS if m in stats and TARGET_SETUP in stats[m].get("by_setup", {})]
+    models = [
+        m
+        for m in MODEL_LABELS
+        if m in stats and TARGET_SETUP in stats[m].get("by_setup", {})
+    ]
 
     matrix = np.full((len(models), len(param_keys)), np.nan)
     for i, model in enumerate(models):
@@ -132,11 +155,14 @@ def build_matrix(stats: dict) -> tuple[np.ndarray, list[str], list[str]]:
 # Plot
 # ---------------------------------------------------------------------------
 
+
 def plot(stats: dict, output_path: Path):
     matrix, row_labels, col_labels = build_matrix(stats)
 
     if matrix.size == 0:
-        print(f"[warn] No models found for setup '{TARGET_SETUP}'; nothing to plot.")
+        logger.info(
+            f"[warn] No models found for setup '{TARGET_SETUP}'; nothing to plot."
+        )
         return
 
     n_models, n_params = matrix.shape
@@ -145,7 +171,9 @@ def plot(stats: dict, output_path: Path):
 
     im, _ = heatmap(
         np.ma.array(matrix, mask=np.isnan(matrix)),
-        row_labels, col_labels, ax=ax,
+        row_labels,
+        col_labels,
+        ax=ax,
         cmap="RdYlGn_r",
         cbarlabel=r"Mean MAPE (\%)",
     )
@@ -153,12 +181,13 @@ def plot(stats: dict, output_path: Path):
 
     fig.savefig(output_path)
     plt.close(fig)
-    print(f"Saved -> {output_path}")
+    logger.info(f"Saved -> {output_path}")
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def run(stats_path: str = "aggregate_stats.json", output_dir: str = "."):
     stats_file = Path(stats_path)
@@ -172,6 +201,8 @@ def run(stats_path: str = "aggregate_stats.json", output_dir: str = "."):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = argparse.ArgumentParser(
         description="Plot per-parameter MAPE heatmap from aggregate_stats.json"
     )

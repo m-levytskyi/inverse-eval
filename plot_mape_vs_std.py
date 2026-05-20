@@ -7,9 +7,13 @@ standard deviation across NF samples) and prediction accuracy (measured by MAPE)
 """
 
 import json
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 # Apply paper plotting style
 plt.style.use("paper.mplstyle")
@@ -17,7 +21,7 @@ plt.style.use("paper.mplstyle")
 
 def load_batch_results(results_file):
     """Load batch results from JSON file."""
-    print(f"Loading results from: {results_file}")
+    logger.info(f"Loading results from: {results_file}")
     with open(results_file, "r") as f:
         return json.load(f)
 
@@ -134,8 +138,10 @@ def extract_mape_std_data(results):
                 data["by_parameter"][canonical_name]["raw_std"].append(std_values[i])
                 data["by_parameter"][canonical_name]["exp_ids"].append(exp_id)
 
-    print(f"Extracted data for {len(data['overall']['constraint_mape'])} experiments")
-    print(f"Parameters: {list(data['by_parameter'].keys())}")
+    logger.info(
+        f"Extracted data for {len(data['overall']['constraint_mape'])} experiments"
+    )
+    logger.info(f"Parameters: {list(data['by_parameter'].keys())}")
 
     return data
 
@@ -180,7 +186,7 @@ def plot_mape_vs_std(data, output_dir):
 
     output_file = output_dir / "mape_vs_std_overall.png"
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
-    print(f"Saved: {output_file}")
+    logger.info(f"Saved: {output_file}")
     plt.close()
 
     # 2. Overall MAPE vs Mean Constraint-Normalized Std with Binning
@@ -266,7 +272,7 @@ def plot_mape_vs_std(data, output_dir):
 
     output_file = output_dir / "mape_vs_std_overall_binned.png"
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
-    print(f"Saved: {output_file}")
+    logger.info(f"Saved: {output_file}")
     plt.close()
 
     # 3. Per-parameter plots (individual)
@@ -322,7 +328,7 @@ def plot_mape_vs_std(data, output_dir):
 
         output_file = output_dir / f"mape_vs_std_{param_name}.png"
         plt.savefig(output_file, dpi=300, bbox_inches="tight")
-        print(f"Saved: {output_file}")
+        logger.info(f"Saved: {output_file}")
         plt.close()
 
     # 4. Combined per-parameter plot (all in one)
@@ -381,24 +387,24 @@ def plot_mape_vs_std(data, output_dir):
     )
     output_file = output_dir / "mape_vs_std_all_parameters.png"
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
-    print(f"Saved: {output_file}")
+    logger.info(f"Saved: {output_file}")
     plt.close()
 
     # 5. Statistical summary
-    print("\n" + "=" * 70)
-    print("STATISTICAL SUMMARY: MAPE vs Standard Deviation")
-    print("=" * 70)
+    logger.info("\n" + "=" * 70)
+    logger.info("STATISTICAL SUMMARY: MAPE vs Standard Deviation")
+    logger.info("=" * 70)
 
-    print("\nOverall:")
+    logger.info("\nOverall:")
     mape = np.array(data["overall"]["constraint_mape"])
     std = np.array(data["overall"]["constraint_std_mean"])
     corr = np.corrcoef(std, mape)[0, 1] if len(std) > 1 else np.nan
-    print(f"  Samples: {len(std)}")
-    print(f"  Mean MAPE: {np.mean(mape):.2f}%")
-    print(f"  Mean Constraint-Normalized Std: {np.mean(std):.4f}%")
-    print(f"  Correlation: {corr:.4f}")
+    logger.info(f"  Samples: {len(std)}")
+    logger.info(f"  Mean MAPE: {np.mean(mape):.2f}%")
+    logger.info(f"  Mean Constraint-Normalized Std: {np.mean(std):.4f}%")
+    logger.info(f"  Correlation: {corr:.4f}")
 
-    print("\nBy Parameter:")
+    logger.info("\nBy Parameter:")
     for param_name in ["thickness", "amb_rough", "sub_rough", "layer_sld", "sub_sld"]:
         param_data = data["by_parameter"].get(param_name, {})
         if len(param_data.get("constraint_mape", [])) == 0:
@@ -408,11 +414,11 @@ def plot_mape_vs_std(data, output_dir):
         std = np.array(param_data["constraint_std"])
         corr = np.corrcoef(std, mape)[0, 1] if len(std) > 1 else np.nan
 
-        print(f"\n  {param_labels.get(param_name, param_name)}:")
-        print(f"    Samples: {len(std)}")
-        print(f"    Mean MAPE: {np.mean(mape):.2f}%")
-        print(f"    Mean Constraint-Normalized Std: {np.mean(std):.4f}%")
-        print(f"    Correlation: {corr:.4f}")
+        logger.info(f"\n  {param_labels.get(param_name, param_name)}:")
+        logger.info(f"    Samples: {len(std)}")
+        logger.info(f"    Mean MAPE: {np.mean(mape):.2f}%")
+        logger.info(f"    Mean Constraint-Normalized Std: {np.mean(std):.4f}%")
+        logger.info(f"    Correlation: {corr:.4f}")
 
 
 def extract_coverage_data(results):
@@ -522,17 +528,17 @@ def extract_coverage_data(results):
             "n_params": n_params,
         }
 
-    print(f"Coverage computed for {n_params} parameters")
+    logger.info(f"Coverage computed for {n_params} parameters")
     for p, d in by_parameter.items():
         parts = ", ".join(
             f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, d["empirical"])
         )
-        print(f"  {p}: n={d['n']}, {parts}")
+        logger.info(f"  {p}: n={d['n']}, {parts}")
     if average:
         parts = ", ".join(
             f"{nl}%={e:.1f}%" for nl, e in zip(nominal_levels, average["empirical"])
         )
-        print(f"  Average: {parts}")
+        logger.info(f"  Average: {parts}")
 
     return {
         "by_parameter": by_parameter,
@@ -613,12 +619,14 @@ def plot_coverage(coverage_data, output_dir):
     plot_file = output_dir / "coverage_nominal_vs_empirical.png"
     plt.savefig(plot_file, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"Coverage plot saved to: {plot_file}")
+    logger.info(f"Coverage plot saved to: {plot_file}")
     return plot_file
 
 
 def main():
     """Main function."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     # Path to batch results
     results_file = "batch_inference_results/288_951exps_1layers_30constraint_06february2026_17_59/batch_results.json"
 
@@ -634,7 +642,7 @@ def main():
     # Create plots
     plot_mape_vs_std(data, output_dir)
 
-    print(f"\nAnalysis complete! Plots saved to: {output_dir}")
+    logger.info(f"\nAnalysis complete! Plots saved to: {output_dir}")
 
 
 if __name__ == "__main__":
