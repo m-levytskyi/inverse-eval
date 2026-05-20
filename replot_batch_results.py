@@ -31,7 +31,7 @@ def replot_batch_results(results_dir, output_dir=None):
 
     batch_results_file = results_dir / "batch_results.json"
     if not batch_results_file.exists():
-        logger.info(f"Error: {batch_results_file} not found!")
+        logger.warning("%s not found!", batch_results_file)
         return []
 
     logger.info(f"Loading batch results from: {batch_results_file}")
