@@ -327,6 +327,7 @@ class BatchInferencePipeline:
                 layer_count=self.layer_count,
                 num_experiments=self.num_experiments,
                 experiment_ids=self.experiment_ids,
+                use_theoretical=self.use_theoretical,
             )
 
     def process_single_experiment_wrapper(self, experiment_id):
@@ -420,7 +421,10 @@ class BatchInferencePipeline:
                 # Try to get true parameters for outlier checking
                 try:
                     data_file, model_file, _ = discover_experiment_files(
-                        exp_id, str(self.data_directory), self.layer_count
+                        exp_id,
+                        str(self.data_directory),
+                        self.layer_count,
+                        use_theoretical=self.use_theoretical,
                     )
 
                     if model_file:
@@ -748,6 +752,11 @@ def parse_arguments():
         action="store_true",
         help="Use sigmas as additional input channel to neural network (requires 2-channel model)",
     )
+    parser.add_argument(
+        "--use-theoretical",
+        action="store_true",
+        help="Use theoretical curves instead of experimental curves",
+    )
 
     return parser.parse_args()
 
@@ -775,11 +784,15 @@ def main():
         nf_num_samples=args.nf_num_samples,
         nf_enable_importance_sampling=not args.nf_disable_importance_sampling,
         use_sigmas_input=args.use_sigmas_input,
+        use_theoretical=args.use_theoretical,
     )
 
     # Run the pipeline
     try:
-        batch_pipeline.run()
+        results = batch_pipeline.run()
+        if results is None:
+            print("\nBatch pipeline failed: No experiments found")
+            sys.exit(1)
         print("\nBatch pipeline completed successfully!")
     except KeyboardInterrupt:
         print("\nBatch pipeline interrupted by user")

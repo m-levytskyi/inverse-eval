@@ -10,9 +10,11 @@ endif
 SHELL := /bin/sh
 
 BOOTSTRAP_PY := $(strip $(shell command -v python3 2>/dev/null))
+VENV_PY := .venv/bin/python
 TORCH_WHEEL ?= cpu
+CONFIG ?=
 
-.PHONY: help setup venv framework install-framework deps dev-deps torch lfs check-tools check-lfs check-torch install-hooks test lint type-check pre-commit clean distclean
+.PHONY: help setup venv framework install-framework deps dev-deps torch lfs check-tools check-lfs check-torch install-hooks test lint type-check pre-commit require-venv train sweep clean distclean
 
 define RUN_BOOTSTRAP
 	@if [ -z "$(BOOTSTRAP_PY)" ]; then \
@@ -37,6 +39,12 @@ help:
 	@echo "  make lint               Run low-churn Ruff correctness checks"
 	@echo "  make type-check         Run the manual ty check"
 	@echo "  make pre-commit         Run pre-commit hooks on staged files"
+	@echo ""
+	@echo "Root workflow targets:"
+	@echo "  make train CONFIG=nf_config_mixed.yaml"
+	@echo "                            Train a reflectorch config from the repo root via .venv"
+	@echo "  make sweep CONFIG=sweep_configs/baseline.yaml"
+	@echo "                            Run a batch sweep from the repo root via .venv"
 	@echo ""
 	@echo "Troubleshooting / partial reruns:"
 	@echo "  make check-tools        Verify Python, Git, Git LFS, and installer availability"
@@ -86,7 +94,7 @@ deps: venv torch
 dev-deps: venv
 	$(call RUN_BOOTSTRAP,dev-deps)
 
-check-torch: torch
+check-torch: require-venv
 	$(call RUN_BOOTSTRAP,check-torch --torch-wheel $(TORCH_WHEEL))
 
 install-hooks: dev-deps
@@ -103,6 +111,27 @@ type-check: deps dev-deps
 
 pre-commit: dev-deps
 	$(call RUN_BOOTSTRAP,pre-commit)
+
+require-venv:
+	@if [ ! -x "$(VENV_PY)" ]; then \
+		echo "Missing root virtual environment: $(VENV_PY)"; \
+		echo "Run 'make setup' first, then retry from the inverse-eval repo root."; \
+		exit 1; \
+	fi
+
+train: require-venv
+	@if [ -z "$(CONFIG)" ]; then \
+		echo "Missing CONFIG. Example: make train CONFIG=nf_config_mixed.yaml"; \
+		exit 1; \
+	fi
+	@"$(VENV_PY)" -m reflectorch.train "$(CONFIG)"
+
+sweep: require-venv
+	@if [ -z "$(CONFIG)" ]; then \
+		echo "Missing CONFIG. Example: make sweep CONFIG=sweep_configs/baseline.yaml"; \
+		exit 1; \
+	fi
+	@"$(VENV_PY)" batch_sweep_runner.py --config "$(CONFIG)"
 
 clean:
 	$(call RUN_BOOTSTRAP,clean)

@@ -11,6 +11,13 @@ sweep_results_*
 *.codex
 !README.md
 
+# Local/derived datasets
+1_new/
+denoised_as_theoretical_q
+denoised_as_theoretical_q/
+denoised_on_experimental_q/
+synthetic_inference_test/
+theoretical_on_experimental_q_test/
 # Virtual environment
 .venv/
 
