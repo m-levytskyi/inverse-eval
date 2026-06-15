@@ -138,13 +138,3 @@ def format_time_duration(seconds):
     else:
         hours = seconds / 3600
         return f"{hours:.1f} hours"
-
-
-if __name__ == "__main__":
-    print("Utility functions module loaded successfully.")
-    print("Available functions:")
-    print("  - convert_to_json_serializable()")
-    print("  - validate_layer_count()")
-    print("  - format_parameter_value()")
-    print("  - ensure_directory_exists()")
-    print("  - format_time_duration()")

@@ -14,8 +14,9 @@ class ApplyPhysicalConstraintsTests(unittest.TestCase):
         }
 
     def test_no_violations_unchanged(self) -> None:
-        pred = self._make_prediction([100.0, 5.0], [100.0, 5.0],
-                                     ["thickness", "sub_rough"])
+        pred = self._make_prediction(
+            [100.0, 5.0], [100.0, 5.0], ["thickness", "sub_rough"]
+        )
         result = parameter_constraints.apply_physical_constraints(pred)
         np.testing.assert_array_almost_equal(
             result["predicted_params_array"], [100.0, 5.0]
@@ -28,8 +29,9 @@ class ApplyPhysicalConstraintsTests(unittest.TestCase):
         self.assertGreaterEqual(result["polished_params_array"][0], 0.1)
 
     def test_negative_roughness_clamped_to_zero(self) -> None:
-        pred = self._make_prediction([100.0, -2.0], [100.0, -2.0],
-                                     ["thickness", "sub_rough"])
+        pred = self._make_prediction(
+            [100.0, -2.0], [100.0, -2.0], ["thickness", "sub_rough"]
+        )
         result = parameter_constraints.apply_physical_constraints(pred)
         self.assertGreaterEqual(result["predicted_params_array"][1], 0.0)
         self.assertGreaterEqual(result["polished_params_array"][1], 0.0)
@@ -43,20 +45,14 @@ class ApplyPhysicalConstraintsTests(unittest.TestCase):
         # SLD values can be negative and should NOT be clamped
         pred = self._make_prediction([-5.0], [-5.0], ["layer_sld"])
         result = parameter_constraints.apply_physical_constraints(pred)
-        np.testing.assert_array_almost_equal(
-            result["predicted_params_array"], [-5.0]
-        )
+        np.testing.assert_array_almost_equal(result["predicted_params_array"], [-5.0])
 
     def test_returns_expected_values_for_valid_input(self) -> None:
         pred = self._make_prediction([100.0], [100.0], ["thickness"])
         result = parameter_constraints.apply_physical_constraints(pred)
         self.assertEqual(result["param_names"], ["thickness"])
-        np.testing.assert_array_almost_equal(
-            result["predicted_params_array"], [100.0]
-        )
-        np.testing.assert_array_almost_equal(
-            result["polished_params_array"], [100.0]
-        )
+        np.testing.assert_array_almost_equal(result["predicted_params_array"], [100.0])
+        np.testing.assert_array_almost_equal(result["polished_params_array"], [100.0])
 
     def test_polished_also_clamped_independently(self) -> None:
         pred = {
@@ -75,12 +71,16 @@ class ValidatePhysicalParametersTests(unittest.TestCase):
     def test_all_valid_returns_true(self) -> None:
         params = [100.0, 5.0, 2.5e-6]
         names = ["thickness", "sub_rough", "layer_sld"]
-        self.assertTrue(parameter_constraints.validate_physical_parameters(params, names))
+        self.assertTrue(
+            parameter_constraints.validate_physical_parameters(params, names)
+        )
 
     def test_negative_thickness_returns_false(self) -> None:
         params = [-1.0]
         names = ["thickness"]
-        self.assertFalse(parameter_constraints.validate_physical_parameters(params, names))
+        self.assertFalse(
+            parameter_constraints.validate_physical_parameters(params, names)
+        )
 
     def test_negative_roughness_returns_false(self) -> None:
         params = [100.0, -0.5]
@@ -93,30 +93,33 @@ class ValidatePhysicalParametersTests(unittest.TestCase):
         # SLD can be negative
         params = [-5.0]
         names = ["layer_sld"]
-        self.assertTrue(parameter_constraints.validate_physical_parameters(params, names))
+        self.assertTrue(
+            parameter_constraints.validate_physical_parameters(params, names)
+        )
 
     def test_boundary_zero_roughness_valid(self) -> None:
         params = [0.0]
         names = ["sub_rough"]
-        self.assertTrue(parameter_constraints.validate_physical_parameters(params, names))
+        self.assertTrue(
+            parameter_constraints.validate_physical_parameters(params, names)
+        )
 
     def test_boundary_zero_thickness_valid(self) -> None:
         # 0 is not < 0 so no violation
         params = [0.0]
         names = ["thickness"]
-        self.assertTrue(parameter_constraints.validate_physical_parameters(params, names))
+        self.assertTrue(
+            parameter_constraints.validate_physical_parameters(params, names)
+        )
 
-    def test_experiment_id_in_output(self) -> None:
-        import contextlib
-        import io
+    def test_experiment_id_in_warning_log(self) -> None:
         params = [-1.0]
         names = ["thickness"]
-        captured = io.StringIO()
-        with contextlib.redirect_stdout(captured):
+        with self.assertLogs("parameter_constraints", level="WARNING") as captured:
             parameter_constraints.validate_physical_parameters(
                 params, names, experiment_id="exp_001"
             )
-        self.assertIn("exp_001", captured.getvalue())
+        self.assertIn("exp_001", "\n".join(captured.output))
 
 
 class GetParameterConstraintsInfoTests(unittest.TestCase):

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import argparse
+import logging
 from pathlib import Path
 from datetime import datetime
 import json
@@ -53,6 +54,9 @@ DEFAULT_CONFIG = {
 # =============================================================================
 
 
+logger = logging.getLogger(__name__)
+
+
 class BatchPipelineSweep:
     """Automated parameter sweep for batch pipeline."""
 
@@ -78,25 +82,27 @@ class BatchPipelineSweep:
         )
         self.run_count = 0
 
-        print(f"Initialized sweep with {self.total_runs} total parameter combinations")
-        print(f"Results will be saved to: {self.sweep_dir}")
+        logger.info(
+            f"Initialized sweep with {self.total_runs} total parameter combinations"
+        )
+        logger.info(f"Results will be saved to: {self.sweep_dir}")
 
     def run_single_batch(self, prior_deviation, sld_mode, use_prominent_features):
         """Run a single batch pipeline instance."""
         self.run_count += 1
-        print(f"\n{'=' * 80}")
-        print(f"RUN {self.run_count}/{self.total_runs}")
-        print(f"Prior deviation: {prior_deviation}%")
-        print(f"SLD mode: {sld_mode}")
-        print(f"Prominent features: {use_prominent_features}")
-        print(f"Inference backend: {self.config['inference_backend']}")
+        logger.info(f"\n{'=' * 80}")
+        logger.info(f"RUN {self.run_count}/{self.total_runs}")
+        logger.info(f"Prior deviation: {prior_deviation}%")
+        logger.info(f"SLD mode: {sld_mode}")
+        logger.info(f"Prominent features: {use_prominent_features}")
+        logger.info(f"Inference backend: {self.config['inference_backend']}")
         if self.config["inference_backend"] == "nf":
-            print(f"NF config: {self.config['nf_config_name']}")
-            print(f"NF samples: {self.config['nf_num_samples']}")
-            print(
+            logger.info(f"NF config: {self.config['nf_config_name']}")
+            logger.info(f"NF samples: {self.config['nf_num_samples']}")
+            logger.info(
                 f"NF importance sampling: {not self.config['nf_disable_importance_sampling']}"
             )
-        print(f"{'=' * 80}\n")
+        logger.info(f"{'=' * 80}\n")
 
         cmd = [
             sys.executable,
@@ -162,7 +168,7 @@ class BatchPipelineSweep:
                 "return_code": result.returncode,
             }
 
-            print(
+            logger.info(
                 f"Run {self.run_count} completed successfully in {execution_time:.1f}s"
             )
 
@@ -178,7 +184,7 @@ class BatchPipelineSweep:
                 "return_code": "TIMEOUT",
                 "error_output": "Process timed out after 7200 seconds",
             }
-            print(f"Run {self.run_count} TIMED OUT after {execution_time:.1f}s")
+            logger.info(f"Run {self.run_count} TIMED OUT after {execution_time:.1f}s")
 
         except subprocess.CalledProcessError as e:
             execution_time = time.time() - start_time
@@ -192,9 +198,9 @@ class BatchPipelineSweep:
                 "return_code": e.returncode,
                 "error_output": e.stderr[:500] if e.stderr else "",
             }
-            print(f"Run {self.run_count} FAILED with return code {e.returncode}")
+            logger.info(f"Run {self.run_count} FAILED with return code {e.returncode}")
 
-        except Exception as e:
+        except OSError as e:
             execution_time = time.time() - start_time
             run_result = {
                 "run_number": self.run_count,
@@ -206,7 +212,9 @@ class BatchPipelineSweep:
                 "return_code": "EXCEPTION",
                 "error_output": str(e),
             }
-            print(f"Run {self.run_count} FAILED with exception: {e}")
+            logger.exception(
+                "Run %s failed while launching subprocess: %s", self.run_count, e
+            )
 
         self.results_summary.append(run_result)
         self.save_summary()
@@ -242,15 +250,17 @@ class BatchPipelineSweep:
         successful_runs = sum(1 for r in self.results_summary if r["success"])
         failed_runs = len(self.results_summary) - successful_runs
 
-        print(f"\n{'=' * 80}")
-        print("SWEEP COMPLETE")
-        print(f"{'=' * 80}")
-        print(f"Total runs: {len(self.results_summary)}/{self.total_runs}")
-        print(f"Successful runs: {successful_runs}/{self.total_runs}")
-        print(f"Failed runs: {failed_runs}/{self.total_runs}")
-        print(f"Success rate: {successful_runs / self.total_runs * 100:.1f}%")
-        print(f"Average time per run: {total_sweep_time / self.total_runs:.1f} seconds")
-        print(f"Results saved to: {self.sweep_dir}")
+        logger.info(f"\n{'=' * 80}")
+        logger.info("SWEEP COMPLETE")
+        logger.info(f"{'=' * 80}")
+        logger.info(f"Total runs: {len(self.results_summary)}/{self.total_runs}")
+        logger.info(f"Successful runs: {successful_runs}/{self.total_runs}")
+        logger.info(f"Failed runs: {failed_runs}/{self.total_runs}")
+        logger.info(f"Success rate: {successful_runs / self.total_runs * 100:.1f}%")
+        logger.info(
+            f"Average time per run: {total_sweep_time / self.total_runs:.1f} seconds"
+        )
+        logger.info(f"Results saved to: {self.sweep_dir}")
 
         return self.results_summary
 
@@ -379,12 +389,13 @@ def parse_arguments():
 
 def main():
     """Main function to run the parameter sweep."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = parse_arguments()
 
     # Load config from file if provided
     config = {}
     if args.config:
-        print(f"Loading configuration from: {args.config}")
+        logger.info(f"Loading configuration from: {args.config}")
         config = load_config_from_yaml(args.config)
 
     # Override with command line arguments
@@ -441,23 +452,23 @@ def main():
     if args.use_theoretical:
         config["use_theoretical"] = True
 
-    print("Starting automated batch pipeline parameter sweep...")
-    print(f"Configuration: {json.dumps(config, indent=2)}")
+    logger.info("Starting automated batch pipeline parameter sweep...")
+    logger.info(f"Configuration: {json.dumps(config, indent=2)}")
 
     sweep = BatchPipelineSweep(config=config)
 
     try:
         sweep.run_full_sweep()
-        print("\nParameter sweep completed successfully!")
+        logger.info("\nParameter sweep completed successfully!")
         return 0
 
     except KeyboardInterrupt:
-        print("\nParameter sweep interrupted by user")
+        logger.warning("\nParameter sweep interrupted by user")
         sweep.save_summary()
         return 1
 
-    except Exception as e:
-        print(f"\nParameter sweep failed with error: {e}")
+    except (OSError, ValueError, KeyError, RuntimeError) as e:
+        logger.exception("\nParameter sweep failed with error: %s", e)
         sweep.save_summary()
         return 1
 

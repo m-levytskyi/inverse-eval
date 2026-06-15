@@ -13,6 +13,7 @@ Outputs:
 
 import json
 import argparse
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,9 @@ BATCH_CATALOGUE = {
 # ---------------------------------------------------------------------------
 # Setup-label parsing from directory name
 # ---------------------------------------------------------------------------
+
+
+logger = logging.getLogger(__name__)
 
 
 def parse_setup(dir_name: str) -> dict:
@@ -196,7 +200,7 @@ def aggregate_category(
         pattern = f"{batch_id:03d}_*"
         matches = list(base_dir.glob(pattern))
         if not matches:
-            print(f"  [warn] batch {batch_id} not found in {base_dir}")
+            logger.info(f"  [warn] batch {batch_id} not found in {base_dir}")
             continue
 
         batch_dir = matches[0]
@@ -366,11 +370,11 @@ def run(
 
     results = {}
     for category, batch_ids in catalogue.items():
-        print(f"\nAggregating {category} ({len(batch_ids)} batches) …")
+        logger.info(f"\nAggregating {category} ({len(batch_ids)} batches) …")
         results[category] = aggregate_category(batch_ids, base_path)
         agg = results[category]["aggregate"]
         overall = agg["mape"].get("overall", {})
-        print(
+        logger.info(
             f"  → {agg['n_success']}/{agg['n_total']} successful, "
             f"overall MAPE mean={fmt(overall.get('mean'))}%, "
             f"median={fmt(overall.get('median'))}%"
@@ -379,17 +383,19 @@ def run(
     json_path = out_path / "aggregate_stats.json"
     with open(json_path, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"\nSaved JSON → {json_path}")
+    logger.info(f"\nSaved JSON → {json_path}")
 
     md_path = out_path / "aggregate_stats.md"
     with open(md_path, "w") as f:
         f.write(build_markdown(results))
-    print(f"Saved Markdown → {md_path}")
+    logger.info(f"Saved Markdown → {md_path}")
 
     return results
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = argparse.ArgumentParser(
         description="Aggregate MAPE statistics across batch sweep results"
     )

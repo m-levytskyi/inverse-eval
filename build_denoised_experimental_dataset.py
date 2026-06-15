@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import pickle
 import re
 import shutil
@@ -11,6 +12,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,6 +130,8 @@ def plot_curve_comparison(
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     args = parse_args()
 
     input_dir = Path(args.input_dir)
@@ -141,16 +147,23 @@ def main() -> int:
 
     q_ref, r_denoised = load_pickle_data(pickle_file)
 
-    exp_files = sorted(input_dir.glob(args.pattern), key=lambda p: experiment_index(extract_experiment_id(p)))
+    exp_files = sorted(
+        input_dir.glob(args.pattern),
+        key=lambda p: experiment_index(extract_experiment_id(p)),
+    )
     if not exp_files:
-        raise FileNotFoundError(f"No files found with pattern {args.pattern} in {input_dir}")
+        raise FileNotFoundError(
+            f"No files found with pattern {args.pattern} in {input_dir}"
+        )
 
     out_of_range_points = 0
     copied_model_files = 0
     selected_for_plots: list[Path] = []
 
     if args.plot_count > 0:
-        positions = np.linspace(0, len(exp_files) - 1, num=min(args.plot_count, len(exp_files)), dtype=int)
+        positions = np.linspace(
+            0, len(exp_files) - 1, num=min(args.plot_count, len(exp_files)), dtype=int
+        )
         selected_for_plots = [exp_files[i] for i in np.unique(positions)]
 
     if len(exp_files) > r_denoised.shape[0]:
@@ -164,7 +177,9 @@ def main() -> int:
 
         exp_data = np.loadtxt(exp_file, comments="#")
         if exp_data.ndim != 2 or exp_data.shape[1] < 2:
-            raise ValueError(f"Invalid experimental format in {exp_file}: shape={exp_data.shape}")
+            raise ValueError(
+                f"Invalid experimental format in {exp_file}: shape={exp_data.shape}"
+            )
 
         q_exp = exp_data[:, 0]
         r_exp = exp_data[:, 1]
@@ -203,17 +218,17 @@ def main() -> int:
                 r_denoised_interp=r_interp,
             )
 
-    print("=" * 80)
-    print("DENOISED DATASET GENERATION COMPLETE")
-    print("=" * 80)
-    print(f"Input experimental files:   {len(exp_files)}")
-    print(f"Output curve files:         {len(exp_files)}")
-    print(f"Output directory:           {output_dir}")
-    print(f"Model files copied:         {copied_model_files}")
-    print(f"Plots generated:            {len(selected_for_plots)}")
-    print(f"Plots directory:            {plots_dir}")
-    print(f"Out-of-range q points:      {out_of_range_points}")
-    print(f"Reference q range:          [{q_ref.min():.6f}, {q_ref.max():.6f}]")
+    logger.info("=" * 80)
+    logger.info("DENOISED DATASET GENERATION COMPLETE")
+    logger.info("=" * 80)
+    logger.info(f"Input experimental files:   {len(exp_files)}")
+    logger.info(f"Output curve files:         {len(exp_files)}")
+    logger.info(f"Output directory:           {output_dir}")
+    logger.info(f"Model files copied:         {copied_model_files}")
+    logger.info(f"Plots generated:            {len(selected_for_plots)}")
+    logger.info(f"Plots directory:            {plots_dir}")
+    logger.info(f"Out-of-range q points:      {out_of_range_points}")
+    logger.info(f"Reference q range:          [{q_ref.min():.6f}, {q_ref.max():.6f}]")
 
     return 0
 
