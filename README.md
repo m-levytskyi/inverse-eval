@@ -53,25 +53,18 @@ Install these once before running setup:
 | Requirement | Notes |
 |-------------|-------|
 | Python | 3.10, 3.11, or 3.12 |
-| Git | Needed to clone this repo and the vendored framework |
-| Git LFS (`git-lfs`) | Needed for large model/data files |
-| `uv` | Optional but recommended; setup falls back to `pip` if missing |
-| `make` | Convenience wrapper for macOS/Linux only; Windows does not need it |
+| Git | Needed to clone this repo |
+| `uv` | Optional but recommended for faster setup|
+| Git LFS (`git-lfs`) | Needed for large model/data files; is included in the distribution of Git for Windows |
+| `make` | macOS/Linux only |
 | CUDA/NVIDIA driver | Optional, only for GPU acceleration on NVIDIA machines |
-| LaTeX | Optional, only for TeX-rendered plots |
 
 Install help for macOS, Windows, and Linux:
 
 - Python: <https://www.python.org/downloads/>
 - Git: <https://git-scm.com/downloads/>
-- Git LFS: <https://git-lfs.com/>
+- Git LFS: <https://github.com/git-lfs/git-lfs?utm_source=gitlfs_site&utm_medium=installation_link&utm_campaign=gitlfs#installing>
 - uv: <https://docs.astral.sh/uv/getting-started/installation/>
-
-After installing Git LFS, run this once in a terminal:
-
-```bash
-git lfs install
-```
 
 ---
 
@@ -80,7 +73,12 @@ git lfs install
 ### 1. Clone the repository
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/m-levytskyi/inverse-eval
+```
+
+Change the working directory
+
+```bash
 cd inverse-eval
 ```
 
@@ -92,7 +90,7 @@ On macOS/Linux:
 make setup
 ```
 
-On Windows PowerShell, `make` is not required:
+On Windows:
 
 ```powershell
 python bootstrap_windows.py
@@ -106,89 +104,22 @@ py -3.11 bootstrap_windows.py
 
 Setup creates a local `.venv`, downloads the vendored `nflows_reflectorch` package and its Git LFS files, installs PyTorch plus the project dependencies, and prints the detected compute backend.
 
-If `uv` is available, setup uses it automatically for faster environment and package installation. Otherwise it uses Python's built-in `venv` and `pip`.
-
-Git LFS is required because the vendored `nflows_reflectorch` checkout uses LFS-tracked model files.
-
 By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. On macOS, the default wheel can still expose the `mps` device at runtime on Apple Silicon.
-
-```bash
-# macOS/Linux
-make setup && make check-torch
-make setup TORCH_WHEEL=cpu && make check-torch
-make setup TORCH_WHEEL=cu121 && make check-torch
-```
-
-```powershell
-# Windows
-python bootstrap_windows.py
-python bootstrap_windows.py --torch-wheel cpu
-python bootstrap_windows.py --torch-wheel cu121
-```
-
-Supported wheel selections are `cpu`, `auto`, `cu118`, `cu121`, `cu126`, and `cu128`.
-
-`auto` behavior:
-
-- On macOS: installs the default PyTorch wheel and relies on MPS if available at runtime.
-- On Linux/Windows x86_64 with NVIDIA drivers: runs `nvidia-smi`, reads the reported CUDA version, and chooses the newest pinned backend not newer than that version.
-- On unsupported platforms, unsupported architectures, missing `nvidia-smi`, or unparsable driver output: falls back to `cpu`.
 
 The bootstrap only installs Python wheels. It does not install or repair NVIDIA drivers, CUDA toolkits, or other system dependencies.
 
 ### 3. Activate the environment
 
+On macOS/Linux:
+
 ```bash
 source .venv/bin/activate
 ```
 
-On Windows PowerShell:
+On Windows:
 
 ```powershell
-.venv\Scripts\Activate.ps1
-```
-
-Use this root `.venv` for both evaluation and training. The vendored
-`vendor/nflows_reflectorch` checkout is installed into this environment in
-editable mode by setup, so you should not create or activate
-`vendor/nflows_reflectorch/.venv`.
-
-### 4. Install development hooks
-
-This step is useful if you plan to edit code.
-
-On macOS/Linux:
-
-```bash
-make install-hooks
-```
-
-This installs the repo's pre-commit and pre-push hooks. The pre-commit hook runs file hygiene checks plus low-churn Ruff formatting and correctness checks on changed Python files. The pre-push hook runs:
-
-```bash
-python scripts/run_in_venv.py -m pytest -q tests
-```
-
-The hook wrapper resolves `.venv/bin/python` on macOS/Linux and
-`.venv\Scripts\python.exe` on Windows, so Git hooks use the repo environment on
-both platforms.
-
-Useful macOS/Linux quality targets:
-
-```bash
-make pre-commit   # run pre-commit hooks on staged files
-make lint         # run Ruff correctness checks
-make test         # run pytest -q tests
-make type-check   # run the manual ty check
-```
-
-On Windows, run the same helper actions directly:
-
-```powershell
-python bootstrap.py install-hooks
-python bootstrap.py lint
-python bootstrap.py test
-python bootstrap.py type-check
+.venv\Scripts\Activate
 ```
 
 ### Troubleshooting
@@ -200,7 +131,7 @@ python bootstrap.py type-check
 - Torch wheel mismatch: force CPU with `make setup TORCH_WHEEL=cpu` on macOS/Linux or `python bootstrap_windows.py --torch-wheel cpu` on Windows. You can also keep the default `auto` mode and let setup fall back automatically when CUDA is not usable.
 - Apple Silicon: use the default `auto` mode; PyTorch can still report `device mps` after install.
 - Windows `c10.dll` or `WinError 1114`: install or repair the Microsoft Visual C++ Redistributable 2015-2022 (x64), reboot if prompted, then rerun the Windows bootstrap.
-- Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `py -3.11 bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
+- Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `python bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
 
 On macOS/Linux, maintenance targets such as `make venv`, `make framework`, `make lfs`, `make deps`, `make dev-deps`, `make clean`, and `make distclean` are available for partial reruns and troubleshooting.
 
@@ -209,6 +140,12 @@ On macOS/Linux, maintenance targets such as `make venv`, `make framework`, `make
 ## Notebooks (Quick Start)
 
 After setup, the notebooks are the easiest way to explore the pipeline:
+
+
+
+-- this section will be updated after the notebooks are final --
+
+
 
 | Notebook | Description |
 |----------|-------------|
@@ -220,6 +157,8 @@ Launch with:
 ```bash
 jupyter lab notebooks/
 ```
+
+Open the jupyter lab in browser.
 
 ---
 
