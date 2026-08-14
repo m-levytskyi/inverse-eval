@@ -124,9 +124,9 @@ def _format_model_stats(mapes, label, mape_label, meta=None):
     meta = meta or {}
     stats = f"{label}:\n"
     stats += f"  Total: {len(mapes)} experiments\n"
-    stats += f"  Mean {mape_label}: {np.mean(mapes):.1f}\\%\n"
-    stats += f"  Median {mape_label}: {np.median(mapes):.1f}\\%\n"
-    stats += f"  Std Dev: {np.std(mapes):.1f}\\%\n"
+    stats += f"  Mean {mape_label}: {np.mean(mapes):.1f}%\n"
+    stats += f"  Median {mape_label}: {np.median(mapes):.1f}%\n"
+    stats += f"  Std Dev: {np.std(mapes):.1f}%\n"
     if "failed" in meta:
         stats += f"  Failed: {meta['failed']}\n"
     if "outliers" in meta:
@@ -302,14 +302,14 @@ def plot_batch_mape_distribution(
                 fontsize=8,
             )
 
-    ax.set_xlabel("MAPE Range (\\%)")
+    ax.set_xlabel("MAPE Range (%)")
     ax.set_ylabel("Number of Experiments")
     ax.set_xticks(range(len(range_labels)))
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
 
     # Statistics text box
-    stats_text = f"Mean {label}: {np.mean(mapes):.1f}\\%\n"
-    stats_text += f"Median {label}: {np.median(mapes):.1f}\\%"
+    stats_text = f"Mean {label}: {np.mean(mapes):.1f}%\n"
+    stats_text += f"Median {label}: {np.median(mapes):.1f}%"
     ax.text(
         0.98,
         0.98,
@@ -414,7 +414,7 @@ def plot_batch_parameter_breakdown(
 
     ax.set_ylim(0, 100)
     ax.set_xlabel("Parameter Type")
-    ax.set_ylabel(f"{label} (\\%)")
+    ax.set_ylabel(f"{label} (%)")
 
     # Outlier indicators
     has_outliers = False
@@ -564,7 +564,7 @@ def plot_model_comparison_histogram(
     ax.bar(x - width / 2, baseline_counts, width, alpha=0.8, label=baseline_label)
     ax.bar(x + width / 2, comparison_counts, width, alpha=0.8, label=comparison_label)
 
-    ax.set_xlabel("MAPE Range (\\%)")
+    ax.set_xlabel("MAPE Range (%)")
     ax.set_ylabel("Number of Experiments")
     ax.set_xticks(x)
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
@@ -574,8 +574,8 @@ def plot_model_comparison_histogram(
     baseline_mean = np.mean(baseline_mapes)
     comparison_mean = np.mean(comparison_mapes)
 
-    stats_text = f"{baseline_label} Mean {mape_label}: {baseline_mean:.1f}\\%\n"
-    stats_text += f"{comparison_label} Mean {mape_label}: {comparison_mean:.1f}\\%"
+    stats_text = f"{baseline_label} Mean {mape_label}: {baseline_mean:.1f}%\n"
+    stats_text += f"{comparison_label} Mean {mape_label}: {comparison_mean:.1f}%"
 
     ax.text(
         0.98,
@@ -641,7 +641,7 @@ def plot_random_guessing_comparison(
     ax.bar(x - width / 2, model_counts, width, alpha=0.8, label="Model")
     ax.bar(x + width / 2, random_counts, width, alpha=0.8, label="Random Guessing")
 
-    ax.set_xlabel("MAPE Range (\\%)")
+    ax.set_xlabel("MAPE Range (%)")
     ax.set_ylabel("Number of Experiments")
     ax.set_xticks(x)
     ax.set_xticklabels(range_labels, rotation=45, ha="right")
@@ -650,8 +650,8 @@ def plot_random_guessing_comparison(
     # Statistics text
     model_mean = np.mean(model_mapes)
     random_mean = np.mean(random_mapes) if random_mapes else 0
-    stats_text = f"Model Mean {mape_label}: {model_mean:.1f}\\%\n"
-    stats_text += f"Random Guessing Mean {mape_label}: {random_mean:.1f}\\%"
+    stats_text = f"Model Mean {mape_label}: {model_mean:.1f}%\n"
+    stats_text += f"Random Guessing Mean {mape_label}: {random_mean:.1f}%"
 
     ax.text(
         0.98,
@@ -726,7 +726,7 @@ def plot_parameter_comparison_grid(
 
     fig.suptitle(
         f"Per-Parameter {mape_type} Distributions{title_suffix}\n"
-        f"($\\pm${deviation_pct}\\% Constraint-Based Priors)",
+        f"($\\pm${deviation_pct}% Constraint-Based Priors)",
     )
 
     # Get MAPE ranges
@@ -754,7 +754,7 @@ def plot_parameter_comparison_grid(
         )
 
         ax.set_title(param_name)
-        ax.set_xlabel("MAPE Range (\\%)")
+        ax.set_xlabel("MAPE Range (%)")
         ax.set_ylabel("Count")
         ax.set_xticks(range(0, len(range_labels), 4))
         ax.set_xticklabels(
@@ -769,9 +769,9 @@ def plot_parameter_comparison_grid(
             comparison_mean = np.mean(comparison_vals)
             improvement = ((baseline_mean - comparison_mean) / baseline_mean) * 100
 
-            stats = f"{comparison_label[:4]}: {comparison_mean:.1f}\\%\n"
-            stats += f"{baseline_label[:4]}: {baseline_mean:.1f}\\%\n"
-            stats += f"$\\Delta$: {improvement:+.1f}\\%"
+            stats = f"{comparison_label[:4]}: {comparison_mean:.1f}%\n"
+            stats += f"{baseline_label[:4]}: {baseline_mean:.1f}%\n"
+            stats += f"$\\Delta$: {improvement:+.1f}%"
             ax.text(
                 0.98,
                 0.98,
@@ -857,10 +857,10 @@ def paper_calibration(batch_num, output_dir=None):
     # 1. Scatter plot
     fig, ax = plt.subplots()
     scatter = ax.scatter(std, mape, alpha=0.5, s=15, c=mape, cmap="viridis")
-    ax.set_xlabel("Mean Constraint-Normalized Std Dev (\\%)")
-    ax.set_ylabel("Overall Constraint-Based MAPE (\\%)")
+    ax.set_xlabel("Mean Constraint-Normalized Std Dev (%)")
+    ax.set_ylabel("Overall Constraint-Based MAPE (%)")
     cbar = plt.colorbar(scatter, ax=ax)
-    cbar.set_label("MAPE (\\%)")
+    cbar.set_label("MAPE (%)")
     if len(std) > 1:
         corr = np.corrcoef(std, mape)[0, 1]
         ax.text(
@@ -900,8 +900,8 @@ def paper_calibration(batch_num, output_dir=None):
         label=f"Binned ({n_bins} bins)",
         zorder=10,
     )
-    ax.set_xlabel("Mean Constraint-Normalized Std Dev (\\%)")
-    ax.set_ylabel("Overall Constraint-Based MAPE (\\%)")
+    ax.set_xlabel("Mean Constraint-Normalized Std Dev (%)")
+    ax.set_ylabel("Overall Constraint-Based MAPE (%)")
     ax.legend()
     if len(std) > 1:
         corr = np.corrcoef(std, mape)[0, 1]
@@ -1263,8 +1263,8 @@ def paper_coverage(batch_num, output_dir=None):
             zorder=20,
         )
 
-    ax.set_xlabel("Nominal Coverage (\\%)")
-    ax.set_ylabel("Empirical Coverage (\\%)")
+    ax.set_xlabel("Nominal Coverage (%)")
+    ax.set_ylabel("Empirical Coverage (%)")
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 100)
     ax.set_aspect("equal")

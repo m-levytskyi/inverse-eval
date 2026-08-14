@@ -42,7 +42,7 @@ def replot_batch_results(results_dir, output_dir=None):
 
     # Extract layer count from directory name
     dir_name = results_dir.name
-    if "_2_layer_" in dir_name:
+    if "_2_layer_" in dir_name or "2layers" in dir_name:
         layer_count = 2
     else:
         layer_count = 1
