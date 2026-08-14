@@ -37,8 +37,8 @@ savefig.dpi: 300
 pdf.fonttype: 42
 ps.fonttype: 42
 
-# LaTeX text rendering
-text.usetex: True
+# Use Matplotlib text rendering so plots do not require a system LaTeX install.
+text.usetex: False
 text.latex.preamble: \usepackage{amsmath}
 axes.unicode_minus: False
 
