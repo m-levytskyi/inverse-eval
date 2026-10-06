@@ -1,7 +1,7 @@
 # Makefile for evaluation_pipeline (macOS/Linux)
 # - delegates setup logic to bootstrap.py
 # - keeps the existing target names for workshop-friendly troubleshooting
-# - uses CPU/default PyTorch by default, with optional auto/CUDA wheel overrides
+# - uses auto PyTorch wheel selection by default, with optional CPU/CUDA overrides
 
 ifeq ($(OS),Windows_NT)
 $(error Windows is not supported by this Makefile. Use: python bootstrap_windows.py)
@@ -11,7 +11,7 @@ SHELL := /bin/sh
 
 BOOTSTRAP_PY := $(strip $(shell command -v python3 2>/dev/null))
 VENV_PY := .venv/bin/python
-TORCH_WHEEL ?= cpu
+TORCH_WHEEL ?= auto
 CONFIG ?=
 
 .PHONY: help setup venv framework install-framework deps dev-deps torch lfs check-tools check-lfs check-torch install-hooks test lint type-check pre-commit require-venv train sweep clean distclean

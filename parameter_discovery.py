@@ -10,11 +10,11 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from constraints_utils import get_constraint_ranges
 
+from constraints_utils import get_constraint_ranges, get_constraint_range
+from sld_profile_utils import sld_profile
 
 logger = logging.getLogger(__name__)
-
 
 def discover_experiment_files(
     experiment_id, data_directory, layer_count=None, use_theoretical=False
@@ -310,7 +310,9 @@ def get_parameter_names_for_layer_count(layer_count):
         raise ValueError(f"Unsupported layer count: {layer_count}")
 
 
-def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000):
+def generate_true_sld_profile(
+    true_params_dict, x_range=(0, 1000), n_points=1000, ambient_sld=0.0, x_axis=None
+):
     """
     Generate a true SLD profile from parsed parameters.
 
@@ -318,6 +320,8 @@ def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000
         true_params_dict: Dictionary with parsed true parameters
         x_range: Tuple of (min, max) depth values in Angstroms
         n_points: Number of points in the profile
+        ambient_sld: SLD of the fronting medium in 10^-6 Angstrom^-2
+        x_axis: Optional explicit depth axis in Angstroms
 
     Returns:
         Tuple of (x_axis, sld_profile) or (None, None) if no valid data
@@ -340,19 +344,19 @@ def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000
     logger.info(f"Using {layer_key} interpretation")
     logger.info(f"Parameters: {dict(zip(param_names, params))}")
 
-    x_axis = np.linspace(x_range[0], x_range[1], n_points)
-    sld_profile = np.zeros_like(x_axis)
+    x_axis = (
+        np.linspace(x_range[0], x_range[1], n_points)
+        if x_axis is None
+        else np.asarray(x_axis, dtype=float)
+    )
 
     if layer_key == "1_layer":
         # 1-layer: [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
         thickness, amb_rough, sub_rough, layer_sld, sub_sld = params
 
-        # Simple step function model
-        layer_mask = (x_axis >= 0) & (x_axis <= thickness)
-        substrate_mask = x_axis > thickness
-
-        sld_profile[layer_mask] = layer_sld
-        sld_profile[substrate_mask] = sub_sld
+        sld_values = [ambient_sld, layer_sld, sub_sld]
+        interfaces = [0, thickness]
+        roughnesses = [amb_rough, sub_rough]
 
     elif layer_key == "2_layer":
         # 2-layer: [thickness1, thickness2, amb_rough, int_rough, sub_rough,
@@ -368,14 +372,9 @@ def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000
             sub_sld,
         ) = params
 
-        # Simple step function model
-        layer1_mask = (x_axis >= 0) & (x_axis <= thickness1)
-        layer2_mask = (x_axis > thickness1) & (x_axis <= thickness1 + thickness2)
-        substrate_mask = x_axis > thickness1 + thickness2
-
-        sld_profile[layer1_mask] = layer1_sld
-        sld_profile[layer2_mask] = layer2_sld
-        sld_profile[substrate_mask] = sub_sld
+        sld_values = [ambient_sld, layer1_sld, layer2_sld, sub_sld]
+        interfaces = [0, thickness1, thickness1 + thickness2]
+        roughnesses = [amb_rough, int_rough, sub_rough]
 
     logger.info(f"Generated SLD profile with {n_points} points over range {x_range}")
     return x_axis, sld_profile

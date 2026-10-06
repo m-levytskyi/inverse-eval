@@ -3,8 +3,9 @@ __pycache__/
 # Generated results (keep these ignored)
 batch_inference_results/
 paper_batches/
-batch_results/
+batch_results*
 sweep_results_*
+multimodal_eval_results/
 
 # Markdown files
 *.md
@@ -23,3 +24,6 @@ theoretical_on_experimental_q_test/
 
 # Cloned repositories
 vendor/
+
+# temp
+dataset/2/

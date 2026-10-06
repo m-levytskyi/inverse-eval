@@ -32,7 +32,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pickle-file",
         default="reflectometry_1L_results.pkl",
-        help="Pickle file containing q and R_denoised.",
+        help=(
+            "Pickle file containing either {'q', 'R_denoised'} or a raw "
+            "(n_experiments, n_q) denoised R array."
+        ),
+    )
+    parser.add_argument(
+        "--q-reference-pattern",
+        default="s*_theoretical_curve.dat",
+        help=(
+            "Glob used to infer q values for raw-array pickles. The first "
+            "matched file must have the same number of q-points as each row."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -68,19 +79,20 @@ def load_pickle_data(pickle_file: Path) -> tuple[np.ndarray, np.ndarray]:
     with pickle_file.open("rb") as f:
         data = pickle.load(f)
 
-    if not isinstance(data, dict):
-        raise TypeError(f"Expected dict in pickle, got {type(data).__name__}")
-    if "q" not in data or "R_denoised" not in data:
-        raise KeyError("Pickle must contain keys: 'q' and 'R_denoised'")
+    if isinstance(data, dict):
+        if "q" not in data or "R_denoised" not in data:
+            raise KeyError("Pickle must contain keys: 'q' and 'R_denoised'")
+        q_ref = np.asarray(data["q"], dtype=float)
+        r_denoised = np.asarray(data["R_denoised"], dtype=float)
+    else:
+        q_ref = np.array([], dtype=float)
+        r_denoised = np.asarray(data, dtype=float)
 
-    q_ref = np.asarray(data["q"], dtype=float)
-    r_denoised = np.asarray(data["R_denoised"], dtype=float)
-
-    if q_ref.ndim != 1:
-        raise ValueError(f"Expected 1D q array, got shape {q_ref.shape}")
     if r_denoised.ndim != 2:
         raise ValueError(f"Expected 2D R_denoised array, got shape {r_denoised.shape}")
-    if r_denoised.shape[1] != q_ref.shape[0]:
+    if q_ref.size and q_ref.ndim != 1:
+        raise ValueError(f"Expected 1D q array, got shape {q_ref.shape}")
+    if q_ref.size and r_denoised.shape[1] != q_ref.shape[0]:
         raise ValueError(
             "Incompatible shapes: "
             f"R_denoised.shape={r_denoised.shape}, q.shape={q_ref.shape}"
@@ -97,8 +109,12 @@ def write_curve_file(
 ) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Preserve original column count when possible to keep compatibility.
-    if original_data.shape[1] >= 3:
+    # Preserve original column count so the evaluation loader keeps error bars.
+    if original_data.shape[1] >= 4:
+        out_data = np.column_stack([q_exp, r_new, original_data[:, 2:]])
+        header = "Q(A^-1)        R           dR         dQ(A^-1)"
+        np.savetxt(out_path, out_data, fmt="%.16e", header=header, comments="# ")
+    elif original_data.shape[1] == 3:
         out_data = np.column_stack([q_exp, r_new, original_data[:, 2]])
         header = "Q(A^-1)        R           dR"
         np.savetxt(out_path, out_data, fmt="%.16e", header=header, comments="# ")
@@ -106,6 +122,30 @@ def write_curve_file(
         out_data = np.column_stack([q_exp, r_new])
         header = "Q(A^-1)        R"
         np.savetxt(out_path, out_data, fmt="%.16e", header=header, comments="# ")
+
+
+def infer_q_reference(
+    input_dir: Path, pattern: str, expected_points: int
+) -> np.ndarray:
+    reference_files = sorted(input_dir.glob(pattern))
+    if not reference_files:
+        raise FileNotFoundError(
+            f"No q-reference files found with pattern {pattern} in {input_dir}"
+        )
+
+    for reference_file in reference_files:
+        data = np.loadtxt(reference_file, comments="#")
+        if data.ndim == 2 and data.shape[0] == expected_points:
+            return np.asarray(data[:, 0], dtype=float)
+
+    example_shapes = []
+    for reference_file in reference_files[:5]:
+        data = np.loadtxt(reference_file, comments="#")
+        example_shapes.append(f"{reference_file.name}: {data.shape}")
+    raise ValueError(
+        f"No q-reference file has {expected_points} rows. Examples: "
+        + "; ".join(example_shapes)
+    )
 
 
 def plot_curve_comparison(
@@ -146,6 +186,12 @@ def main() -> int:
         raise FileNotFoundError(f"Pickle file not found: {pickle_file}")
 
     q_ref, r_denoised = load_pickle_data(pickle_file)
+    if q_ref.size == 0:
+        q_ref = infer_q_reference(
+            input_dir,
+            args.q_reference_pattern,
+            expected_points=r_denoised.shape[1],
+        )
 
     exp_files = sorted(
         input_dir.glob(args.pattern),
