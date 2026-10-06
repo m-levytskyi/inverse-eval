@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import pickle
 import re
 import shutil
@@ -11,6 +12,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -166,6 +170,8 @@ def plot_curve_comparison(
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     args = parse_args()
 
     input_dir = Path(args.input_dir)
@@ -258,17 +264,17 @@ def main() -> int:
                 r_denoised_interp=r_interp,
             )
 
-    print("=" * 80)
-    print("DENOISED DATASET GENERATION COMPLETE")
-    print("=" * 80)
-    print(f"Input experimental files:   {len(exp_files)}")
-    print(f"Output curve files:         {len(exp_files)}")
-    print(f"Output directory:           {output_dir}")
-    print(f"Model files copied:         {copied_model_files}")
-    print(f"Plots generated:            {len(selected_for_plots)}")
-    print(f"Plots directory:            {plots_dir}")
-    print(f"Out-of-range q points:      {out_of_range_points}")
-    print(f"Reference q range:          [{q_ref.min():.6f}, {q_ref.max():.6f}]")
+    logger.info("=" * 80)
+    logger.info("DENOISED DATASET GENERATION COMPLETE")
+    logger.info("=" * 80)
+    logger.info(f"Input experimental files:   {len(exp_files)}")
+    logger.info(f"Output curve files:         {len(exp_files)}")
+    logger.info(f"Output directory:           {output_dir}")
+    logger.info(f"Model files copied:         {copied_model_files}")
+    logger.info(f"Plots generated:            {len(selected_for_plots)}")
+    logger.info(f"Plots directory:            {plots_dir}")
+    logger.info(f"Out-of-range q points:      {out_of_range_points}")
+    logger.info(f"Reference q range:          [{q_ref.min():.6f}, {q_ref.max():.6f}]")
 
     return 0
 

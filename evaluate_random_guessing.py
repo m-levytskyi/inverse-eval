@@ -7,12 +7,16 @@ against random predictions that are consistent with constraints and prior bounds
 """
 
 import json
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Tuple
-from constraints_utils import get_constraint_range
+from constraints_utils import get_constraint_range, get_constraint_widths
 from plotting_utils import plot_random_guessing_comparison
+
+
+logger = logging.getLogger(__name__)
 
 
 def generate_random_prediction(
@@ -76,22 +80,23 @@ def calculate_mape_for_prediction(
 
     # For constraint-based priors, calculate constraint-based MAPE
     if priors_type == "constraint_based":
-        from constraints_utils import get_constraint_width
-
         constraint_based_percentage_errors = np.zeros_like(errors)
+        constraint_widths = get_constraint_widths()
 
         for i in range(len(errors)):
             param_name = param_names[i]
             # Standardize parameter name to match constraint definitions
             standardized_name = standardize_param_name(param_name)
-            try:
-                constraint_width = get_constraint_width(standardized_name)
+            constraint_width = constraint_widths.get(standardized_name)
+            if constraint_width is not None:
                 constraint_based_percentage_errors[i] = (
                     np.abs(errors[i]) / constraint_width * 100
                 )
-            except KeyError:
-                print(
-                    f"Warning: Could not find constraint width for {param_name} (standardized: {standardized_name})"
+            else:
+                logger.warning(
+                    "Could not find constraint width for %s (standardized: %s)",
+                    param_name,
+                    standardized_name,
                 )
                 constraint_based_percentage_errors[i] = percentage_errors[i]
 
@@ -176,7 +181,7 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     Returns:
         Tuple of (model_mapes, random_mapes)
     """
-    print(f"\nProcessing batch: {batch_dir.name}")
+    logger.info(f"\nProcessing batch: {batch_dir.name}")
 
     batch_results = load_batch_results(batch_dir)
 
@@ -186,10 +191,10 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     }
 
     if not successful_results:
-        print("  No successful experiments in batch")
+        logger.info("  No successful experiments in batch")
         return [], []
 
-    print(f"  Found {len(successful_results)} successful experiments")
+    logger.info(f"  Found {len(successful_results)} successful experiments")
 
     model_mapes = []
     random_mapes = []
@@ -201,7 +206,7 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
             priors_type = result["priors_config"].get("priors_type")
             break
 
-    print(f"  Priors type: {priors_type}")
+    logger.info(f"  Priors type: {priors_type}")
 
     for exp_id, result in successful_results.items():
         # Get model MAPE
@@ -248,8 +253,8 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
         if random_mape >= 0:
             random_mapes.append(random_mape)
 
-    print(f"  Collected {len(model_mapes)} model MAPEs")
-    print(f"  Collected {len(random_mapes)} random MAPEs")
+    logger.info(f"  Collected {len(model_mapes)} model MAPEs")
+    logger.info(f"  Collected {len(random_mapes)} random MAPEs")
 
     return model_mapes, random_mapes
 
@@ -315,11 +320,11 @@ def process_batches(batch_numbers: List[int]):
         batch_dirs = list(base_dir.glob(f"{batch_num}_*"))
 
         if not batch_dirs:
-            print(f"Batch {batch_num} not found")
+            logger.info(f"Batch {batch_num} not found")
             continue
 
         if len(batch_dirs) > 1:
-            print(
+            logger.info(
                 f"Warning: Multiple directories found for batch {batch_num}, using first"
             )
 
@@ -330,7 +335,7 @@ def process_batches(batch_numbers: List[int]):
             model_mapes, random_mapes = evaluate_batch_against_random(batch_dir)
 
             if not model_mapes or not random_mapes:
-                print(f"  Skipping batch {batch_num} - no valid data")
+                logger.info(f"  Skipping batch {batch_num} - no valid data")
                 continue
 
             # Load batch results to get configuration details
@@ -388,11 +393,11 @@ def process_batches(batch_numbers: List[int]):
                 outlier_count,
             )
 
-        except Exception as e:
-            print(f"  Error processing batch {batch_num}: {e}")
+        except (OSError, ValueError, KeyError, RuntimeError) as e:
+            logger.exception("  Error processing batch %s: %s", batch_num, e)
             continue
 
-    print(f"\nEvaluation complete! Plots saved to: {output_dir}")
+    logger.info(f"\nEvaluation complete! Plots saved to: {output_dir}")
 
 
 def generate_synthetic_random_evaluation(
@@ -413,13 +418,13 @@ def generate_synthetic_random_evaluation(
         deviation: Prior deviation from true value (0.99 = 99% constraint-based)
         output_path: Path to save the plot
     """
-    print(f"\n{'=' * 80}")
-    print("SYNTHETIC RANDOM EVALUATION")
-    print(f"{'=' * 80}")
-    print(f"Generating {num_experiments} synthetic experiments")
-    print(f"Layer count: {layer_count}")
-    print(f"Prior deviation: ±{int(deviation * 100)}%")
-    print()
+    logger.info(f"\n{'=' * 80}")
+    logger.info("SYNTHETIC RANDOM EVALUATION")
+    logger.info(f"{'=' * 80}")
+    logger.info(f"Generating {num_experiments} synthetic experiments")
+    logger.info(f"Layer count: {layer_count}")
+    logger.info(f"Prior deviation: ±{int(deviation * 100)}%")
+    logger.info("")
 
     # Import prior bounds generation from main pipeline
     from parameter_discovery import (
@@ -430,8 +435,8 @@ def generate_synthetic_random_evaluation(
     # Get parameter names for this layer count
     param_names = get_parameter_names_for_layer_count(layer_count)
 
-    print(f"Parameters: {param_names}")
-    print()
+    logger.info(f"Parameters: {param_names}")
+    logger.info("")
 
     # Get constraint ranges for reference
     constraint_ranges = []
@@ -443,16 +448,16 @@ def generate_synthetic_random_evaluation(
         width = max_val - min_val
         constraint_ranges.append((min_val, max_val))
         constraint_widths.append(width)
-        print(
+        logger.info(
             f"  {param_name:20s} -> {standardized:15s}: [{min_val:7.2f}, {max_val:7.2f}] (width: {width:.2f})"
         )
 
-    print()
-    print("Generating random true values and predictions...")
-    print(
+    logger.info("")
+    logger.info("Generating random true values and predictions...")
+    logger.info(
         "Using get_constraint_based_prior_bounds() to ensure physical constraints are respected"
     )
-    print()
+    logger.info("")
 
     mapes = []
     per_param_mapes = {param_name: [] for param_name in param_names}
@@ -499,13 +504,13 @@ def generate_synthetic_random_evaluation(
                 param_mape = (param_error / constraint_width) * 100
                 per_param_mapes[param_name].append(param_mape)
 
-    print(f"Generated {len(mapes)} valid MAPE values")
-    print(f"Mean MAPE: {np.mean(mapes):.2f}%")
-    print(f"Median MAPE: {np.median(mapes):.2f}%")
-    print(f"Std Dev: {np.std(mapes):.2f}%")
-    print(f"Min: {np.min(mapes):.2f}%")
-    print(f"Max: {np.max(mapes):.2f}%")
-    print()
+    logger.info(f"Generated {len(mapes)} valid MAPE values")
+    logger.info(f"Mean MAPE: {np.mean(mapes):.2f}%")
+    logger.info(f"Median MAPE: {np.median(mapes):.2f}%")
+    logger.info(f"Std Dev: {np.std(mapes):.2f}%")
+    logger.info(f"Min: {np.min(mapes):.2f}%")
+    logger.info(f"Max: {np.max(mapes):.2f}%")
+    logger.info("")
 
     # Create plot
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
@@ -573,12 +578,12 @@ def generate_synthetic_random_evaluation(
     # Save plot
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        print(f"Saved plot: {output_path}")
+        logger.info(f"Saved plot: {output_path}")
 
     plt.close(fig)
 
     # Create per-parameter MAPE histograms
-    print("\nGenerating per-parameter MAPE distributions...")
+    logger.info("\nGenerating per-parameter MAPE distributions...")
     fig_params, axes = plt.subplots(2, 3, figsize=(18, 12))
     axes = axes.flatten()
 
@@ -664,48 +669,54 @@ def generate_synthetic_random_evaluation(
             output_path.parent / f"{output_path.stem}_per_parameter{output_path.suffix}"
         )
         plt.savefig(per_param_path, dpi=300, bbox_inches="tight")
-        print(f"Saved per-parameter plot: {per_param_path}")
+        logger.info(f"Saved per-parameter plot: {per_param_path}")
 
     plt.close(fig_params)
 
     # Print per-parameter statistics
-    print("\nPer-Parameter MAPE Statistics:")
-    print("=" * 80)
-    print(
+    logger.info("\nPer-Parameter MAPE Statistics:")
+    logger.info("=" * 80)
+    logger.info(
         f"{'Parameter':<20} {'Mean':<10} {'Median':<10} {'Std Dev':<10} {'Theoretical':<12}"
     )
-    print("=" * 80)
+    logger.info("=" * 80)
     for param_name in param_names:
         param_mapes = per_param_mapes[param_name]
-        print(
+        logger.info(
             f"{param_name:<20} {np.mean(param_mapes):>8.2f}%  {np.median(param_mapes):>8.2f}%  "
             f"{np.std(param_mapes):>8.2f}%  {100 / 3:>10.2f}%"
         )
-    print("=" * 80)
+    logger.info("=" * 80)
 
-    print(f"\n{'=' * 80}")
-    print("INTERPRETATION:")
-    print(f"{'=' * 80}")
-    print("This represents the WORST CASE scenario - completely uninformed guessing")
-    print("where we don't even know the true parameter values.")
-    print("")
-    print(f"Expected mean MAPE ≈ {100 / 3:.1f}% for uniform random (theoretical)")
-    print(f"Actual overall mean MAPE = {np.mean(mapes):.1f}%")
-    print("")
-    print("Each parameter should follow a triangular distribution with mean ≈ 33.33%")
-    print("when both true and predicted values are uniformly sampled.")
-    print("")
-    print("Any model or informed random guessing that performs better than")
-    print(f"{np.mean(mapes):.1f}% demonstrates knowledge of the true parameters!")
-    print(f"{'=' * 80}")
+    logger.info(f"\n{'=' * 80}")
+    logger.info("INTERPRETATION:")
+    logger.info(f"{'=' * 80}")
+    logger.info(
+        "This represents the WORST CASE scenario - completely uninformed guessing"
+    )
+    logger.info("where we don't even know the true parameter values.")
+    logger.info("")
+    logger.info(f"Expected mean MAPE ≈ {100 / 3:.1f}% for uniform random (theoretical)")
+    logger.info(f"Actual overall mean MAPE = {np.mean(mapes):.1f}%")
+    logger.info("")
+    logger.info(
+        "Each parameter should follow a triangular distribution with mean ≈ 33.33%"
+    )
+    logger.info("when both true and predicted values are uniformly sampled.")
+    logger.info("")
+    logger.info("Any model or informed random guessing that performs better than")
+    logger.info(f"{np.mean(mapes):.1f}% demonstrates knowledge of the true parameters!")
+    logger.info(f"{'=' * 80}")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     import sys
 
     # Check if synthetic random evaluation is requested
     if len(sys.argv) > 1 and sys.argv[1] == "--synthetic":
-        print(
+        logger.info(
             "Running synthetic random evaluation (both true and predicted are random)"
         )
         from pathlib import Path
@@ -729,25 +740,29 @@ if __name__ == "__main__":
                 batch_num = int(arg)
                 batch_numbers.append(batch_num)
             except ValueError:
-                print(f"Warning: Ignoring invalid batch number '{arg}'")
+                logger.warning("Ignoring invalid batch number %r", arg)
 
         if batch_numbers:
             if len(batch_numbers) == 1:
-                print(f"Evaluating batch {batch_numbers[0]} against random guessing")
+                logger.info(
+                    f"Evaluating batch {batch_numbers[0]} against random guessing"
+                )
             else:
-                print(f"Evaluating batches {batch_numbers} against random guessing")
-            print("Generating ONE random prediction per experiment\n")
+                logger.info(
+                    f"Evaluating batches {batch_numbers} against random guessing"
+                )
+            logger.info("Generating ONE random prediction per experiment\n")
 
             process_batches(batch_numbers)
         else:
-            print("No valid batch numbers provided!")
+            logger.info("No valid batch numbers provided!")
     else:
         # Default: Process batches 102 to 119 inclusive
         batch_numbers = list(range(102, 120))
 
-        print(
+        logger.info(
             f"Evaluating batches {batch_numbers[0]} to {batch_numbers[-1]} against random guessing"
         )
-        print("Generating ONE random prediction per experiment\n")
+        logger.info("Generating ONE random prediction per experiment\n")
 
         process_batches(batch_numbers)

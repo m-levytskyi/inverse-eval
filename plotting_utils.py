@@ -10,11 +10,15 @@ Uses SciencePlots for publication-quality styling via paper.mplstyle.
 
 import numpy as np
 import matplotlib
+import logging
 
 matplotlib.use("pdf")
 import matplotlib.pyplot as plt
 import scienceplots  # noqa: F401 - registers 'science' style
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 # Apply publication-quality style globally
 paper_mplstyle = Path(__file__).parent / "paper.mplstyle"
@@ -260,7 +264,7 @@ def plot_batch_mape_distribution(
     successful, priors_type, _ = _extract_batch_config(batch_results)
 
     if not successful:
-        print("No successful results available for MAPE distribution plot")
+        logger.info("No successful results available for MAPE distribution plot")
         return None
 
     # Collect overall MAPE values
@@ -272,7 +276,7 @@ def plot_batch_mape_distribution(
                 mapes.append(mape)
 
     if not mapes:
-        print("No MAPE data available for plotting")
+        logger.info("No MAPE data available for plotting")
         return None
 
     label = _mape_label(priors_type)
@@ -327,7 +331,7 @@ def plot_batch_mape_distribution(
         plot_file = Path(output_dir) / filename
         plt.savefig(plot_file)
         plt.close()
-        print(f"MAPE distribution plot saved to: {plot_file}")
+        logger.info(f"MAPE distribution plot saved to: {plot_file}")
         return plot_file
     else:
         plt.show()
@@ -358,7 +362,7 @@ def plot_batch_parameter_breakdown(
     successful, priors_type, _ = _extract_batch_config(batch_results)
 
     if not successful:
-        print("No successful results available for parameter breakdown plot")
+        logger.info("No successful results available for parameter breakdown plot")
         return None
 
     # Collect parameter-specific MAPE values
@@ -388,7 +392,7 @@ def plot_batch_parameter_breakdown(
     param_mapes = {k: v for k, v in param_mapes.items() if v}
 
     if not param_mapes:
-        print("No parameter-specific MAPE data available for plotting")
+        logger.info("No parameter-specific MAPE data available for plotting")
         return None
 
     label = _mape_label(priors_type)
@@ -460,7 +464,7 @@ def plot_batch_parameter_breakdown(
         plot_file.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(plot_file)
         plt.close()
-        print(f"Parameter breakdown plot saved to: {plot_file}")
+        logger.info(f"Parameter breakdown plot saved to: {plot_file}")
         return plot_file
     else:
         plt.show()
@@ -593,7 +597,7 @@ def plot_model_comparison_histogram(
         plot_file = output_dir / "model_comparison_mape.pdf"
         plt.savefig(plot_file)
         plt.close()
-        print(f"Model comparison plot saved to: {plot_file}")
+        logger.info(f"Model comparison plot saved to: {plot_file}")
         return plot_file
     else:
         plt.show()
@@ -674,7 +678,7 @@ def plot_random_guessing_comparison(
         plot_file = output_dir / filename
         plt.savefig(plot_file)
         plt.close()
-        print(f"Random guessing comparison plot saved to: {plot_file}")
+        logger.info(f"Random guessing comparison plot saved to: {plot_file}")
         return plot_file
     else:
         plt.show()
@@ -713,7 +717,7 @@ def plot_parameter_comparison_grid(
     )
 
     if not param_names:
-        print("No parameter data available")
+        logger.info("No parameter data available")
         return None
 
     mape_type, title_suffix, deviation_pct = _build_comparison_title(
@@ -793,7 +797,7 @@ def plot_parameter_comparison_grid(
         plot_file = output_dir / "param_comparison.pdf"
         plt.savefig(plot_file)
         plt.close()
-        print(f"Parameter comparison plot saved to: {plot_file}")
+        logger.info(f"Parameter comparison plot saved to: {plot_file}")
         return plot_file
     else:
         plt.show()
@@ -851,7 +855,7 @@ def paper_calibration(batch_num, output_dir=None):
     std = np.array(data["overall"]["constraint_std_mean"])
 
     if len(mape) == 0:
-        print("No calibration data available")
+        logger.info("No calibration data available")
         return
 
     # 1. Scatter plot
@@ -874,7 +878,7 @@ def paper_calibration(batch_num, output_dir=None):
     plot_file = output_dir / f"calibration_scatter_{batch_num}.pdf"
     plt.savefig(plot_file)
     plt.close()
-    print(f"Calibration scatter saved to: {plot_file}")
+    logger.info(f"Calibration scatter saved to: {plot_file}")
 
     # 2. Binned plot
     fig, ax = plt.subplots()
@@ -916,7 +920,7 @@ def paper_calibration(batch_num, output_dir=None):
     plot_file = output_dir / f"calibration_binned_{batch_num}.pdf"
     plt.savefig(plot_file)
     plt.close()
-    print(f"Calibration binned saved to: {plot_file}")
+    logger.info(f"Calibration binned saved to: {plot_file}")
 
 
 def paper_random_guessing(batch_num, output_dir=None):
@@ -937,7 +941,7 @@ def paper_random_guessing(batch_num, output_dir=None):
     model_mapes, random_mapes = evaluate_batch_against_random(batch_dir)
 
     if not model_mapes or not random_mapes:
-        print("No valid data for random guessing comparison")
+        logger.info("No valid data for random guessing comparison")
         return
 
     # Determine priors_type and layer_count from batch results
@@ -1004,7 +1008,7 @@ def paper_model_comparison(
     comparison_meta = get_batch_metadata(comparison_dir)
 
     if not baseline_mapes or not comparison_mapes:
-        print("Insufficient MAPE data for comparison")
+        logger.info("Insufficient MAPE data for comparison")
         return
 
     plot_model_comparison_histogram(
@@ -1060,7 +1064,7 @@ def paper_reflectivity(data_file, output_dir=None, hide_title=False):
     plot_file = output_dir / f"reflectivity_{data_path.stem}.pdf"
     plt.savefig(plot_file)
     plt.close()
-    print(f"Reflectivity plot saved to: {plot_file}")
+    logger.info(f"Reflectivity plot saved to: {plot_file}")
     return plot_file
 
 
@@ -1108,7 +1112,7 @@ def paper_sld_profile(batch_num, experiment_id, output_dir=None, hide_title=Fals
     plot_file = output_dir / f"sld_profile_{experiment_id}.pdf"
     plt.savefig(plot_file)
     plt.close()
-    print(f"SLD profile plot saved to: {plot_file}")
+    logger.info(f"SLD profile plot saved to: {plot_file}")
     return plot_file
 
 
@@ -1187,7 +1191,7 @@ def paper_peaks(
     plot_file = output_dir / f"peaks_{exp_id}.pdf"
     plt.savefig(plot_file)
     plt.close()
-    print(f"Peaks plot saved to: {plot_file}")
+    logger.info(f"Peaks plot saved to: {plot_file}")
     return plot_file
 
 
@@ -1216,7 +1220,7 @@ def paper_coverage(batch_num, output_dir=None):
     coverage_data = extract_coverage_data(results)
 
     if not coverage_data["by_parameter"]:
-        print(
+        logger.info(
             "No coverage data available (missing nf_params_percentiles or true_params)."
         )
         return None
@@ -1274,7 +1278,7 @@ def paper_coverage(batch_num, output_dir=None):
     plot_file = output_dir / f"coverage_{batch_num}.pdf"
     plt.savefig(plot_file, bbox_inches="tight")
     plt.close()
-    print(f"Coverage plot saved to: {plot_file}")
+    logger.info(f"Coverage plot saved to: {plot_file}")
     return plot_file
 
 
@@ -1286,6 +1290,8 @@ def paper_coverage(batch_num, output_dir=None):
 def main():
     """CLI entry point for generating individual paper plots."""
     import argparse
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     parser = argparse.ArgumentParser(
         description="Generate paper-quality plots for reflectometry analysis"
