@@ -6,9 +6,14 @@ This module provides functions for discovering experiment files, parsing true pa
 and generating various types of prior bounds for reflectometry inference.
 """
 
-import numpy as np
+import logging
 from pathlib import Path
-from constraints_utils import get_constraint_ranges, get_constraint_range
+
+import numpy as np
+from constraints_utils import get_constraint_ranges
+
+
+logger = logging.getLogger(__name__)
 
 
 def discover_experiment_files(
@@ -31,18 +36,18 @@ def discover_experiment_files(
     exp_model_file = None
     detected_layer_count = None
 
-    print(f"Searching for experiment files for {experiment_id}")
-    print(f"Base directory: {data_dir}")
+    logger.info(f"Searching for experiment files for {experiment_id}")
+    logger.info(f"Base directory: {data_dir}")
     if layer_count:
-        print(f"Looking specifically for {layer_count}-layer data")
+        logger.info(f"Looking specifically for {layer_count}-layer data")
 
     # Define search patterns - choose based on use_theoretical flag
     if use_theoretical:
         data_patterns = [f"{experiment_id}_theoretical_curve.dat"]
-        print("Using THEORETICAL curves")
+        logger.info("Using THEORETICAL curves")
     else:
         data_patterns = [f"{experiment_id}_experimental_curve.dat"]
-        print("Using EXPERIMENTAL curves")
+        logger.info("Using EXPERIMENTAL curves")
 
     model_patterns = [f"{experiment_id}_model.txt", f"{experiment_id}_model.dat"]
 
@@ -63,7 +68,7 @@ def discover_experiment_files(
         if not directory.is_dir():
             return
 
-        print(f"Searching in: {directory}")
+        logger.info(f"Searching in: {directory}")
 
         # Check if this is a layer directory (contains '1' or '2')
         dir_name = directory.name
@@ -72,7 +77,7 @@ def discover_experiment_files(
         # Check if directory name indicates layer count
         if dir_name in layer_dirs_to_search:
             current_layer_count = int(dir_name)
-            print(
+            logger.info(
                 f"Found layer directory: {directory} (layer count: {current_layer_count})"
             )
 
@@ -80,7 +85,7 @@ def discover_experiment_files(
         for pattern in data_patterns:
             data_file = directory / pattern
             if data_file.exists():
-                print(f"Found experimental data: {data_file}")
+                logger.info(f"Found experimental data: {data_file}")
                 exp_data_file = data_file
                 if current_layer_count:
                     detected_layer_count = current_layer_count
@@ -90,7 +95,7 @@ def discover_experiment_files(
         for pattern in model_patterns:
             model_file = directory / pattern
             if model_file.exists():
-                print(f"Found model file: {model_file}")
+                logger.info(f"Found model file: {model_file}")
                 exp_model_file = model_file
                 if current_layer_count and detected_layer_count is None:
                     detected_layer_count = current_layer_count
@@ -108,22 +113,22 @@ def discover_experiment_files(
                     if exp_data_file and exp_model_file:
                         return
         except PermissionError:
-            print(f"Permission denied accessing: {directory}")
+            logger.warning("Permission denied accessing: %s", directory)
 
     # Start search from data directory
     search_directory(data_dir)
 
     if not exp_data_file:
-        print(f"ERROR: Experimental data file for {experiment_id} not found")
-        print(f"Searched patterns: {data_patterns}")
-        print(f"In layer directories: {layer_dirs_to_search}")
+        logger.warning("Experimental data file for %s not found", experiment_id)
+        logger.info(f"Searched patterns: {data_patterns}")
+        logger.info(f"In layer directories: {layer_dirs_to_search}")
     if not exp_model_file:
-        print(f"ERROR: Model file for {experiment_id} not found")
-        print(f"Searched patterns: {model_patterns}")
-        print(f"In layer directories: {layer_dirs_to_search}")
+        logger.warning("Model file for %s not found", experiment_id)
+        logger.info(f"Searched patterns: {model_patterns}")
+        logger.info(f"In layer directories: {layer_dirs_to_search}")
 
     if detected_layer_count:
-        print(f"Detected layer count: {detected_layer_count}")
+        logger.info(f"Detected layer count: {detected_layer_count}")
 
     return exp_data_file, exp_model_file, detected_layer_count
 
@@ -145,10 +150,10 @@ def parse_true_parameters_from_model_file(model_file_path):
     Returns:
         Dictionary with parsed parameters for different layer interpretations
     """
-    print(f"Parsing true parameters from: {model_file_path}")
+    logger.info(f"Parsing true parameters from: {model_file_path}")
 
     if not Path(model_file_path).exists():
-        print(f"ERROR: Model file does not exist: {model_file_path}")
+        logger.warning("Model file does not exist: %s", model_file_path)
         return {}
 
     with open(model_file_path, "r") as f:
@@ -188,102 +193,92 @@ def parse_true_parameters_from_model_file(model_file_path):
                     "thickness": thickness,
                     "roughness": roughness,
                 }
-                print(
+                logger.info(
                     f"Parsed layer '{layer_name}': sld={sld}, thickness={thickness}, roughness={roughness}"
                 )
 
             except (ValueError, IndexError) as e:
-                print(f"Failed to parse line '{line}': {e}")
+                logger.warning("Failed to parse line %r: %s", line, e)
                 continue
 
-    print(f"Parsed layers: {list(layers.keys())}")
+    logger.info(f"Parsed layers: {list(layers.keys())}")
 
     true_params_dict = {}
 
     # Count actual material layers (exclude fronting and backing)
     material_layers = [name for name in layers.keys() if name.startswith("layer")]
     num_material_layers = len(material_layers)
-    print(f"Found {num_material_layers} material layers: {material_layers}")
+    logger.info(f"Found {num_material_layers} material layers: {material_layers}")
 
     # Parse as 1-layer model (if we have 1 material layer)
     if num_material_layers == 1 and "layer1" in layers:
-        try:
-            print("Parsing as 1-layer model")
+        logger.info("Parsing as 1-layer model")
 
-            fronting = layers.get("fronting", {})
-            layer1 = layers.get("layer1", {})
-            backing = layers.get("backing", {})
+        fronting = layers.get("fronting", {})
+        layer1 = layers.get("layer1", {})
+        backing = layers.get("backing", {})
 
-            # 1-layer parameters: [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
-            thickness = layer1.get("thickness", 0.0)
-            amb_rough = fronting.get("roughness", 0.0)  # fronting roughness
-            sub_rough = layer1.get("roughness", 0.0)  # layer1 roughness
-            layer_sld = layer1.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
-            sub_sld = backing.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
+        # 1-layer parameters: [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
+        thickness = layer1.get("thickness", 0.0)
+        amb_rough = fronting.get("roughness", 0.0)  # fronting roughness
+        sub_rough = layer1.get("roughness", 0.0)  # layer1 roughness
+        layer_sld = layer1.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
+        sub_sld = backing.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
 
-            params_1_layer = [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
-            names_1_layer = get_parameter_names_for_layer_count(1)
+        params_1_layer = [thickness, amb_rough, sub_rough, layer_sld, sub_sld]
+        names_1_layer = get_parameter_names_for_layer_count(1)
 
-            true_params_dict["1_layer"] = {
-                "params": params_1_layer,
-                "param_names": names_1_layer,
-            }
-            print(f"1-layer parameters: {params_1_layer}")
-            print(
-                f"SLD values converted to 10^-6 units - layer_sld: {layer_sld:.2f}, sub_sld: {sub_sld:.2f}"
-            )
-
-        except Exception as e:
-            print(f"Failed to parse as 1-layer model: {e}")
+        true_params_dict["1_layer"] = {
+            "params": params_1_layer,
+            "param_names": names_1_layer,
+        }
+        logger.info(f"1-layer parameters: {params_1_layer}")
+        logger.info(
+            f"SLD values converted to 10^-6 units - layer_sld: {layer_sld:.2f}, sub_sld: {sub_sld:.2f}"
+        )
 
     # Parse as 2-layer model (if we have 2 material layers)
     if num_material_layers == 2 and "layer1" in layers and "layer2" in layers:
-        try:
-            print("Parsing as 2-layer model")
+        logger.info("Parsing as 2-layer model")
 
-            fronting = layers.get("fronting", {})
-            layer1 = layers.get("layer1", {})
-            layer2 = layers.get("layer2", {})
-            backing = layers.get("backing", {})
+        fronting = layers.get("fronting", {})
+        layer1 = layers.get("layer1", {})
+        layer2 = layers.get("layer2", {})
+        backing = layers.get("backing", {})
 
-            # 2-layer parameters: [thickness1, thickness2, amb_rough, int_rough, sub_rough,
-            #                      layer1_sld, layer2_sld, sub_sld]
-            thickness1 = layer1.get("thickness", 0.0)
-            thickness2 = layer2.get("thickness", 0.0)
-            amb_rough = fronting.get("roughness", 0.0)  # fronting roughness
-            int_rough = layer1.get(
-                "roughness", 0.0
-            )  # interface between layer1 and layer2
-            sub_rough = layer2.get(
-                "roughness", 0.0
-            )  # interface between layer2 and substrate
-            layer1_sld = layer1.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
-            layer2_sld = layer2.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
-            sub_sld = backing.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
+        # 2-layer parameters: [thickness1, thickness2, amb_rough, int_rough, sub_rough,
+        #                      layer1_sld, layer2_sld, sub_sld]
+        thickness1 = layer1.get("thickness", 0.0)
+        thickness2 = layer2.get("thickness", 0.0)
+        amb_rough = fronting.get("roughness", 0.0)  # fronting roughness
+        int_rough = layer1.get("roughness", 0.0)  # interface between layer1 and layer2
+        sub_rough = layer2.get(
+            "roughness", 0.0
+        )  # interface between layer2 and substrate
+        layer1_sld = layer1.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
+        layer2_sld = layer2.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
+        sub_sld = backing.get("sld", 0.0) * 1e6  # Convert to 10^-6 units
 
-            params_2_layer = [
-                thickness1,
-                thickness2,
-                amb_rough,
-                int_rough,
-                sub_rough,
-                layer1_sld,
-                layer2_sld,
-                sub_sld,
-            ]
-            names_2_layer = get_parameter_names_for_layer_count(2)
+        params_2_layer = [
+            thickness1,
+            thickness2,
+            amb_rough,
+            int_rough,
+            sub_rough,
+            layer1_sld,
+            layer2_sld,
+            sub_sld,
+        ]
+        names_2_layer = get_parameter_names_for_layer_count(2)
 
-            true_params_dict["2_layer"] = {
-                "params": params_2_layer,
-                "param_names": names_2_layer,
-            }
-            print(f"2-layer parameters: {params_2_layer}")
-            print(
-                f"SLD values converted to 10^-6 units - layer1_sld: {layer1_sld:.2f}, layer2_sld: {layer2_sld:.2f}, sub_sld: {sub_sld:.2f}"
-            )
-
-        except Exception as e:
-            print(f"Failed to parse as 2-layer model: {e}")
+        true_params_dict["2_layer"] = {
+            "params": params_2_layer,
+            "param_names": names_2_layer,
+        }
+        logger.info(f"2-layer parameters: {params_2_layer}")
+        logger.info(
+            f"SLD values converted to 10^-6 units - layer1_sld: {layer1_sld:.2f}, layer2_sld: {layer2_sld:.2f}, sub_sld: {sub_sld:.2f}"
+        )
 
     return true_params_dict
 
@@ -327,23 +322,23 @@ def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000
     Returns:
         Tuple of (x_axis, sld_profile) or (None, None) if no valid data
     """
-    print("Generating true SLD profile")
+    logger.info("Generating true SLD profile")
 
     if not true_params_dict:
-        print("No true parameters available")
+        logger.info("No true parameters available")
         return None, None
 
     # Prefer 2-layer interpretation if available
     layer_key = "2_layer" if "2_layer" in true_params_dict else "1_layer"
     if layer_key not in true_params_dict:
-        print("No valid layer interpretation found")
+        logger.info("No valid layer interpretation found")
         return None, None
 
     params = true_params_dict[layer_key]["params"]
     param_names = true_params_dict[layer_key]["param_names"]
 
-    print(f"Using {layer_key} interpretation")
-    print(f"Parameters: {dict(zip(param_names, params))}")
+    logger.info(f"Using {layer_key} interpretation")
+    logger.info(f"Parameters: {dict(zip(param_names, params))}")
 
     x_axis = np.linspace(x_range[0], x_range[1], n_points)
     sld_profile = np.zeros_like(x_axis)
@@ -382,7 +377,7 @@ def generate_true_sld_profile(true_params_dict, x_range=(0, 1000), n_points=1000
         sld_profile[layer2_mask] = layer2_sld
         sld_profile[substrate_mask] = sub_sld
 
-    print(f"Generated SLD profile with {n_points} points over range {x_range}")
+    logger.info(f"Generated SLD profile with {n_points} points over range {x_range}")
     return x_axis, sld_profile
 
 
@@ -404,7 +399,7 @@ def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
 
     layer_key = f"{layer_count}_layer"
     if layer_key not in true_params_dict:
-        print(
+        logger.info(
             f"Warning: No true parameters found for {layer_count} layer - cannot apply SLD fixing"
         )
         return bounds
@@ -415,7 +410,7 @@ def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
     # Create a copy of bounds to modify
     fixed_bounds = list(bounds)
 
-    print(f"Applying SLD fixing mode: {fix_sld_mode}")
+    logger.info(f"Applying SLD fixing mode: {fix_sld_mode}")
 
     # Define which SLDs to fix based on mode
     if fix_sld_mode == "backing":
@@ -440,7 +435,7 @@ def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
             # Set tight bounds around the true value (±0.001 to essentially fix it)
             epsilon = 0.001
             fixed_bounds[i] = (true_value - epsilon, true_value + epsilon)
-            print(
+            logger.info(
                 f"  Fixed {param_name}: {true_value:.3f} (bounds: [{true_value - epsilon:.3f}, {true_value + epsilon:.3f}])"
             )
 
@@ -487,7 +482,7 @@ def get_constraint_based_prior_bounds(
 
     bounds = []
 
-    print(
+    logger.info(
         f"Generating constraint-based prior bounds ({constraint_percentage * 100:.0f}% of constraint span)"
     )
 
@@ -529,7 +524,7 @@ def get_constraint_based_prior_bounds(
 
         bounds.append((min_val, max_val))
 
-        print(
+        logger.info(
             f"  {param_name}: true={param_value:.3f}, constraint_span={constraint_span:.1f}, "
             f"target_width={target_width:.3f} -> [{min_val:.3f}, {max_val:.3f}]"
         )
@@ -560,11 +555,11 @@ def get_prior_bounds_for_experiment(
     Returns:
         List of (min, max) tuples for prior bounds
     """
-    print(
+    logger.info(
         f"Generating {priors_type} prior bounds for {experiment_id} ({layer_count} layer{'s' if layer_count > 1 else ''})"
     )
     if fix_sld_mode != "none":
-        print(f"SLD fixing mode: {fix_sld_mode}")
+        logger.info(f"SLD fixing mode: {fix_sld_mode}")
 
     if priors_type == "constraint_based" and true_params_dict:
         # Use constraint-based priors
@@ -682,7 +677,7 @@ def get_prior_bounds_for_experiment(
 
                 bounds.append((min_val, max_val))
 
-            print(
+            logger.info(
                 f"Generated narrow priors with {deviation * 100}% deviation (constrained to model limits)"
             )
 
@@ -693,10 +688,12 @@ def get_prior_bounds_for_experiment(
                 )
 
             # Log the detailed bounds for debugging
-            print("Final narrow prior bounds details:")
+            logger.info("Final narrow prior bounds details:")
             for i, (name, (min_val, max_val)) in enumerate(zip(param_names, bounds)):
                 width = max_val - min_val
-                print(f"  {name}: [{min_val:.3f}, {max_val:.3f}] (width: {width:.3f})")
+                logger.info(
+                    f"  {name}: [{min_val:.3f}, {max_val:.3f}] (width: {width:.3f})"
+                )
 
             return bounds
 
@@ -728,28 +725,30 @@ def discover_batch_experiments(
     data_dir = Path(data_directory)
 
     if experiment_ids:
-        print(f"\nValidating {len(experiment_ids)} provided experiment IDs")
+        logger.info(f"\nValidating {len(experiment_ids)} provided experiment IDs")
         return experiment_ids
 
     # Original discovery logic
-    print(f"\nDiscovering experiments in {data_dir}")
+    logger.info(f"\nDiscovering experiments in {data_dir}")
     if layer_count is not None:
-        print(f"  Looking for {layer_count}-layer experiments")
+        logger.info(f"  Looking for {layer_count}-layer experiments")
     if num_experiments is not None:
-        print(f"  Limiting to first {num_experiments} experiments")
+        logger.info(f"  Limiting to first {num_experiments} experiments")
 
     experiments = []
-    curve_suffix = "_theoretical_curve.dat" if use_theoretical else "_experimental_curve.dat"
+    curve_suffix = (
+        "_theoretical_curve.dat" if use_theoretical else "_experimental_curve.dat"
+    )
     curve_pattern = f"s*{curve_suffix}"
 
-    print(
+    logger.info(
         f"  Discovery mode: {'theoretical' if use_theoretical else 'experimental'} curves"
     )
 
     # Try MARIA dataset structure first
     maria_dataset_path = data_dir / "MARIA_VIPR_dataset"
     if maria_dataset_path.exists():
-        print(f"  Found MARIA dataset: {maria_dataset_path}")
+        logger.info(f"  Found MARIA dataset: {maria_dataset_path}")
 
         # Search in subdirectories (e.g., 0/, 1/, 2/)
         layer_dirs_to_search = []
@@ -761,7 +760,7 @@ def discover_batch_experiments(
         for layer_dir_name in layer_dirs_to_search:
             layer_dir = maria_dataset_path / layer_dir_name
             if layer_dir.is_dir():
-                print(f"  Checking layer directory: {layer_dir.name}")
+                logger.info(f"  Checking layer directory: {layer_dir.name}")
 
                 # Find all experimental data files
                 exp_files = list(layer_dir.glob(curve_pattern))
@@ -777,15 +776,15 @@ def discover_batch_experiments(
                     if model_file.exists():
                         experiments.append(exp_id)
                     else:
-                        print(f"  Skipping {exp_id}: no model file found")
+                        logger.info(f"  Skipping {exp_id}: no model file found")
 
     else:
-        print(f"  Directory not found: {maria_dataset_path}")
+        logger.info(f"  Directory not found: {maria_dataset_path}")
 
         # Try test data structure
         test_data_path = data_dir / "test_data"
         if test_data_path.exists():
-            print(f"  Found test data: {test_data_path}")
+            logger.info(f"  Found test data: {test_data_path}")
 
             if layer_count is not None:
                 layer_test_dir = test_data_path / str(layer_count)
@@ -795,7 +794,7 @@ def discover_batch_experiments(
                         exp_id = exp_file.name.replace(curve_suffix, "")
                         experiments.append(exp_id)
                 else:
-                    print(f"  Layer directory not found: {layer_test_dir}")
+                    logger.info(f"  Layer directory not found: {layer_test_dir}")
             else:
                 # Search all layer directories
                 for layer_dir in test_data_path.iterdir():
@@ -805,25 +804,27 @@ def discover_batch_experiments(
                             exp_id = exp_file.name.replace(curve_suffix, "")
                             experiments.append(exp_id)
         else:
-            print(f"  Directory not found: {test_data_path}")
+            logger.info(f"  Directory not found: {test_data_path}")
 
             # Fallback: Search directly in data_directory
-            print(f"  Searching directly in: {data_dir}")
+            logger.info(f"  Searching directly in: {data_dir}")
             exp_files = list(data_dir.glob(curve_pattern))
 
             if exp_files:
-                print(f"  Found {len(exp_files)} experiment files in root directory")
+                logger.info(
+                    f"  Found {len(exp_files)} experiment files in root directory"
+                )
                 for exp_file in exp_files:
                     exp_id = exp_file.name.replace(curve_suffix, "")
                     experiments.append(exp_id)
             else:
-                print("  No experiment files found in root directory")
+                logger.info("  No experiment files found in root directory")
 
-    print(f"Found {len(experiments)} experiments")
+    logger.info(f"Found {len(experiments)} experiments")
 
     # Limit to requested number
     if num_experiments is not None and len(experiments) > num_experiments:
-        print(f"Limiting to first {num_experiments} experiments")
+        logger.info(f"Limiting to first {num_experiments} experiments")
         experiments = experiments[:num_experiments]
 
     return experiments
@@ -852,28 +853,33 @@ def check_experiment_within_constraints(experiment_id, true_params_dict, layer_c
 
     true_params = true_params_dict[layer_key]["params"]
     param_names = get_parameter_names_for_layer_count(layer_count)
+    constraint_ranges = get_constraint_ranges()
 
     outlier_parameters = []
     for param_name, param_value in zip(param_names, true_params):
-        try:
-            constraint_min, constraint_max = get_constraint_range(param_name)
-            if param_value < constraint_min or param_value > constraint_max:
-                outlier_parameters.append(
-                    (param_name, param_value, constraint_min, constraint_max)
-                )
-        except KeyError:
-            pass
+        if param_name not in constraint_ranges:
+            logger.debug("No constraint range configured for %s", param_name)
+            continue
+        constraint_min, constraint_max = constraint_ranges[param_name]
+        if param_value < constraint_min or param_value > constraint_max:
+            outlier_parameters.append(
+                (param_name, param_value, constraint_min, constraint_max)
+            )
 
     return len(outlier_parameters) == 0, outlier_parameters
 
 
 if __name__ == "__main__":
-    print("Parameter discovery module")
-    print(
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    logger.info("Parameter discovery module")
+    logger.info(
         "Functions: discover_experiment_files, parse_true_parameters_from_model_file, "
     )
-    print("           generate_true_sld_profile, get_prior_bounds_for_experiment, ")
-    print(
+    logger.info(
+        "           generate_true_sld_profile, get_prior_bounds_for_experiment, "
+    )
+    logger.info(
         "           get_parameter_names_for_layer_count, discover_batch_experiments, "
     )
-    print("           check_experiment_within_constraints")
+    logger.info("           check_experiment_within_constraints")
