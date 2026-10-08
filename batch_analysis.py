@@ -80,8 +80,8 @@ def print_summary_statistics(summary):
         print("\nNo constraint-based MAPE data available")
 
 
-def print_mape_distribution(successful_results):
-    """Print the constraint-based MAPE distribution summary."""
+def print_constraint_mape_summary(successful_results):
+    """Print the constraint-based MAPE summary."""
     constraint_mape_values = []
 
     for result in successful_results.values():
@@ -95,18 +95,9 @@ def print_mape_distribution(successful_results):
         print("\nNo constraint-based MAPE data available")
         return
 
-    total = len(constraint_mape_values)
-    excellent = sum(1 for m in constraint_mape_values if m < 5)
-    good = sum(1 for m in constraint_mape_values if 5 <= m < 10)
-    acceptable = sum(1 for m in constraint_mape_values if 10 <= m < 20)
-    poor = sum(1 for m in constraint_mape_values if m >= 20)
-    print("\nCONSTRAINT-BASED MAPE DISTRIBUTION:")
+    print("\nCONSTRAINT-BASED MAPE SUMMARY:")
     print("-" * 35)
-    print(f"Excellent (< 5%):    {excellent} ({100 * excellent / total:.1f}%)")
-    print(f"Good (5-10%):        {good} ({100 * good / total:.1f}%)")
-    print(f"Acceptable (10-20%): {acceptable} ({100 * acceptable / total:.1f}%)")
-    print(f"Poor (>= 20%):       {poor} ({100 * poor / total:.1f}%)")
-    print("\nStatistics:")
+    print(f"Experiments: {len(constraint_mape_values)}")
     print(
         f"Mean:   {np.mean(constraint_mape_values):.1f}% +/- {np.std(constraint_mape_values):.1f}%"
     )

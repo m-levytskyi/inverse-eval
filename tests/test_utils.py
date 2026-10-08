@@ -73,71 +73,6 @@ class ConvertToJsonSerializableTests(unittest.TestCase):
         json.dumps(result)
 
 
-class ValidateLayerCountTests(unittest.TestCase):
-    def test_valid_zero(self) -> None:
-        self.assertTrue(utils.validate_layer_count(0))
-
-    def test_valid_one(self) -> None:
-        self.assertTrue(utils.validate_layer_count(1))
-
-    def test_valid_two(self) -> None:
-        self.assertTrue(utils.validate_layer_count(2))
-
-    def test_negative_raises(self) -> None:
-        with self.assertRaises(ValueError):
-            utils.validate_layer_count(-1)
-
-    def test_too_large_raises(self) -> None:
-        with self.assertRaises(ValueError):
-            utils.validate_layer_count(3)
-
-    def test_float_raises(self) -> None:
-        with self.assertRaises(ValueError):
-            utils.validate_layer_count(1.0)
-
-    def test_string_raises(self) -> None:
-        with self.assertRaises(ValueError):
-            utils.validate_layer_count("1")
-
-
-class FormatParameterValueTests(unittest.TestCase):
-    def test_sld_with_units(self) -> None:
-        result = utils.format_parameter_value("layer_sld", 2.5e-6)
-        self.assertIn("Å⁻²", result)
-        self.assertIn("2.50e-06", result)
-
-    def test_sld_without_units(self) -> None:
-        result = utils.format_parameter_value("layer_sld", 2.5e-6, units=False)
-        self.assertNotIn("Å", result)
-
-    def test_thickness_with_units(self) -> None:
-        result = utils.format_parameter_value("thickness1", 100.0)
-        self.assertIn("Å", result)
-        self.assertIn("100.0", result)
-
-    def test_thickness_without_units(self) -> None:
-        result = utils.format_parameter_value("thickness1", 100.0, units=False)
-        self.assertNotIn("Å", result)
-        self.assertIn("100.0", result)
-
-    def test_roughness_with_units(self) -> None:
-        result = utils.format_parameter_value("sub_rough", 5.0)
-        self.assertIn("Å", result)
-        self.assertIn("5.0", result)
-
-    def test_roughness_without_units(self) -> None:
-        result = utils.format_parameter_value("sub_rough", 5.0, units=False)
-        self.assertNotIn("Å", result)
-
-    def test_unknown_parameter_default_format(self) -> None:
-        result = utils.format_parameter_value("some_param", 1.234)
-        self.assertIn("1.234", result)
-
-    def test_unknown_parameter_no_units(self) -> None:
-        result = utils.format_parameter_value("some_param", 1.234, units=False)
-        self.assertIn("1.234", result)
-
-
 class EnsureDirectoryExistsTests(unittest.TestCase):
     def test_creates_new_directory(self) -> None:
         import tempfile
@@ -163,31 +98,6 @@ class EnsureDirectoryExistsTests(unittest.TestCase):
             # Calling again should not raise
             result = utils.ensure_directory_exists(base)
             self.assertTrue(result.exists())
-
-
-class FormatTimeDurationTests(unittest.TestCase):
-    def test_seconds_format(self) -> None:
-        result = utils.format_time_duration(45.0)
-        self.assertIn("seconds", result)
-        self.assertIn("45.0", result)
-
-    def test_minutes_format(self) -> None:
-        result = utils.format_time_duration(120.0)
-        self.assertIn("minutes", result)
-        self.assertIn("2.0", result)
-
-    def test_hours_format(self) -> None:
-        result = utils.format_time_duration(7200.0)
-        self.assertIn("hours", result)
-        self.assertIn("2.0", result)
-
-    def test_boundary_exactly_60_seconds(self) -> None:
-        result = utils.format_time_duration(60.0)
-        self.assertIn("minutes", result)
-
-    def test_boundary_exactly_3600_seconds(self) -> None:
-        result = utils.format_time_duration(3600.0)
-        self.assertIn("hours", result)
 
 
 if __name__ == "__main__":

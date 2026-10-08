@@ -9,10 +9,8 @@ Uses SciencePlots for publication-quality styling via paper.mplstyle.
 """
 
 import numpy as np
-import matplotlib
 import logging
 
-matplotlib.use("pdf")
 import matplotlib.pyplot as plt
 import scienceplots  # noqa: F401 - registers 'science' style
 from pathlib import Path
@@ -30,26 +28,9 @@ plt.style.use(["science", str(paper_mplstyle)])
 # ============================================================================
 
 
-def _extract_batch_config(batch_results):
-    """Extract priors_type and fix_sld_mode from the first successful result.
-
-    Returns:
-        (successful_results, priors_type, fix_sld_mode)
-    """
-    successful = {k: v for k, v in batch_results.items() if v.get("success", False)}
-    priors_type = None
-    fix_sld_mode = "none"
-
-    for result in successful.values():
-        if "priors_config" in result:
-            priors_type = result["priors_config"].get("priors_type")
-            fix_sld_mode = result["priors_config"].get("fix_sld_mode", "none")
-            break
-
-    if priors_type is None:
-        raise ValueError("Could not determine priors_type from any successful result")
-
-    return successful, priors_type, fix_sld_mode
+def _successful_results(batch_results):
+    """Return successful batch results."""
+    return {key: value for key, value in batch_results.items() if value.get("success")}
 
 
 def _get_overall_mape(param_metrics):
@@ -106,21 +87,6 @@ def _build_comparison_title(config):
     deviation_pct = int(config.get("deviation", 0.30) * 100)
 
     return mape_type, title_suffix, deviation_pct
-
-
-def _format_model_stats(mapes, label, mape_label, meta=None):
-    """Format statistics text for a model."""
-    meta = meta or {}
-    stats = f"{label}:\n"
-    stats += f"  Total: {len(mapes)} experiments\n"
-    stats += f"  Mean {mape_label}: {np.mean(mapes):.1f}%\n"
-    stats += f"  Median {mape_label}: {np.median(mapes):.1f}%\n"
-    stats += f"  Std Dev: {np.std(mapes):.1f}%\n"
-    if "failed" in meta:
-        stats += f"  Failed: {meta['failed']}\n"
-    if "outliers" in meta:
-        stats += f"  Outliers: {meta['outliers']}\n"
-    return stats
 
 
 # ============================================================================
@@ -230,7 +196,6 @@ def plot_batch_mape_distribution(
     output_dir=".",
     save=True,
     use_prominent_features=False,
-    **kwargs,
 ):
     """
     Create MAPE distribution plot showing how experiments are distributed
@@ -246,7 +211,7 @@ def plot_batch_mape_distribution(
     Returns:
         Figure path if saved, None otherwise
     """
-    successful, priors_type, _ = _extract_batch_config(batch_results)
+    successful = _successful_results(batch_results)
 
     if not successful:
         logger.info("No successful results available for MAPE distribution plot")
@@ -329,7 +294,6 @@ def plot_batch_parameter_breakdown(
     output_dir=".",
     save=True,
     use_prominent_features=False,
-    **kwargs,
 ):
     """
     Create parameter-specific MAPE breakdown box plot.
@@ -344,7 +308,7 @@ def plot_batch_parameter_breakdown(
     Returns:
         Figure path if saved, None otherwise
     """
-    successful, priors_type, _ = _extract_batch_config(batch_results)
+    successful = _successful_results(batch_results)
 
     if not successful:
         logger.info("No successful results available for parameter breakdown plot")
@@ -462,12 +426,9 @@ def create_batch_analysis_plots(
     output_dir=".",
     save=True,
     use_prominent_features=False,
-    **kwargs,
 ):
     """
     Create all batch analysis plots (MAPE distribution and parameter breakdown).
-
-    Extra kwargs are accepted for backward compatibility but ignored.
 
     Returns:
         Dictionary with paths to saved plots
@@ -591,7 +552,6 @@ def plot_random_guessing_comparison(
     random_mapes,
     output_dir=".",
     save=True,
-    priors_type="constraint_based",
     layer_count=1,
     use_prominent_features=False,
 ):
@@ -603,7 +563,6 @@ def plot_random_guessing_comparison(
         random_mapes: List of random-guess MAPE values
         output_dir: Directory to save plot
         save: Whether to save the plot
-        priors_type: Type of priors used
         layer_count: Number of layers
         use_prominent_features: Whether prominent features filtering was used
 
@@ -675,7 +634,6 @@ def plot_parameter_comparison_grid(
     save=True,
     baseline_label="Baseline",
     comparison_label="Comparison",
-    priors_type="constraint_based",
 ):
     """
     Create per-parameter MAPE comparison plots in a 2x3 grid.
@@ -688,8 +646,6 @@ def plot_parameter_comparison_grid(
         save: Whether to save the plot
         baseline_label: Label for baseline model
         comparison_label: Label for comparison model
-        priors_type: Type of priors used
-
     Returns:
         Figure path if saved, None otherwise
     """
@@ -924,15 +880,13 @@ def paper_random_guessing(batch_num, output_dir=None):
         logger.info("No valid data for random guessing comparison")
         return
 
-    # Determine priors_type and layer_count from batch results
+    # Determine layer count from batch results.
     results = _load_batch_json(batch_dir)
-    priors_type = "constraint_based"
     layer_count = 1
     use_prominent = "PROMINENT" in batch_dir.name
 
     for result in results.values():
         if result.get("success") and "priors_config" in result:
-            priors_type = result["priors_config"].get("priors_type", priors_type)
             layer_count = result.get("layer_count", layer_count)
             break
 
@@ -941,7 +895,6 @@ def paper_random_guessing(batch_num, output_dir=None):
         random_mapes=random_mapes,
         output_dir=output_dir,
         save=True,
-        priors_type=priors_type,
         layer_count=layer_count,
         use_prominent_features=use_prominent,
     )

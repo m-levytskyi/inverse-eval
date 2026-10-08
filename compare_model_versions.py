@@ -149,77 +149,6 @@ def get_batch_metadata(batch_dir: Path) -> Dict:
     }
 
 
-def _plot_model_comparison_histogram_old(
-    baseline_mapes: List[float],
-    qweighted_mapes: List[float],
-    config: Dict,
-    output_path: Path,
-    baseline_meta: Dict,
-    qweighted_meta: Dict,
-):
-    """
-    DEPRECATED: Use plotting_utils.plot_model_comparison_histogram instead.
-
-    Create comparison histogram with baseline (grey) and q-weighted (colored) MAPEs.
-
-    Args:
-        baseline_mapes: List of baseline model MAPE values
-        qweighted_mapes: List of q-weighted model MAPE values
-        config: Configuration dictionary (constraint, sld_fix_mode, prominent, etc.)
-        output_path: Path to save the plot
-        baseline_meta: Metadata for baseline model
-        qweighted_meta: Metadata for q-weighted model
-    """
-    from plotting_utils import plot_model_comparison_histogram as plot_comparison
-
-    plot_comparison(
-        baseline_mapes=baseline_mapes,
-        comparison_mapes=qweighted_mapes,
-        config=config,
-        output_dir=output_path.parent,
-        save=True,
-        baseline_label="Baseline (Generated Data Only)",
-        comparison_label="Q-Weighted (Mixed Data)",
-        baseline_meta=baseline_meta,
-        comparison_meta=qweighted_meta,
-    )
-
-
-def _plot_param_comparison_old(
-    baseline_per_param: Dict[str, List[float]],
-    qweighted_per_param: Dict[str, List[float]],
-    config: Dict,
-    output_path: Path,
-    baseline_meta: Dict,
-    qweighted_meta: Dict,
-):
-    """
-    DEPRECATED: Use plotting_utils.plot_parameter_comparison_grid instead.
-
-    Create per-parameter MAPE comparison plots.
-
-    Args:
-        baseline_per_param: Dictionary of parameter name -> list of MAPEs for baseline
-        qweighted_per_param: Dictionary of parameter name -> list of MAPEs for q-weighted
-        config: Configuration dictionary
-        output_path: Path to save the plot
-        baseline_meta: Metadata for baseline model
-        qweighted_meta: Metadata for q-weighted model
-    """
-    from plotting_utils import plot_parameter_comparison_grid
-
-    plot_parameter_comparison_grid(
-        baseline_per_param=baseline_per_param,
-        comparison_per_param=qweighted_per_param,
-        config=config,
-        output_dir=output_path.parent,
-        save=True,
-        baseline_label="Baseline",
-        comparison_label="Q-Weighted",
-        priors_type=baseline_meta.get("priors_type", "constraint_based"),
-    )
-
-
 def find_matching_batches(
     baseline_batches: List[Path], qweighted_batches: List[Path]
 ) -> List[Tuple[Path, Path, Dict]]:
@@ -376,7 +305,6 @@ def generate_comparison_plots(
                 save=True,
                 baseline_label="Baseline",
                 comparison_label="Q-Weighted",
-                priors_type=baseline_meta.get("priors_type", "constraint_based"),
             )
 
         except (OSError, ValueError, KeyError, RuntimeError) as e:

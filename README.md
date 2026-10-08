@@ -172,7 +172,6 @@ inverse-eval/
 ├── requirements-dev.txt          # Development and quality tooling
 ├── requirements.torch-*.txt      # CUDA-specific PyTorch pins
 ├── Makefile                      # macOS/Linux setup helper
-├── config.py                     # Centralized path and parameter configuration
 ├── model_constraints.json        # Physical constraint bounds (per parameter type)
 ├── paper.mplstyle                # Matplotlib style matching thesis typography
 │
@@ -245,11 +244,7 @@ python scripts/run_in_venv.py -m pre_commit run ty-check --hook-stage manual
 The repository root is the canonical data home. Standard train/test data lives
 under `dataset/`, and derived datasets used by both training and evaluation
 should also live at the root under their historical names, for example
-`denoised_as_theoretical_q/`. By default, `config.py` points to:
-
-```python
-DATA_DIRECTORY = "dataset/test"
-```
+`denoised_as_theoretical_q/`.
 
 Training and evaluation commands are expected to run from the `inverse-eval`
 root. This keeps relative paths in reflectorch configs stable:
@@ -281,18 +276,8 @@ dataset/
 
 ## Configuration
 
-All default paths and hyperparameters live in `config.py`. Override specific values per-run via CLI flags.
-
-### Key configuration values
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `DEFAULT_NF_CONFIG` | `example_nf_config_reflectorch.yaml` | NF model YAML config |
-| `DEFAULT_NF_SAMPLES` | `1000` | Posterior samples per experiment |
-| `DEFAULT_PRIORS_TYPE` | `constraint_based` | Prior construction method |
-| `DEFAULT_PRIORS_DEVIATION` | `0.30` | Constraint half-width (30% of true value) |
-| `DEFAULT_SLD_MODE` | `none` | SLD fixing: `none`, `backing`, or `all` |
-| `DEFAULT_LAYER_COUNT` | `1` | Target film structure |
+Pass inference and batch settings explicitly through the CLI. Sweep settings are
+stored in YAML files.
 
 ### Sweep configuration files
 
@@ -495,16 +480,7 @@ This produces `mape_distribution_1layer.pdf` and `parameter_breakdown_1layer.pdf
 **How to generate**:
 
 ```bash
-python plot_mape_vs_std.py --batch-dir batch_inference_results/<batch_dir>
-```
-
-Or from Python:
-
-```python
-from plot_mape_vs_std import plot_coverage, compute_coverage_data
-
-coverage = compute_coverage_data("batch_inference_results/<batch_dir>/batch_results.json")
-plot_coverage(coverage, output_dir="figures/")
+python plotting_utils.py coverage <batch_number> --output-dir figures/
 ```
 
 ---
@@ -515,21 +491,8 @@ plot_coverage(coverage, output_dir="figures/")
 
 **How to generate**:
 
-```python
-from simple_pipeline import run_single_experiment
-from plotting_utils import plot_simple_comparison
-
-# Use an experiment ID with a prominent oscillation peak, e.g. s000780
-results = run_single_experiment(
-    experiment_id="s000780",
-    enable_preprocessing=True,
-)
-
-plot_simple_comparison(
-    results,
-    output_path="figures/single_curve_s000780.pdf",
-    save=True,
-)
+Use [`notebooks/01_single_experiment.ipynb`](notebooks/01_single_experiment.ipynb)
+for an editable single-experiment workflow and its curve/SLD comparison.
 ```
 
 ---
@@ -541,28 +504,7 @@ plot_simple_comparison(
 **How to generate**:
 
 ```bash
-python evaluate_random_guessing.py \
-  --batch-dir batch_inference_results/<batch_dir> \
-  --num-random-samples 1000 \
-  --output-dir figures/
-```
-
-Or from Python:
-
-```python
-from evaluate_random_guessing import run_random_guessing_evaluation
-from plotting_utils import plot_random_guessing_comparison
-
-model_results, random_results = run_random_guessing_evaluation(
-    batch_dir="batch_inference_results/<batch_dir>",
-    num_random_samples=1000,
-)
-
-plot_random_guessing_comparison(
-    model_results=model_results,
-    random_results=random_results,
-    output_path="figures/random_guessing.pdf",
-)
+python plotting_utils.py random <batch_number> --output-dir figures/
 ```
 
 ---
@@ -619,11 +561,11 @@ python batch_sweep_runner.py --config sweep_configs/baseline.yaml
 
 ### `plotting_utils.py`
 
-All plotting is publication-ready (PDF output, LaTeX labels, `paper.mplstyle`).
+All plotting uses the project paper style and writes PDF artifacts where applicable.
 
 | Function | Output File | Description |
 |----------|-------------|-------------|
-| `plot_simple_comparison(results, ...)` | `comparison_*.pdf` | Single experiment: curve + SLD profile |
+| `plot_simple_comparison(q_exp, curve_exp, ..., predicted_sld_y, ...)` | caller-selected | Single experiment: curve + SLD profile |
 | `plot_batch_mape_distribution(batch_results, ...)` | `mape_distribution_*.pdf` | MAPE histogram over all experiments |
 | `plot_batch_parameter_breakdown(batch_results, ...)` | `parameter_breakdown_*.pdf` | Per-parameter MAPE breakdown |
 | `plot_model_comparison_histogram(...)` | user-specified | Overlay two model MAPE distributions |

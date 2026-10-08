@@ -25,7 +25,7 @@ from parameter_discovery import (
 from batch_analysis import (
     create_summary_statistics,
     print_summary_statistics,
-    print_mape_distribution,
+    print_constraint_mape_summary,
     detect_edge_cases,
 )
 from plotting_utils import create_batch_analysis_plots
@@ -579,7 +579,7 @@ class BatchInferencePipeline:
             print_summary_statistics(summary)
 
             # Print MAPE distribution
-            print_mape_distribution(successful_results)
+            print_constraint_mape_summary(successful_results)
 
         return (
             results_file,
@@ -628,11 +628,6 @@ class BatchInferencePipeline:
                     output_dir=str(self.output_dir),
                     save=True,
                     use_prominent_features=self.use_prominent_features,
-                    narrow_priors_deviation=self.narrow_priors_deviation
-                    if self.use_narrow_priors
-                    else 0.5,
-                    failed_count=failed_count,
-                    outlier_count=outlier_count,
                 )
                 logger.info("Analysis plots completed")
             except (OSError, ValueError, RuntimeError) as e:

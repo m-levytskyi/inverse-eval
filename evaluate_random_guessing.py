@@ -212,51 +212,6 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     return model_mapes, random_mapes
 
 
-def plot_comparison_histogram(
-    model_mapes: List[float],
-    random_mapes: List[float],
-    batch_name: str,
-    output_path: Path,
-    priors_type: str = None,
-    layer_count: int = 1,
-    narrow_priors_deviation: float = 0.99,
-    use_prominent_features: bool = False,
-    fix_sld_mode: str = "none",
-    failed_count: int = 0,
-    outlier_count: int = 0,
-    paper_mode: bool = False,
-):
-    """
-    Create comparison histogram with model and random-guess MAPEs.
-
-    Wrapper around plot_random_guessing_comparison from plotting_utils.
-
-    Args:
-        model_mapes: List of model MAPE values
-        random_mapes: List of random-guess MAPE values
-        batch_name: Name of the batch for plot title (unused, kept for compatibility)
-        output_path: Path to save the plot
-        priors_type: Type of priors used
-        layer_count: Number of layers
-        narrow_priors_deviation: Deviation for narrow priors (unused, kept for compatibility)
-        use_prominent_features: Whether prominent features filtering was used
-        fix_sld_mode: SLD fixing mode (unused, kept for compatibility)
-        failed_count: Number of failed experiments (unused, kept for compatibility)
-        outlier_count: Number of outlier experiments (unused, kept for compatibility)
-        paper_mode: Use paper styling if True (unused, kept for compatibility)
-    """
-    output_dir = output_path.parent
-    plot_random_guessing_comparison(
-        model_mapes=model_mapes,
-        random_mapes=random_mapes,
-        output_dir=output_dir,
-        save=True,
-        priors_type=priors_type,
-        layer_count=layer_count,
-        use_prominent_features=use_prominent_features,
-    )
-
-
 def process_batches(batch_numbers: List[int]):
     """
     Process multiple batches and generate comparison plots.
@@ -291,59 +246,23 @@ def process_batches(batch_numbers: List[int]):
                 logger.info(f"  Skipping batch {batch_num} - no valid data")
                 continue
 
-            # Load batch results to get configuration details
+            # Load batch results to determine the layer count.
             batch_results = load_batch_results(batch_dir)
 
-            # Get configuration from first successful result
-            priors_type = None
-            fix_sld_mode = "none"
-            narrow_priors_deviation = 0.99
             use_prominent_features = "PROMINENT" in batch_dir.name
             layer_count = 1
 
-            # Count outliers and failures
-            outlier_count = sum(
-                1 for v in batch_results.values() if v.get("excluded_as_outlier", False)
-            )
-            failed_count = sum(
-                1
-                for v in batch_results.values()
-                if not v.get("success", False)
-                and not v.get("excluded_as_outlier", False)
-            )
-
             for result in batch_results.values():
                 if result.get("success") and "priors_config" in result:
-                    priors_type = result["priors_config"].get("priors_type")
-                    fix_sld_mode = result["priors_config"].get("fix_sld_mode", "none")
                     layer_count = result.get("layer_count", 1)
-
-                    # Extract narrow_priors_deviation from batch name
-                    if "5constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.05
-                    elif "30constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.30
-                    elif "60constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.60
-                    elif "99constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.99
-
                     break
 
-            # Generate comparison plot with original layout
-            output_path = output_dir / f"batch_{batch_num:03d}_comparison.png"
-            plot_comparison_histogram(
-                model_mapes,
-                random_mapes,
-                batch_dir.name,
-                output_path,
-                priors_type,
-                layer_count,
-                narrow_priors_deviation,
-                use_prominent_features,
-                fix_sld_mode,
-                failed_count,
-                outlier_count,
+            plot_random_guessing_comparison(
+                model_mapes=model_mapes,
+                random_mapes=random_mapes,
+                output_dir=output_dir,
+                layer_count=layer_count,
+                use_prominent_features=use_prominent_features,
             )
 
         except (OSError, ValueError, KeyError, RuntimeError) as e:
