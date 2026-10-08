@@ -47,62 +47,32 @@ def calculate_mape_for_prediction(
     pred_params: np.ndarray,
     true_params: np.ndarray,
     param_names: List[str],
-    priors_type: str = None,
 ) -> float:
     """
-    Calculate MAPE for a single prediction.
+    Calculate constraint-based MAPE for a single prediction.
 
     Args:
         pred_params: Predicted parameter values
         true_params: True parameter values
         param_names: List of parameter names
-        priors_type: Type of priors used ("constraint_based" or other)
-
     Returns:
         MAPE value as percentage
     """
     if len(pred_params) != len(true_params):
         return -1.0
 
-    errors = pred_params - true_params
+    errors = np.asarray(pred_params, dtype=float) - np.asarray(true_params, dtype=float)
 
-    # Calculate percentage errors, handling true zeros
-    zero_mask = np.abs(true_params) < 1e-10
-    percentage_errors = np.zeros_like(errors)
-    nonzero_mask = ~zero_mask
+    constraint_errors = np.zeros_like(errors)
+    constraint_widths = get_constraint_widths()
+    for i, param_name in enumerate(param_names):
+        standardized_name = standardize_param_name(param_name)
+        constraint_width = constraint_widths.get(standardized_name)
+        if constraint_width is None:
+            raise ValueError(f"No constraint width configured for {standardized_name}")
+        constraint_errors[i] = np.abs(errors[i]) / constraint_width * 100
 
-    if np.any(nonzero_mask):
-        percentage_errors[nonzero_mask] = (
-            np.abs(errors[nonzero_mask] / true_params[nonzero_mask]) * 100
-        )
-    if np.any(zero_mask):
-        percentage_errors[zero_mask] = np.abs(errors[zero_mask])
-
-    # For constraint-based priors, calculate constraint-based MAPE
-    if priors_type == "constraint_based":
-        constraint_based_percentage_errors = np.zeros_like(errors)
-        constraint_widths = get_constraint_widths()
-
-        for i in range(len(errors)):
-            param_name = param_names[i]
-            # Standardize parameter name to match constraint definitions
-            standardized_name = standardize_param_name(param_name)
-            constraint_width = constraint_widths.get(standardized_name)
-            if constraint_width is not None:
-                constraint_based_percentage_errors[i] = (
-                    np.abs(errors[i]) / constraint_width * 100
-                )
-            else:
-                logger.warning(
-                    "Could not find constraint width for %s (standardized: %s)",
-                    param_name,
-                    standardized_name,
-                )
-                constraint_based_percentage_errors[i] = percentage_errors[i]
-
-        return float(np.mean(constraint_based_percentage_errors))
-    else:
-        return float(np.mean(percentage_errors))
+    return float(np.mean(constraint_errors))
 
 
 def standardize_param_name(param_name: str) -> str:
@@ -199,31 +169,14 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     model_mapes = []
     random_mapes = []
 
-    # Determine priors type from first successful result
-    priors_type = None
-    for result in successful_results.values():
-        if "priors_config" in result:
-            priors_type = result["priors_config"].get("priors_type")
-            break
-
-    logger.info(f"  Priors type: {priors_type}")
-
     for exp_id, result in successful_results.items():
         # Get model MAPE
         if "param_metrics" in result and result["param_metrics"]:
             param_metrics = result["param_metrics"]
 
-            if priors_type == "constraint_based":
-                if (
-                    "overall" in param_metrics
-                    and "constraint_mape" in param_metrics["overall"]
-                ):
-                    model_mape = param_metrics["overall"]["constraint_mape"]
-                    model_mapes.append(model_mape)
-            else:
-                if "overall" in param_metrics and "mape" in param_metrics["overall"]:
-                    model_mape = param_metrics["overall"]["mape"]
-                    model_mapes.append(model_mape)
+            model_mape = param_metrics.get("overall", {}).get("constraint_mape")
+            if model_mape is not None:
+                model_mapes.append(model_mape)
 
         # Get true parameters and param names
         if "true_params_dict" not in result or "prediction_dict" not in result:
@@ -248,7 +201,7 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
         # Generate ONE random prediction per experiment
         random_pred = generate_random_prediction(param_names, prior_bounds)
         random_mape = calculate_mape_for_prediction(
-            random_pred, true_params, param_names, priors_type
+            random_pred, true_params, param_names
         )
         if random_mape >= 0:
             random_mapes.append(random_mape)
@@ -487,9 +440,7 @@ def generate_synthetic_random_evaluation(
         pred_params = generate_random_prediction(param_names, prior_bounds)
 
         # Calculate constraint-based MAPE (overall)
-        mape = calculate_mape_for_prediction(
-            pred_params, true_params, param_names, "constraint_based"
-        )
+        mape = calculate_mape_for_prediction(pred_params, true_params, param_names)
 
         if mape >= 0:
             mapes.append(mape)

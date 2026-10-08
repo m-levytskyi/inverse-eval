@@ -135,7 +135,6 @@ def load_anaklasis_constraint_mapes(pickle_file: Path) -> list[float]:
                 pred_params=pred_vals,
                 true_params=true_vals,
                 param_names=PARAM_NAMES_5,
-                priors_type="constraint_based",
             )
 
         value = metrics.get("overall", {}).get("constraint_mape")

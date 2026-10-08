@@ -20,8 +20,7 @@ def create_summary_statistics(
     priors_type="narrow",
     narrow_priors_deviation=None,
 ):
-    """Create summary statistics focused on MAPE."""
-    mape_values = []
+    """Create summary statistics focused on constraint-based MAPE."""
     constraint_mape_values = []
 
     for exp_id, result in successful_results.items():
@@ -29,8 +28,6 @@ def create_summary_statistics(
             param_metrics = result["param_metrics"]
             overall = param_metrics.get("overall", {})
             if isinstance(overall, dict):
-                if "mape" in overall:
-                    mape_values.append(overall["mape"])
                 if "constraint_mape" in overall:
                     constraint_mape_values.append(overall["constraint_mape"])
 
@@ -43,18 +40,6 @@ def create_summary_statistics(
         if priors_type == "narrow"
         else None,
     }
-
-    if mape_values:
-        summary["parameter_accuracy"] = {
-            "overall_mape": {
-                "median": float(np.median(mape_values)),
-                "mean": float(np.mean(mape_values)),
-                "std": float(np.std(mape_values)),
-                "min": float(np.min(mape_values)),
-                "max": float(np.max(mape_values)),
-                "count": len(mape_values),
-            }
-        }
 
     if constraint_mape_values:
         summary["constraint_accuracy"] = {
@@ -91,85 +76,48 @@ def print_summary_statistics(summary):
         print(f"  Mean: {stats['mean']:.2f}% +/- {stats['std']:.2f}%")
         print(f"  Range: {stats['min']:.2f}% - {stats['max']:.2f}%")
         print(f"  Experiments: {stats['count']}")
-    elif "parameter_accuracy" in summary and summary["parameter_accuracy"]:
-        print("\nParameter Accuracy (MAPE):")
-        stats = summary["parameter_accuracy"]["overall_mape"]
-        print(f"  Median: {stats['median']:.2f}%")
-        print(f"  Mean: {stats['mean']:.2f}% +/- {stats['std']:.2f}%")
-        print(f"  Range: {stats['min']:.2f}% - {stats['max']:.2f}%")
-        print(f"  Experiments: {stats['count']}")
     else:
-        print("\nNo MAPE data available")
+        print("\nNo constraint-based MAPE data available")
 
 
-def print_mape_distribution(successful_results, show_traditional=False):
-    """Print MAPE distribution summary.
-
-    Args:
-        successful_results: dict of successful experiment results
-        show_traditional: if True, also print the standard (non-constraint) MAPE section
-    """
-    mape_values = []
+def print_mape_distribution(successful_results):
+    """Print the constraint-based MAPE distribution summary."""
     constraint_mape_values = []
 
     for result in successful_results.values():
         if "param_metrics" in result and result["param_metrics"]:
             overall = result["param_metrics"].get("overall", {})
             if isinstance(overall, dict):
-                if "mape" in overall:
-                    mape_values.append(overall["mape"])
                 if "constraint_mape" in overall:
                     constraint_mape_values.append(overall["constraint_mape"])
 
-    if not mape_values and not constraint_mape_values:
-        print("\nNo MAPE data available")
+    if not constraint_mape_values:
+        print("\nNo constraint-based MAPE data available")
         return
 
-    if show_traditional and mape_values:
-        print("\nMAP DISTRIBUTION (standard):")
-        print("-" * 35)
-        total = len(mape_values)
-        excellent = sum(1 for m in mape_values if m < 5)
-        good = sum(1 for m in mape_values if 5 <= m < 10)
-        acceptable = sum(1 for m in mape_values if 10 <= m < 20)
-        poor = sum(1 for m in mape_values if m >= 20)
-        print(f"Excellent (< 5%):    {excellent} ({100 * excellent / total:.1f}%)")
-        print(f"Good (5-10%):        {good} ({100 * good / total:.1f}%)")
-        print(f"Acceptable (10-20%): {acceptable} ({100 * acceptable / total:.1f}%)")
-        print(f"Poor (>= 20%):       {poor} ({100 * poor / total:.1f}%)")
-        print("\nStatistics:")
-        print(f"Mean:   {np.mean(mape_values):.1f}% +/- {np.std(mape_values):.1f}%")
-        print(f"Median: {np.median(mape_values):.1f}%")
-        print(f"Range:  {np.min(mape_values):.1f}% - {np.max(mape_values):.1f}%")
-
-    if constraint_mape_values:
-        c_total = len(constraint_mape_values)
-        c_excellent = sum(1 for m in constraint_mape_values if m < 5)
-        c_good = sum(1 for m in constraint_mape_values if 5 <= m < 10)
-        c_acceptable = sum(1 for m in constraint_mape_values if 10 <= m < 20)
-        c_poor = sum(1 for m in constraint_mape_values if m >= 20)
-        print("\nCONSTRAINT-BASED MAPE DISTRIBUTION:")
-        print("-" * 35)
-        print(
-            f"Excellent (< 5%):    {c_excellent} ({100 * c_excellent / c_total:.1f}%)"
-        )
-        print(f"Good (5-10%):        {c_good} ({100 * c_good / c_total:.1f}%)")
-        print(
-            f"Acceptable (10-20%): {c_acceptable} ({100 * c_acceptable / c_total:.1f}%)"
-        )
-        print(f"Poor (>= 20%):       {c_poor} ({100 * c_poor / c_total:.1f}%)")
-        print("\nStatistics:")
-        print(
-            f"Mean:   {np.mean(constraint_mape_values):.1f}% +/- {np.std(constraint_mape_values):.1f}%"
-        )
-        print(f"Median: {np.median(constraint_mape_values):.1f}%")
-        print(
-            f"Range:  {np.min(constraint_mape_values):.1f}% - {np.max(constraint_mape_values):.1f}%"
-        )
+    total = len(constraint_mape_values)
+    excellent = sum(1 for m in constraint_mape_values if m < 5)
+    good = sum(1 for m in constraint_mape_values if 5 <= m < 10)
+    acceptable = sum(1 for m in constraint_mape_values if 10 <= m < 20)
+    poor = sum(1 for m in constraint_mape_values if m >= 20)
+    print("\nCONSTRAINT-BASED MAPE DISTRIBUTION:")
+    print("-" * 35)
+    print(f"Excellent (< 5%):    {excellent} ({100 * excellent / total:.1f}%)")
+    print(f"Good (5-10%):        {good} ({100 * good / total:.1f}%)")
+    print(f"Acceptable (10-20%): {acceptable} ({100 * acceptable / total:.1f}%)")
+    print(f"Poor (>= 20%):       {poor} ({100 * poor / total:.1f}%)")
+    print("\nStatistics:")
+    print(
+        f"Mean:   {np.mean(constraint_mape_values):.1f}% +/- {np.std(constraint_mape_values):.1f}%"
+    )
+    print(f"Median: {np.median(constraint_mape_values):.1f}%")
+    print(
+        f"Range:  {np.min(constraint_mape_values):.1f}% - {np.max(constraint_mape_values):.1f}%"
+    )
 
 
 def detect_edge_cases(successful_results):
-    """Detect edge cases with poor performance using real MAPE values."""
+    """Detect edge cases with poor constraint-based MAPE values."""
     edge_cases = []
 
     logger.debug("Edge case detection:")
@@ -180,16 +128,10 @@ def detect_edge_cases(successful_results):
 
         param_metrics = result["param_metrics"]
 
-        # Get real overall MAPE
-        overall_mape = None
-        if "overall_mape" in param_metrics:
-            overall_mape = param_metrics["overall_mape"]
-        elif "overall" in param_metrics and isinstance(param_metrics["overall"], dict):
-            if "mape" in param_metrics["overall"]:
-                overall_mape = param_metrics["overall"]["mape"]
+        overall_mape = param_metrics.get("overall", {}).get("constraint_mape")
 
         if overall_mape is not None:
-            logger.debug("  %s: %.1f%% MAPE", exp_name, overall_mape)
+            logger.debug("  %s: %.1f%% constraint MAPE", exp_name, overall_mape)
 
             # Flag as edge case if MAPE > 50%
             if overall_mape > 50:
@@ -200,9 +142,13 @@ def detect_edge_cases(successful_results):
 
                 if "by_type" in param_metrics:
                     by_type = param_metrics["by_type"]
-                    thickness_mape = by_type.get("thickness", {}).get("mape", 0)
-                    roughness_mape = by_type.get("roughness", {}).get("mape", 0)
-                    sld_mape = by_type.get("sld", {}).get("mape", 0)
+                    thickness_mape = by_type.get("thickness", {}).get(
+                        "constraint_mape", 0
+                    )
+                    roughness_mape = by_type.get("roughness", {}).get(
+                        "constraint_mape", 0
+                    )
+                    sld_mape = by_type.get("sld", {}).get("constraint_mape", 0)
 
                 edge_cases.append(
                     {
@@ -219,12 +165,12 @@ def detect_edge_cases(successful_results):
 
     if edge_cases:
         logger.warning(
-            "Edge cases detected (%s experiments with MAPE > 50%%):",
+            "Edge cases detected (%s experiments with constraint MAPE > 50%%):",
             len(edge_cases),
         )
         for i, case in enumerate(edge_cases[:5], 1):  # Show top 5 worst
             logger.warning("%s. %s", i, case["experiment"])
-            logger.warning("   Overall MAPE: %.1f%%", case["overall_mape"])
+            logger.warning("   Overall constraint MAPE: %.1f%%", case["overall_mape"])
             if case["thickness_mape"] is not None:
                 logger.warning("   Thickness: %.1f%%", case["thickness_mape"])
             if case["roughness_mape"] is not None:
@@ -232,6 +178,6 @@ def detect_edge_cases(successful_results):
             if case["sld_mape"] is not None:
                 logger.warning("   SLD: %.1f%%", case["sld_mape"])
     else:
-        logger.info("No edge cases detected (all experiments < 50%% MAPE)")
+        logger.info("No edge cases detected (all experiments < 50%% constraint MAPE)")
 
     return edge_cases
