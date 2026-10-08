@@ -14,17 +14,10 @@ Usage:
 import argparse
 import json
 import logging
-import matplotlib
 import matplotlib.ticker
 import matplotlib.pyplot as plt
 import numpy as np
-import scienceplots  # noqa: F401
 from pathlib import Path
-
-matplotlib.use("pdf")
-paper_mplstyle = Path(__file__).parent / "paper.mplstyle"
-plt.style.use(["science", str(paper_mplstyle)])
-
 
 logger = logging.getLogger(__name__)
 
