@@ -23,7 +23,6 @@ from pathlib import Path
 
 from error_calculation import calculate_parameter_metrics
 from plotting_utils import plot_batch_mape_distribution, plot_batch_parameter_breakdown
-from constraints_utils import get_constraint_ranges
 
 
 logger = logging.getLogger(__name__)
@@ -60,82 +59,6 @@ def load_manifest(manifest_file="manifest_exp_1L.pkl"):
     logger.info(f"  Loaded {len(samples)} manifest entries")
 
     return samples
-
-
-def get_constraint_based_prior_bounds_for_5params(true_vals_5, width=0.3):
-    """
-    Calculate constraint-based prior bounds for 5 parameters.
-
-    Uses the same logic as reflectorch's parameter_discovery.get_constraint_based_prior_bounds():
-    - Calculate width as percentage of constraint span
-    - Clip to allowed widths
-    - Center around true value
-    - Adjust if bounds exceed model constraints
-
-    Args:
-        true_vals_5: True values for 5 parameters in order:
-                     [thickness_1, roughness_fronting, roughness_1, sld_1, sld_backing]
-        width: Constraint percentage (0.3 for 30%)
-
-    Returns:
-        List of (min, max) tuples for prior bounds
-    """
-    # Parameter mapping to constraint names
-    param_types = ["thickness", "sub_rough", "amb_rough", "layer_sld", "sub_sld"]
-
-    # Get model constraints
-    model_constraints = get_constraint_ranges()
-
-    # Allowed widths (from reflectorch parameter_discovery.py)
-    allowed_widths = {
-        "thickness": (0.01, 1000.0),
-        "amb_rough": (0.01, 60.0),
-        "sub_rough": (0.01, 60.0),
-        "layer_sld": (0.01, 5.0),
-        "sub_sld": (0.01, 5.0),
-    }
-
-    bounds = []
-
-    for param_value, param_type in zip(true_vals_5, param_types):
-        # Get constraints for this parameter
-        model_min, model_max = model_constraints.get(param_type, (-1e6, 1e6))
-        width_min, width_max = allowed_widths.get(param_type, (0.01, 1e6))
-
-        # Calculate span of model constraints
-        constraint_span = model_max - model_min
-
-        # Calculate width as percentage of constraint span
-        target_width = width * constraint_span
-
-        # Clip to allowed widths
-        target_width = max(width_min, min(target_width, width_max))
-
-        # Center around true value
-        half_width = target_width / 2
-        min_val = param_value - half_width
-        max_val = param_value + half_width
-
-        # Adjust if bounds exceed model constraints
-        if max_val > model_max:
-            # Shift left
-            shift = max_val - model_max
-            max_val = model_max
-            min_val = max(min_val - shift, model_min)
-
-        if min_val < model_min:
-            # Shift right
-            shift = model_min - min_val
-            min_val = model_min
-            max_val = min(max_val + shift, model_max)
-
-        # Final safety check - ensure bounds are within model constraints
-        min_val = max(min_val, model_min)
-        max_val = min(max_val, model_max)
-
-        bounds.append([min_val, max_val])
-
-    return bounds
 
 
 def convert_pickle_to_batch_results(
@@ -192,18 +115,11 @@ def convert_pickle_to_batch_results(
         pred_vals_5[3] *= 1e6  # layer_sld
         pred_vals_5[4] *= 1e6  # sub_sld
 
-        # Calculate constraint-based prior bounds
-        prior_bounds_5 = get_constraint_based_prior_bounds_for_5params(
-            true_vals_5, width
-        )
-
-        # Calculate parameter metrics using reflectorch's function
+        # Calculate regular and constraint-based parameter MAPE.
         param_metrics = calculate_parameter_metrics(
             pred_params=pred_vals_5,
             true_params=true_vals_5,
             param_names=reflectorch_param_names,
-            prior_bounds=prior_bounds_5,
-            priors_type="constraint_based",
         )
 
         # Build result entry in reflectorch format

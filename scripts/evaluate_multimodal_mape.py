@@ -102,14 +102,12 @@ def align_samples_to_true(samples, pred_param_names, true_param_names, layer_cou
     return np.asarray(samples, dtype=float)[:, indices]
 
 
-def parameter_metrics(pred_params, true_params, true_param_names, prior_bounds):
+def parameter_metrics(pred_params, true_params, true_param_names):
     return quiet_call(
         calculate_parameter_metrics,
         pred_params,
         true_params,
         true_param_names,
-        prior_bounds=prior_bounds,
-        priors_type="constraint_based",
     )
 
 
@@ -197,10 +195,10 @@ def evaluate_one(
         random_state=0,
     )
     current_metrics = parameter_metrics(
-        current["selected_params"], true_params, true_param_names, prior_bounds
+        current["selected_params"], true_params, true_param_names
     )
     multimodal_metrics = parameter_metrics(
-        multimodal["selected_params"], true_params, true_param_names, prior_bounds
+        multimodal["selected_params"], true_params, true_param_names
     )
 
     saved_overall = (
@@ -213,10 +211,6 @@ def evaluate_one(
         "multimodal_constraint_mape": multimodal_metrics["overall"]["constraint_mape"],
         "constraint_mape_delta": multimodal_metrics["overall"]["constraint_mape"]
         - current_metrics["overall"]["constraint_mape"],
-        "current_mape": current_metrics["overall"]["mape"],
-        "multimodal_mape": multimodal_metrics["overall"]["mape"],
-        "mape_delta": multimodal_metrics["overall"]["mape"]
-        - current_metrics["overall"]["mape"],
         "selected_k": multimodal["selected_k"],
         "selected_silhouette": multimodal["selected_silhouette"],
         "num_modes": len(multimodal["mode_rows"]),
@@ -234,9 +228,6 @@ def summarize(rows):
     multimodal = np.array(
         [row["multimodal_constraint_mape"] for row in rows], dtype=float
     )
-    current_mape = np.array([row["current_mape"] for row in rows], dtype=float)
-    multimodal_mape = np.array([row["multimodal_mape"] for row in rows], dtype=float)
-    mape_deltas = np.array([row["mape_delta"] for row in rows], dtype=float)
     selected_ks = {}
     for row in rows:
         selected_ks[str(row["selected_k"])] = (
@@ -252,12 +243,6 @@ def summarize(rows):
         "constraint_mape_delta_mean": float(np.mean(deltas)),
         "constraint_mape_delta_median": float(np.median(deltas)),
         "constraint_mape_delta_sum": float(np.sum(deltas)),
-        "current_mape_mean": float(np.mean(current_mape)),
-        "current_mape_median": float(np.median(current_mape)),
-        "multimodal_mape_mean": float(np.mean(multimodal_mape)),
-        "multimodal_mape_median": float(np.median(multimodal_mape)),
-        "mape_delta_mean": float(np.mean(mape_deltas)),
-        "mape_delta_median": float(np.median(mape_deltas)),
         "improved_count": int(np.sum(deltas < -1e-9)),
         "same_count": int(np.sum(np.isclose(deltas, 0.0, atol=1e-9))),
         "worse_count": int(np.sum(deltas > 1e-9)),

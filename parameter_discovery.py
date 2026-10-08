@@ -11,10 +11,11 @@ from pathlib import Path
 
 import numpy as np
 
-from constraints_utils import get_constraint_ranges, get_constraint_range
+from constraints_utils import get_constraint_ranges
 from sld_profile_utils import sld_profile
 
 logger = logging.getLogger(__name__)
+
 
 def discover_experiment_files(
     experiment_id, data_directory, layer_count=None, use_theoretical=False
@@ -376,8 +377,9 @@ def generate_true_sld_profile(
         interfaces = [0, thickness1, thickness1 + thickness2]
         roughnesses = [amb_rough, int_rough, sub_rough]
 
+    profile = sld_profile(x_axis, sld_values, interfaces, roughnesses)
     logger.info(f"Generated SLD profile with {n_points} points over range {x_range}")
-    return x_axis, sld_profile
+    return x_axis, profile
 
 
 def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):

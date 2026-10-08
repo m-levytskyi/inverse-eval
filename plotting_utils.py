@@ -52,34 +52,19 @@ def _extract_batch_config(batch_results):
     return successful, priors_type, fix_sld_mode
 
 
-def _get_overall_mape(param_metrics, priors_type):
-    """Extract the appropriate overall MAPE value based on priors type."""
-    if priors_type == "constraint_based" and "overall" in param_metrics:
-        if "constraint_mape" in param_metrics["overall"]:
-            return param_metrics["overall"]["constraint_mape"]
-
-    if "overall_mape" in param_metrics:
-        return param_metrics["overall_mape"]
-
-    if "overall" in param_metrics and isinstance(param_metrics["overall"], dict):
-        if "mape" in param_metrics["overall"]:
-            return param_metrics["overall"]["mape"]
-
-    return None
+def _get_overall_mape(param_metrics):
+    """Extract the overall constraint-based MAPE."""
+    return param_metrics.get("overall", {}).get("constraint_mape")
 
 
-def _get_param_mape(param_data, priors_type):
-    """Extract MAPE value from a by_type parameter entry."""
-    if priors_type == "constraint_based" and "constraint_mape" in param_data:
-        return param_data["constraint_mape"]
-    if "mape" in param_data:
-        return param_data["mape"]
-    return None
+def _get_param_mape(param_data):
+    """Extract a constraint-based MAPE value from a parameter entry."""
+    return param_data.get("constraint_mape")
 
 
-def _mape_label(priors_type):
-    """Return the appropriate MAPE label string."""
-    return "Constraint MAPE" if priors_type == "constraint_based" else "MAPE"
+def _mape_label():
+    """Return the constraint-based MAPE label."""
+    return "Constraint MAPE"
 
 
 def _build_filename(prefix, layer_count, use_prominent_features=False):
@@ -105,9 +90,9 @@ def _count_mapes_in_ranges(mapes, mape_ranges):
     ]
 
 
-def _build_comparison_title(config, priors_type="constraint_based"):
+def _build_comparison_title(config):
     """Build title for comparison plots with config-based suffix."""
-    mape_type = "Constraint-Based MAPE" if priors_type == "constraint_based" else "MAPE"
+    mape_type = "Constraint-Based MAPE"
 
     title_parts = []
     if config.get("sld_fix_mode", "none") != "none":
@@ -271,7 +256,7 @@ def plot_batch_mape_distribution(
     mapes = []
     for result in successful.values():
         if "param_metrics" in result and result["param_metrics"]:
-            mape = _get_overall_mape(result["param_metrics"], priors_type)
+            mape = _get_overall_mape(result["param_metrics"])
             if mape is not None:
                 mapes.append(mape)
 
@@ -279,7 +264,7 @@ def plot_batch_mape_distribution(
         logger.info("No MAPE data available for plotting")
         return None
 
-    label = _mape_label(priors_type)
+    label = _mape_label()
 
     # Create distribution plot
     fig, ax = plt.subplots()
@@ -374,7 +359,7 @@ def plot_batch_parameter_breakdown(
         pm = result["param_metrics"]
 
         # Overall MAPE
-        overall = _get_overall_mape(pm, priors_type)
+        overall = _get_overall_mape(pm)
         if overall is not None:
             param_mapes["overall"].append(overall)
 
@@ -384,7 +369,7 @@ def plot_batch_parameter_breakdown(
                 if param_type in pm["by_type"] and isinstance(
                     pm["by_type"][param_type], dict
                 ):
-                    val = _get_param_mape(pm["by_type"][param_type], priors_type)
+                    val = _get_param_mape(pm["by_type"][param_type])
                     if val is not None:
                         param_mapes[param_type].append(val)
 
@@ -395,7 +380,7 @@ def plot_batch_parameter_breakdown(
         logger.info("No parameter-specific MAPE data available for plotting")
         return None
 
-    label = _mape_label(priors_type)
+    label = _mape_label()
     param_names = list(param_mapes.keys())
 
     # Separate outliers (>100% MAPE) from regular data
@@ -547,11 +532,8 @@ def plot_model_comparison_histogram(
     baseline_meta = baseline_meta or {}
     comparison_meta = comparison_meta or {}
 
-    priors_type = baseline_meta.get("priors_type", "constraint_based")
-    mape_label = _mape_label(priors_type)
-    mape_type, title_suffix, deviation_pct = _build_comparison_title(
-        config, priors_type
-    )
+    mape_label = _mape_label()
+    mape_type, title_suffix, deviation_pct = _build_comparison_title(config)
 
     # Create plot
     fig, ax = plt.subplots()
@@ -628,7 +610,7 @@ def plot_random_guessing_comparison(
     Returns:
         Figure path if saved, None otherwise
     """
-    mape_label = _mape_label(priors_type)
+    mape_label = _mape_label()
 
     # Create plot
     fig, ax = plt.subplots()
@@ -720,9 +702,7 @@ def plot_parameter_comparison_grid(
         logger.info("No parameter data available")
         return None
 
-    mape_type, title_suffix, deviation_pct = _build_comparison_title(
-        config, priors_type
-    )
+    mape_type, title_suffix, deviation_pct = _build_comparison_title(config)
 
     # Create subplots
     fig, axes = plt.subplots(2, 3)

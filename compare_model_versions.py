@@ -78,16 +78,12 @@ def parse_batch_config(batch_name: str) -> Dict:
     return config
 
 
-def extract_mapes_from_batch(
-    batch_dir: Path, use_constraint_mape: bool = True
-) -> Tuple[List[float], Dict]:
+def extract_mapes_from_batch(batch_dir: Path) -> Tuple[List[float], Dict]:
     """
     Extract MAPE values from batch summary.
 
     Args:
         batch_dir: Path to batch directory
-        use_constraint_mape: Whether to use constraint-based MAPE (default: True)
-
     Returns:
         Tuple of (mape_list, per_param_mapes_dict)
     """
@@ -104,26 +100,19 @@ def extract_mapes_from_batch(
             continue
 
         # Extract overall MAPE
-        if use_constraint_mape and "overall" in exp_info["param_metrics"]:
-            if "constraint_mape" in exp_info["param_metrics"]["overall"]:
-                mape = exp_info["param_metrics"]["overall"]["constraint_mape"]
-                mapes.append(mape)
-        elif "overall" in exp_info["param_metrics"]:
-            if "mape" in exp_info["param_metrics"]["overall"]:
-                mape = exp_info["param_metrics"]["overall"]["mape"]
-                mapes.append(mape)
+        overall = exp_info["param_metrics"].get("overall", {})
+        if "constraint_mape" in overall:
+            mapes.append(overall["constraint_mape"])
 
         # Extract per-parameter MAPE
         if "by_parameter" in exp_info["param_metrics"]:
             for param_name, param_data in exp_info["param_metrics"][
                 "by_parameter"
             ].items():
-                if use_constraint_mape and "constraint_percentage_error" in param_data:
+                if "constraint_percentage_error" in param_data:
                     per_param_mapes[param_name].append(
                         param_data["constraint_percentage_error"]
                     )
-                elif "percentage_error" in param_data:
-                    per_param_mapes[param_name].append(param_data["percentage_error"])
 
     return mapes, dict(per_param_mapes)
 
