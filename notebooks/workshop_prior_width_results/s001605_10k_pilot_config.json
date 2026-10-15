@@ -1,0 +1,20 @@
+{
+  "experiment": "s001605",
+  "prior_width_percent": [
+    30,
+    60
+  ],
+  "sample_count_per_run": 10000,
+  "seed_reset_each_run": 420,
+  "model_config": "example_nf_config_reflectorch.yaml",
+  "device": "cpu",
+  "preprocessing": {
+    "enabled": true,
+    "threshold": 0.75,
+    "consecutive": 5
+  },
+  "q_resolution": 0.1,
+  "importance_sampling": true,
+  "calc_sampled_sld_profiles": true,
+  "checkpoint": "/home/levytskyi/Documents/inverse-eval/vendor/nflows_reflectorch/saved_models/model_example_nf_config_reflectorch.safetensors"
+}
