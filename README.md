@@ -13,11 +13,9 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 - [Installation](#installation)
 - [Notebooks (Quick Start)](#notebooks-quick-start)
 - [Repository Structure](#repository-structure)
-- [Code Quality](#code-quality)
 - [Dataset Setup](#dataset-setup)
 - [Configuration](#configuration)
 - [Running Experiments](#running-experiments)
-- [Reproducing Thesis Figures](#reproducing-thesis-figures)
 - [Module Reference](#module-reference)
 
 ---
@@ -139,26 +137,17 @@ On macOS/Linux, maintenance targets such as `make venv`, `make framework`, `make
 
 ## Notebooks (Quick Start)
 
-After setup, the notebooks are the easiest way to explore the pipeline:
-
-
-
--- this section will be updated after the notebooks are final --
-
-
-
-| Notebook | Description |
-|----------|-------------|
-| [`notebooks/01_single_experiment.ipynb`](notebooks/01_single_experiment.ipynb) | Step-by-step walkthrough of a single inference run — load data, build priors, run the NF model, visualise the fit and SLD profile |
-| [`notebooks/02_batch_inference.ipynb`](notebooks/02_batch_inference.ipynb) | Batch processing demonstration — run inference over many experiments and analyse the results |
-
-Launch with:
+Launch Jupyter Lab from the repository root:
 
 ```bash
 jupyter lab notebooks/
 ```
 
-Open the jupyter lab in browser.
+| Notebook | Description |
+|----------|-------------|
+| [`01_single_experiment.ipynb`](notebooks/01_single_experiment.ipynb) | Run inference for one experiment, inspect the fit and SLD profile, and explore prior bounds. |
+| [`03_orso_l2_nf_inference.ipynb`](notebooks/03_orso_l2_nf_inference.ipynb) | Run the two-layer NF model on the supplied ORSO reflectometry example and inspect sampled SLD profiles. |
+| [`04_pnr_polarisation_l2_nf_inference.ipynb`](notebooks/04_pnr_polarisation_l2_nf_inference.ipynb) | Run the L2 model independently on two polarized neutron reflectometry channels and compare the results with the fit reference. |
 
 ---
 
@@ -218,24 +207,9 @@ inverse-eval/
 │   └── paper_batches/            # Curated batches used in thesis figures
 │
 └── notebooks/
-    ├── 01_single_experiment.ipynb   # Single-experiment walkthrough
-    └── 02_batch_inference.ipynb     # Batch processing demonstration
-```
-
----
-
-## Code Quality
-
-- Generic hooks trim trailing whitespace, enforce final newlines, validate YAML/TOML/JSON, and detect merge-conflict markers.
-- Checked-in data directories are excluded from hook sweeps to avoid noisy dataset rewrites.
-- Ruff formatting runs on changed Python files.
-- Ruff linting is currently limited to `F` correctness diagnostics, avoiding a whole-repo import-order or line-length migration.
-- `ty` is configured as a manual hook over the type-clean maintenance surface: `bootstrap.py`, `bootstrap_windows.py`, `device_utils.py`, and `tests`.
-
-Run the manual type check through pre-commit when needed:
-
-```bash
-python scripts/run_in_venv.py -m pre_commit run ty-check --hook-stage manual
+    ├── 01_single_experiment.ipynb                # Single-experiment walkthrough
+    ├── 03_orso_l2_nf_inference.ipynb             # ORSO two-layer inference
+    └── 04_pnr_polarisation_l2_nf_inference.ipynb # Polarized PNR inference
 ```
 
 ---
@@ -411,159 +385,6 @@ python batch_sweep_runner.py --config sweep_configs/qweighted.yaml
 ```
 
 ---
-
-## Reproducing Thesis Figures
-
-All figures are produced using `plotting_utils.py` with `paper.mplstyle` applied globally. Figures are exported as PDF.
-
-### Prerequisites
-
-Completed batch inference runs are required. The relevant batch groups used in the thesis are stored in `paper_batches/`.
-
----
-
-### Figure 1 — MAPE Histograms (per-model)
-
-**What it shows**: Distribution of Constraint MAPE across all test experiments for each parameter type (thickness, roughness, SLD). One histogram per model variant.
-
-**Configuration used**: 30% constraint prior, no SLD fixing, no prominent-feature filtering.
-
-> **Note**: Each run processes the full test split (~900 experiments) and takes approximately **15 minutes**.
-
-**How to generate** (run once per model):
-
-```bash
-# NF Baseline
-.venv/bin/python batch_pipeline.py \
-  --data-directory dataset/test \
-  --priors-type constraint_based \
-  --priors-deviation 30 \
-  --fix-sld-mode none \
-  --inference-backend nf \
-  --config-name example_nf_config_reflectorch.yaml \
-  --nf-num-samples 1000
-
-# NF + Q-Weighted + dR
-.venv/bin/python batch_pipeline.py \
-  --data-directory dataset/test \
-  --priors-type constraint_based \
-  --priors-deviation 30 \
-  --fix-sld-mode none \
-  --inference-backend nf \
-  --config-name nf_config_mixed_sigmas_qweighted.yaml \
-  --nf-num-samples 1000 \
-  --use-sigmas-input
-
-# NF + Mean Conditioned
-.venv/bin/python batch_pipeline.py \
-  --data-directory dataset/test \
-  --priors-type constraint_based \
-  --priors-deviation 30 \
-  --fix-sld-mode none \
-  --inference-backend nf \
-  --config-name nf_config_mixed_mean_conditioned.yaml \
-  --nf-num-samples 1000
-```
-
-After each run, regenerate the plots:
-
-```bash
-.venv/bin/python replot_batch_results.py --results-dir batch_inference_results/<batch_dir>
-```
-
-Or programmatically:
-
-```python
-import json
-from plotting_utils import create_batch_analysis_plots
-
-with open("batch_inference_results/<batch_dir>/batch_results.json") as f:
-    batch_results = json.load(f)
-
-successful = {k: v for k, v in batch_results.items() if v["success"]}
-create_batch_analysis_plots(successful, layer_count=1, output_dir="figures/", save=True)
-```
-
-This produces `mape_distribution_1layer.pdf` and `parameter_breakdown_1layer.pdf`.
-
----
-
-### Figure 2 — Coverage Plot
-
-**What it shows**: Fraction of experiments where the true parameter falls within the posterior credible interval at each confidence level (ideal = identity line).
-
-**How to generate**:
-
-```bash
-python plot_mape_vs_std.py --batch-dir batch_inference_results/<batch_dir>
-```
-
-Or from Python:
-
-```python
-from plot_mape_vs_std import plot_coverage, compute_coverage_data
-
-coverage = compute_coverage_data("batch_inference_results/<batch_dir>/batch_results.json")
-plot_coverage(coverage, output_dir="figures/")
-```
-
----
-
-### Figure 3 — Single Reflectivity Curve Fit
-
-**What it shows**: Experimental reflectivity curve overlaid with the model prediction and uncertainty band, plus the inferred SLD depth profile. To reproduce the thesis figure, choose an experiment whose curve displays a visually prominent oscillation peak.
-
-**How to generate**:
-
-```python
-from simple_pipeline import run_single_experiment
-from plotting_utils import plot_simple_comparison
-
-# Use an experiment ID with a prominent oscillation peak, e.g. s000780
-results = run_single_experiment(
-    experiment_id="s000780",
-    enable_preprocessing=True,
-)
-
-plot_simple_comparison(
-    results,
-    output_path="figures/single_curve_s000780.pdf",
-    save=True,
-)
-```
-
----
-
-### Figure 4 — Evaluation Against Random Guessing
-
-**What it shows**: MAPE distribution of the NF model overlaid with a random-guessing baseline that samples uniformly from the prior bounds.
-
-**How to generate**:
-
-```bash
-python evaluate_random_guessing.py \
-  --batch-dir batch_inference_results/<batch_dir> \
-  --num-random-samples 1000 \
-  --output-dir figures/
-```
-
-Or from Python:
-
-```python
-from evaluate_random_guessing import run_random_guessing_evaluation
-from plotting_utils import plot_random_guessing_comparison
-
-model_results, random_results = run_random_guessing_evaluation(
-    batch_dir="batch_inference_results/<batch_dir>",
-    num_random_samples=1000,
-)
-
-plot_random_guessing_comparison(
-    model_results=model_results,
-    random_results=random_results,
-    output_path="figures/random_guessing.pdf",
-)
-```
 
 ---
 
