@@ -425,7 +425,7 @@ def pip_install(
         )
     else:
         run(
-            [str(venv_pip()), "install", *args],
+            [str(venv_python()), "-m", "pip", "install", *args],
             step=step,
             likely_cause=likely_cause,
             next_step=next_step,
