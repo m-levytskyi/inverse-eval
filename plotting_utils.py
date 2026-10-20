@@ -9,10 +9,8 @@ Uses SciencePlots for publication-quality styling via paper.mplstyle.
 """
 
 import numpy as np
-import matplotlib
 import logging
 
-matplotlib.use("pdf")
 import matplotlib.pyplot as plt
 import scienceplots  # noqa: F401 - registers 'science' style
 from pathlib import Path
