@@ -1,6 +1,9 @@
 # Numerical & scientific computing
 numpy
-scipy
+# SciPy 1.15.3's PROPACK wheel fails macOS dyld validation. Keep the
+# verified wheel for supported macOS Python versions (3.10-3.12).
+scipy==1.14.1; sys_platform == "darwin"
+scipy; sys_platform != "darwin"
 pandas
 
 # Machine learning
