@@ -167,10 +167,10 @@ def plot_simple_comparison(
         sigmas_exp: Experimental uncertainties
         q_model: Model Q values
         predicted_curve: Predicted reflectivity curve
-        polished_curve: Polished reflectivity curve
+        polished_curve: Optional polished reflectivity curve
         predicted_sld_x: SLD profile x-axis
         predicted_sld_y: Predicted SLD profile
-        polished_sld_y: Polished SLD profile
+        polished_sld_y: Optional polished SLD profile
         true_sld_x: True SLD profile x-axis (optional)
         true_sld_y: True SLD profile values (optional)
         experiment_name: Name for plot title
@@ -207,14 +207,16 @@ def plot_simple_comparison(
         zorder=1,
     )
     ax_r.plot(q_model, predicted_curve, lw=2, label="Predicted")
-    ax_r.plot(q_model, polished_curve, ls="--", lw=2, label="Polished")
+    if polished_curve is not None:
+        ax_r.plot(q_model, polished_curve, ls="--", lw=2, label="Polished")
     ax_r.legend(loc="upper right", fontsize=12)
     if not hide_title:
         ax_r.set_title(f"Reflectivity - {display_name}", fontsize=14)
 
     # --- SLD profile panel ---
     ax_sld.plot(predicted_sld_x, predicted_sld_y, lw=2, label="Predicted")
-    ax_sld.plot(predicted_sld_x, polished_sld_y, ls="--", lw=2, label="Polished")
+    if polished_sld_y is not None:
+        ax_sld.plot(predicted_sld_x, polished_sld_y, ls="--", lw=2, label="Polished")
     if true_sld_x is not None and true_sld_y is not None:
         ax_sld.plot(true_sld_x, true_sld_y, lw=1.5, ls=":", label="True")
     ax_sld.set_xlabel("z [$\\AA$]", fontsize=14)
