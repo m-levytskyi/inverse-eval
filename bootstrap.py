@@ -181,7 +181,7 @@ def resolve_torch_backend(
         return TorchSelection(
             requested=requested_mode,
             resolved="cpu",
-            reason="macOS uses the default PyTorch wheel; Apple Silicon may still use the MPS runtime at execution time.",
+            reason="macOS uses the default PyTorch wheel and runs inference on CPU.",
         )
 
     if not supports_explicit_cuda_install(platform_name, machine):
@@ -615,6 +615,18 @@ def install_deps() -> None:
         next_step="Check the package installation error above, then retry after fixing the dependency issue.",
     )
 
+    run(
+        [
+            str(venv_python()),
+            "-c",
+            "import scipy; from scipy.special import erf; "
+            "import scipy.sparse.linalg; print('scipy', scipy.__version__)",
+        ],
+        step="Checking SciPy imports",
+        likely_cause="The installed SciPy wheel cannot load its compiled libraries.",
+        next_step="Rerun `make deps` to apply the platform-specific requirements, then restart notebook kernels.",
+    )
+
 
 def install_dev_deps() -> None:
     require_python_version()
@@ -645,9 +657,8 @@ def check_torch(torch_wheel: str) -> None:
         f"print('resolution details', {selection.reason!r}); "
         "print('torch', torch.__version__); "
         "print('cuda available', torch.cuda.is_available()); "
-        "print('mps available', getattr(getattr(torch.backends, 'mps', None), 'is_available', lambda: False)()); "
-        "print('device', 'cuda' if torch.cuda.is_available() else "
-        "('mps' if getattr(getattr(torch.backends, 'mps', None), 'is_available', lambda: False)() else 'cpu'))"
+        "from device_utils import detect_torch_device; "
+        "print('device', detect_torch_device())"
     )
     run(
         [str(venv_python()), "-c", code],

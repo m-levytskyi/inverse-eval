@@ -451,8 +451,8 @@ def run_single_experiment(
         use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
         clip_prediction: Whether to clip predicted parameters to prior bounds (default: True)
         use_sigmas_input: Use sigmas as additional input channel to neural network (requires 2-channel model)
-        inference_device: Optional explicit torch device ("cpu", "cuda", or "mps").
-                         If None, automatically prefers CUDA, then MPS, then CPU.
+        inference_device: Optional explicit torch device ("cpu" or "cuda").
+                         If None, automatically prefers CUDA, then CPU.
         data_directory: Base data directory to search for experiment files (default: "data")
 
     Returns:

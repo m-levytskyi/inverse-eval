@@ -102,7 +102,7 @@ py -3.11 bootstrap_windows.py
 
 Setup creates a local `.venv`, downloads the vendored `nflows_reflectorch` package and its Git LFS files, installs PyTorch plus the project dependencies, and prints the detected compute backend.
 
-By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. On macOS, the default wheel can still expose the `mps` device at runtime on Apple Silicon.
+By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. Inference supports CUDA and CPU only; macOS uses CPU, including on Apple Silicon. MPS is disabled because the inference workflow uses float64 operations that it does not support.
 
 The bootstrap only installs Python wheels. It does not install or repair NVIDIA drivers, CUDA toolkits, or other system dependencies.
 
@@ -127,7 +127,8 @@ On Windows:
 - Missing Git: install Git and retry after reopening the terminal.
 - Missing Git LFS: install Git LFS, run `git lfs install` once, and rerun setup.
 - Torch wheel mismatch: force CPU with `make setup TORCH_WHEEL=cpu` on macOS/Linux or `python bootstrap_windows.py --torch-wheel cpu` on Windows. You can also keep the default `auto` mode and let setup fall back automatically when CUDA is not usable.
-- Apple Silicon: use the default `auto` mode; PyTorch can still report `device mps` after install.
+- macOS: setup pins SciPy to 1.14.1 to avoid the SciPy 1.15.3 PROPACK library import failure (`__thread_bss` / `dlopen`). For an existing installation, run `make deps`, then restart notebook kernels. Setup verifies the affected SciPy imports.
+- Apple Silicon: use the default `auto` mode; inference runs on CPU.
 - Windows `c10.dll` or `WinError 1114`: install or repair the Microsoft Visual C++ Redistributable 2015-2022 (x64), reboot if prompted, then rerun the Windows bootstrap.
 - Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `python bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
 
