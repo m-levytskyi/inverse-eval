@@ -146,8 +146,8 @@ jupyter lab notebooks/
 | Notebook | Description |
 |----------|-------------|
 | [`01_single_experiment.ipynb`](notebooks/01_single_experiment.ipynb) | Run inference for one experiment, inspect the fit and SLD profile, and explore prior bounds. |
-| [`03_orso_l2_nf_inference.ipynb`](notebooks/03_orso_l2_nf_inference.ipynb) | Run the two-layer NF model on the supplied ORSO reflectometry example and inspect sampled SLD profiles. |
-| [`04_pnr_polarisation_l2_nf_inference.ipynb`](notebooks/04_pnr_polarisation_l2_nf_inference.ipynb) | Run the L2 model independently on two polarized neutron reflectometry channels and compare the results with the fit reference. |
+| [`02_orso_l2_nf_inference.ipynb`](notebooks/02_orso_l2_nf_inference.ipynb) | Run the two-layer NF model on the supplied ORSO reflectometry example and inspect sampled SLD profiles. |
+| [`03_pnr_polarisation_l2_nf_inference.ipynb`](notebooks/03_pnr_polarisation_l2_nf_inference.ipynb) | Run the L2 model independently on two polarized neutron reflectometry channels and compare the results with the fit reference. |
 
 ---
 
