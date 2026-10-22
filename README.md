@@ -17,7 +17,6 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 - [Dataset Setup](#dataset-setup)
 - [Configuration](#configuration)
 - [Running Experiments](#running-experiments)
-- [Reproducing Thesis Figures](#reproducing-thesis-figures)
 - [Module Reference](#module-reference)
 
 ---
@@ -31,7 +30,7 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 3. **Constructs constraint-based prior bounds** from the true structure parameters
 4. **Runs inference** using an NF model trained via the `nflows_reflectorch` package
 5. **Evaluates** predictions against true parameters using Constraint MAPE
-6. **Generates publication-quality plots** matching the thesis figure style
+6. **Generates diagnostic and batch-analysis plots**
 
 ### Key Physical Quantities
 
@@ -172,9 +171,7 @@ inverse-eval/
 ├── requirements-dev.txt          # Development and quality tooling
 ├── requirements.torch-*.txt      # CUDA-specific PyTorch pins
 ├── Makefile                      # macOS/Linux setup helper
-├── config.py                     # Centralized path and parameter configuration
 ├── model_constraints.json        # Physical constraint bounds (per parameter type)
-├── paper.mplstyle                # Matplotlib style matching thesis typography
 │
 ├── Core Pipeline
 │   ├── simple_pipeline.py        # Single-experiment inference workflow
@@ -197,8 +194,7 @@ inverse-eval/
 │   └── find_prominent_peaks.py   # Peak detection for prominent-feature subsets
 │
 ├── Plotting
-│   ├── plotting_utils.py         # All publication-quality plot functions
-│   ├── plot_mape_vs_std.py       # MAPE vs. posterior std scatter and coverage
+│   ├── plotting_utils.py         # Shared plotting functions
 │   ├── replot_batch_results.py   # Regenerate plots from saved batch JSON
 │   ├── compare_sld_profiles.py   # SLD profile comparison utilities
 │   └── sld_profile_utils.py      # SLD profile generation helpers
@@ -214,8 +210,7 @@ inverse-eval/
 │       └── ...
 │
 ├── Results
-│   ├── batch_inference_results/  # Timestamped batch output directories
-│   └── paper_batches/            # Curated batches used in thesis figures
+│   └── batch_inference_results/  # Timestamped batch output directories
 │
 └── notebooks/
     ├── 01_single_experiment.ipynb   # Single-experiment walkthrough
@@ -245,11 +240,7 @@ python scripts/run_in_venv.py -m pre_commit run ty-check --hook-stage manual
 The repository root is the canonical data home. Standard train/test data lives
 under `dataset/`, and derived datasets used by both training and evaluation
 should also live at the root under their historical names, for example
-`denoised_as_theoretical_q/`. By default, `config.py` points to:
-
-```python
-DATA_DIRECTORY = "dataset/test"
-```
+`denoised_as_theoretical_q/`.
 
 Training and evaluation commands are expected to run from the `inverse-eval`
 root. This keeps relative paths in reflectorch configs stable:
@@ -281,18 +272,8 @@ dataset/
 
 ## Configuration
 
-All default paths and hyperparameters live in `config.py`. Override specific values per-run via CLI flags.
-
-### Key configuration values
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `DEFAULT_NF_CONFIG` | `example_nf_config_reflectorch.yaml` | NF model YAML config |
-| `DEFAULT_NF_SAMPLES` | `1000` | Posterior samples per experiment |
-| `DEFAULT_PRIORS_TYPE` | `constraint_based` | Prior construction method |
-| `DEFAULT_PRIORS_DEVIATION` | `0.30` | Constraint half-width (30% of true value) |
-| `DEFAULT_SLD_MODE` | `none` | SLD fixing: `none`, `backing`, or `all` |
-| `DEFAULT_LAYER_COUNT` | `1` | Target film structure |
+Pass inference and batch settings explicitly through the CLI. Sweep settings are
+stored in YAML files.
 
 ### Sweep configuration files
 
@@ -407,162 +388,7 @@ python batch_sweep_runner.py --config sweep_configs/qweighted.yaml
 ### Re-generate plots from saved results
 
 ```bash
-.venv/bin/python replot_batch_results.py --batch-id 075 --base-dir batch_inference_results
-```
-
----
-
-## Reproducing Thesis Figures
-
-All figures are produced using `plotting_utils.py` with `paper.mplstyle` applied globally. Figures are exported as PDF.
-
-### Prerequisites
-
-Completed batch inference runs are required. The relevant batch groups used in the thesis are stored in `paper_batches/`.
-
----
-
-### Figure 1 — MAPE Histograms (per-model)
-
-**What it shows**: Distribution of Constraint MAPE across all test experiments for each parameter type (thickness, roughness, SLD). One histogram per model variant.
-
-**Configuration used**: 30% constraint prior, no SLD fixing, no prominent-feature filtering.
-
-> **Note**: Each run processes the full test split (~900 experiments) and takes approximately **15 minutes**.
-
-**How to generate** (run once per model):
-
-```bash
-# NF Baseline
-.venv/bin/python batch_pipeline.py \
-  --data-directory dataset/test \
-  --priors-type constraint_based \
-  --priors-deviation 30 \
-  --fix-sld-mode none \
-  --inference-backend nf \
-  --config-name example_nf_config_reflectorch.yaml \
-  --nf-num-samples 1000
-
-# NF + Q-Weighted + dR
-.venv/bin/python batch_pipeline.py \
-  --data-directory dataset/test \
-  --priors-type constraint_based \
-  --priors-deviation 30 \
-  --fix-sld-mode none \
-  --inference-backend nf \
-  --config-name nf_config_mixed_sigmas_qweighted.yaml \
-  --nf-num-samples 1000 \
-  --use-sigmas-input
-
-# NF + Mean Conditioned
-.venv/bin/python batch_pipeline.py \
-  --data-directory dataset/test \
-  --priors-type constraint_based \
-  --priors-deviation 30 \
-  --fix-sld-mode none \
-  --inference-backend nf \
-  --config-name nf_config_mixed_mean_conditioned.yaml \
-  --nf-num-samples 1000
-```
-
-After each run, regenerate the plots:
-
-```bash
-.venv/bin/python replot_batch_results.py --results-dir batch_inference_results/<batch_dir>
-```
-
-Or programmatically:
-
-```python
-import json
-from plotting_utils import create_batch_analysis_plots
-
-with open("batch_inference_results/<batch_dir>/batch_results.json") as f:
-    batch_results = json.load(f)
-
-successful = {k: v for k, v in batch_results.items() if v["success"]}
-create_batch_analysis_plots(successful, layer_count=1, output_dir="figures/", save=True)
-```
-
-This produces `mape_distribution_1layer.pdf` and `parameter_breakdown_1layer.pdf`.
-
----
-
-### Figure 2 — Coverage Plot
-
-**What it shows**: Fraction of experiments where the true parameter falls within the posterior credible interval at each confidence level (ideal = identity line).
-
-**How to generate**:
-
-```bash
-python plot_mape_vs_std.py --batch-dir batch_inference_results/<batch_dir>
-```
-
-Or from Python:
-
-```python
-from plot_mape_vs_std import plot_coverage, compute_coverage_data
-
-coverage = compute_coverage_data("batch_inference_results/<batch_dir>/batch_results.json")
-plot_coverage(coverage, output_dir="figures/")
-```
-
----
-
-### Figure 3 — Single Reflectivity Curve Fit
-
-**What it shows**: Experimental reflectivity curve overlaid with the model prediction and uncertainty band, plus the inferred SLD depth profile. To reproduce the thesis figure, choose an experiment whose curve displays a visually prominent oscillation peak.
-
-**How to generate**:
-
-```python
-from simple_pipeline import run_single_experiment
-from plotting_utils import plot_simple_comparison
-
-# Use an experiment ID with a prominent oscillation peak, e.g. s000780
-results = run_single_experiment(
-    experiment_id="s000780",
-    enable_preprocessing=True,
-)
-
-plot_simple_comparison(
-    results,
-    output_path="figures/single_curve_s000780.pdf",
-    save=True,
-)
-```
-
----
-
-### Figure 4 — Evaluation Against Random Guessing
-
-**What it shows**: MAPE distribution of the NF model overlaid with a random-guessing baseline that samples uniformly from the prior bounds.
-
-**How to generate**:
-
-```bash
-python evaluate_random_guessing.py \
-  --batch-dir batch_inference_results/<batch_dir> \
-  --num-random-samples 1000 \
-  --output-dir figures/
-```
-
-Or from Python:
-
-```python
-from evaluate_random_guessing import run_random_guessing_evaluation
-from plotting_utils import plot_random_guessing_comparison
-
-model_results, random_results = run_random_guessing_evaluation(
-    batch_dir="batch_inference_results/<batch_dir>",
-    num_random_samples=1000,
-)
-
-plot_random_guessing_comparison(
-    model_results=model_results,
-    random_results=random_results,
-    output_path="figures/random_guessing.pdf",
-)
+.venv/bin/python replot_batch_results.py batch_inference_results/<batch_dir>
 ```
 
 ---
@@ -619,11 +445,11 @@ python batch_sweep_runner.py --config sweep_configs/baseline.yaml
 
 ### `plotting_utils.py`
 
-All plotting is publication-ready (PDF output, LaTeX labels, `paper.mplstyle`).
+Plots use the default Matplotlib style and write PDF artifacts where applicable.
 
 | Function | Output File | Description |
 |----------|-------------|-------------|
-| `plot_simple_comparison(results, ...)` | `comparison_*.pdf` | Single experiment: curve + SLD profile |
+| `plot_simple_comparison(q_exp, curve_exp, ..., predicted_sld_y, ...)` | caller-selected | Single experiment: curve + SLD profile |
 | `plot_batch_mape_distribution(batch_results, ...)` | `mape_distribution_*.pdf` | MAPE histogram over all experiments |
 | `plot_batch_parameter_breakdown(batch_results, ...)` | `parameter_breakdown_*.pdf` | Per-parameter MAPE breakdown |
 | `plot_model_comparison_histogram(...)` | user-specified | Overlay two model MAPE distributions |

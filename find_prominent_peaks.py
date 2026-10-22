@@ -187,9 +187,7 @@ def find_experiments_with_prominent_peaks(
     return experiments_with_peaks
 
 
-def plot_and_save_peaks(
-    q, r, peaks, exp_id, output_dir, analyze_first_half=True, paper_mode=False
-):
+def plot_and_save_peaks(q, r, peaks, exp_id, output_dir, analyze_first_half=True):
     """
     Plot and save peak detection visualization.
 
@@ -200,18 +198,11 @@ def plot_and_save_peaks(
         exp_id: Experiment ID
         output_dir: Output directory
         analyze_first_half: Whether only first half was analyzed
-        paper_mode: Use paper styling if True
     """
     title = f"Reflectivity: {exp_id}"
 
-    fig = _create_peaks_plot(
-        q, r, peaks, exp_id, title, analyze_first_half, paper_mode=paper_mode
-    )
-
-    if paper_mode:
-        output_path = Path(output_dir) / f"{exp_id}_peaks.pdf"
-    else:
-        output_path = Path(output_dir) / f"{exp_id}_peaks.png"
+    fig = _create_peaks_plot(q, r, peaks, exp_id, title, analyze_first_half)
+    output_path = Path(output_dir) / f"{exp_id}_peaks.png"
 
     plt.savefig(output_path)
     plt.close(fig)
@@ -219,9 +210,7 @@ def plot_and_save_peaks(
     return output_path
 
 
-def _create_peaks_plot(
-    q, r, peaks, exp_id, title, analyze_first_half, paper_mode=False
-):
+def _create_peaks_plot(q, r, peaks, exp_id, title, analyze_first_half):
     """Internal function to create peaks plot."""
     fig, ax = plt.subplots(figsize=(7, 5))
 
@@ -230,8 +219,7 @@ def _create_peaks_plot(
         half_idx = len(q) // 2
         q_plot = q[:half_idx]
         r_plot = r[:half_idx]
-        if not paper_mode:
-            title += " (First Half)"
+        title += " (First Half)"
     else:
         q_plot = q
         r_plot = r
@@ -240,8 +228,7 @@ def _create_peaks_plot(
     ax.set_yscale("log")
     ax.set_xlabel("$Q$ [Å$^{-1}$]")
     ax.set_ylabel("$R$")
-    if not paper_mode:
-        ax.set_title(title)
+    ax.set_title(title)
 
     # Only highlight the first peak (if any exist)
     if peaks:
@@ -261,8 +248,7 @@ def _create_peaks_plot(
         )
 
     # Fixed legend (black is experimental, not "detected peaks")
-    if not paper_mode:
-        ax.legend(loc="best")
+    ax.legend(loc="best")
 
     # Remove ticks
     ax.tick_params(axis="both", which="both", length=0)

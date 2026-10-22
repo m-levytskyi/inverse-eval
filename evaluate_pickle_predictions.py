@@ -188,10 +188,7 @@ def main():
         layer_count=1,
         output_dir=str(output_dir),
         save=True,
-        narrow_priors_deviation=width,
         use_prominent_features=False,
-        failed_count=0,
-        outlier_count=outlier_count,
     )
 
     if plot_path_overall:
@@ -204,10 +201,7 @@ def main():
         layer_count=1,
         output_dir=str(output_dir),
         save=True,
-        narrow_priors_deviation=width,
         use_prominent_features=False,
-        failed_count=0,
-        outlier_count=outlier_count,
     )
 
     if plot_path_params:
@@ -248,23 +242,6 @@ def main():
         logger.info(f"  Std Dev: {np.std(constraint_mapes):.2f}%")
         logger.info(f"  Min: {np.min(constraint_mapes):.2f}%")
         logger.info(f"  Max: {np.max(constraint_mapes):.2f}%")
-
-        # Distribution
-        excellent = sum(1 for m in constraint_mapes if m < 5)
-        good = sum(1 for m in constraint_mapes if 5 <= m < 10)
-        acceptable = sum(1 for m in constraint_mapes if 10 <= m < 20)
-        poor = sum(1 for m in constraint_mapes if m >= 20)
-
-        total = len(constraint_mapes)
-        logger.info("\n  Distribution:")
-        logger.info(
-            f"    Excellent (< 5%):     {excellent:4d} ({excellent / total * 100:5.1f}%)"
-        )
-        logger.info(f"    Good (5-10%):         {good:4d} ({good / total * 100:5.1f}%)")
-        logger.info(
-            f"    Acceptable (10-20%):  {acceptable:4d} ({acceptable / total * 100:5.1f}%)"
-        )
-        logger.info(f"    Poor (≥ 20%):         {poor:4d} ({poor / total * 100:5.1f}%)")
 
     # Parameter-specific statistics
     logger.info("\nParameter-Specific Constraint-Based MAPE:")
