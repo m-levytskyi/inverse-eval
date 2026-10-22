@@ -78,16 +78,12 @@ def parse_batch_config(batch_name: str) -> Dict:
     return config
 
 
-def extract_mapes_from_batch(
-    batch_dir: Path, use_constraint_mape: bool = True
-) -> Tuple[List[float], Dict]:
+def extract_mapes_from_batch(batch_dir: Path) -> Tuple[List[float], Dict]:
     """
     Extract MAPE values from batch summary.
 
     Args:
         batch_dir: Path to batch directory
-        use_constraint_mape: Whether to use constraint-based MAPE (default: True)
-
     Returns:
         Tuple of (mape_list, per_param_mapes_dict)
     """
@@ -104,26 +100,19 @@ def extract_mapes_from_batch(
             continue
 
         # Extract overall MAPE
-        if use_constraint_mape and "overall" in exp_info["param_metrics"]:
-            if "constraint_mape" in exp_info["param_metrics"]["overall"]:
-                mape = exp_info["param_metrics"]["overall"]["constraint_mape"]
-                mapes.append(mape)
-        elif "overall" in exp_info["param_metrics"]:
-            if "mape" in exp_info["param_metrics"]["overall"]:
-                mape = exp_info["param_metrics"]["overall"]["mape"]
-                mapes.append(mape)
+        overall = exp_info["param_metrics"].get("overall", {})
+        if "constraint_mape" in overall:
+            mapes.append(overall["constraint_mape"])
 
         # Extract per-parameter MAPE
         if "by_parameter" in exp_info["param_metrics"]:
             for param_name, param_data in exp_info["param_metrics"][
                 "by_parameter"
             ].items():
-                if use_constraint_mape and "constraint_percentage_error" in param_data:
+                if "constraint_percentage_error" in param_data:
                     per_param_mapes[param_name].append(
                         param_data["constraint_percentage_error"]
                     )
-                elif "percentage_error" in param_data:
-                    per_param_mapes[param_name].append(param_data["percentage_error"])
 
     return mapes, dict(per_param_mapes)
 
@@ -158,77 +147,6 @@ def get_batch_metadata(batch_dir: Path) -> Dict:
         "outliers": outliers,
         "priors_type": summary.get("priors_type", "unknown"),
     }
-
-
-def _plot_model_comparison_histogram_old(
-    baseline_mapes: List[float],
-    qweighted_mapes: List[float],
-    config: Dict,
-    output_path: Path,
-    baseline_meta: Dict,
-    qweighted_meta: Dict,
-):
-    """
-    DEPRECATED: Use plotting_utils.plot_model_comparison_histogram instead.
-
-    Create comparison histogram with baseline (grey) and q-weighted (colored) MAPEs.
-
-    Args:
-        baseline_mapes: List of baseline model MAPE values
-        qweighted_mapes: List of q-weighted model MAPE values
-        config: Configuration dictionary (constraint, sld_fix_mode, prominent, etc.)
-        output_path: Path to save the plot
-        baseline_meta: Metadata for baseline model
-        qweighted_meta: Metadata for q-weighted model
-    """
-    from plotting_utils import plot_model_comparison_histogram as plot_comparison
-
-    plot_comparison(
-        baseline_mapes=baseline_mapes,
-        comparison_mapes=qweighted_mapes,
-        config=config,
-        output_dir=output_path.parent,
-        save=True,
-        baseline_label="Baseline (Generated Data Only)",
-        comparison_label="Q-Weighted (Mixed Data)",
-        baseline_meta=baseline_meta,
-        comparison_meta=qweighted_meta,
-    )
-
-
-def _plot_param_comparison_old(
-    baseline_per_param: Dict[str, List[float]],
-    qweighted_per_param: Dict[str, List[float]],
-    config: Dict,
-    output_path: Path,
-    baseline_meta: Dict,
-    qweighted_meta: Dict,
-):
-    """
-    DEPRECATED: Use plotting_utils.plot_parameter_comparison_grid instead.
-
-    Create per-parameter MAPE comparison plots.
-
-    Args:
-        baseline_per_param: Dictionary of parameter name -> list of MAPEs for baseline
-        qweighted_per_param: Dictionary of parameter name -> list of MAPEs for q-weighted
-        config: Configuration dictionary
-        output_path: Path to save the plot
-        baseline_meta: Metadata for baseline model
-        qweighted_meta: Metadata for q-weighted model
-    """
-    from plotting_utils import plot_parameter_comparison_grid
-
-    plot_parameter_comparison_grid(
-        baseline_per_param=baseline_per_param,
-        comparison_per_param=qweighted_per_param,
-        config=config,
-        output_dir=output_path.parent,
-        save=True,
-        baseline_label="Baseline",
-        comparison_label="Q-Weighted",
-        priors_type=baseline_meta.get("priors_type", "constraint_based"),
-    )
 
 
 def find_matching_batches(
@@ -387,7 +305,6 @@ def generate_comparison_plots(
                 save=True,
                 baseline_label="Baseline",
                 comparison_label="Q-Weighted",
-                priors_type=baseline_meta.get("priors_type", "constraint_based"),
             )
 
         except (OSError, ValueError, KeyError, RuntimeError) as e:
