@@ -22,7 +22,6 @@ from parameter_discovery import (
     get_prior_bounds_for_experiment,
 )
 from error_calculation import (
-    calculate_fit_metrics,
     calculate_parameter_metrics,
     print_metrics_report,
 )
@@ -538,11 +537,6 @@ def run_single_experiment(
             sigmas_exp=sigmas_for_inference,
         )
 
-    # Calculate metrics
-    fit_metrics = calculate_fit_metrics(
-        curve_exp, prediction_dict["polished_curve"], sigmas_exp, q_exp, q_model
-    )
-
     param_metrics = None
     if true_params_dict and f"{final_layer_count}_layer" in true_params_dict:
         true_param_block = true_params_dict[f"{final_layer_count}_layer"]
@@ -582,8 +576,6 @@ def run_single_experiment(
             pred_params_for_metrics,
             true_params,
             true_param_names,
-            prior_bounds=prior_bounds,
-            priors_type=priors_type,
         )
 
     # Prepare results dictionary
@@ -591,7 +583,6 @@ def run_single_experiment(
         "experiment_id": experiment_id,
         "layer_count": final_layer_count,
         "prediction_dict": prediction_dict,
-        "fit_metrics": fit_metrics,
         "param_metrics": param_metrics,
         "true_params_dict": true_params_dict,
         "q_exp": q_exp,
@@ -633,7 +624,6 @@ def main():
 
     # Unpack results for clarity
     prediction_dict = results["prediction_dict"]
-    fit_metrics = results["fit_metrics"]
     param_metrics = results["param_metrics"]
     true_params_dict = results["true_params_dict"]
     q_exp = results["q_exp"]
@@ -645,9 +635,7 @@ def main():
     display_results(prediction_dict)
 
     # Print metrics report
-    print_metrics_report(
-        fit_metrics, param_metrics, "b_mc_point_neutron_conv_standard_L1_InputQDq"
-    )
+    print_metrics_report(param_metrics)
 
     # Generate true SLD profile for plotting
     if true_params_dict:

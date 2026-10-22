@@ -47,62 +47,32 @@ def calculate_mape_for_prediction(
     pred_params: np.ndarray,
     true_params: np.ndarray,
     param_names: List[str],
-    priors_type: str = None,
 ) -> float:
     """
-    Calculate MAPE for a single prediction.
+    Calculate constraint-based MAPE for a single prediction.
 
     Args:
         pred_params: Predicted parameter values
         true_params: True parameter values
         param_names: List of parameter names
-        priors_type: Type of priors used ("constraint_based" or other)
-
     Returns:
         MAPE value as percentage
     """
     if len(pred_params) != len(true_params):
         return -1.0
 
-    errors = pred_params - true_params
+    errors = np.asarray(pred_params, dtype=float) - np.asarray(true_params, dtype=float)
 
-    # Calculate percentage errors, handling true zeros
-    zero_mask = np.abs(true_params) < 1e-10
-    percentage_errors = np.zeros_like(errors)
-    nonzero_mask = ~zero_mask
+    constraint_errors = np.zeros_like(errors)
+    constraint_widths = get_constraint_widths()
+    for i, param_name in enumerate(param_names):
+        standardized_name = standardize_param_name(param_name)
+        constraint_width = constraint_widths.get(standardized_name)
+        if constraint_width is None:
+            raise ValueError(f"No constraint width configured for {standardized_name}")
+        constraint_errors[i] = np.abs(errors[i]) / constraint_width * 100
 
-    if np.any(nonzero_mask):
-        percentage_errors[nonzero_mask] = (
-            np.abs(errors[nonzero_mask] / true_params[nonzero_mask]) * 100
-        )
-    if np.any(zero_mask):
-        percentage_errors[zero_mask] = np.abs(errors[zero_mask])
-
-    # For constraint-based priors, calculate constraint-based MAPE
-    if priors_type == "constraint_based":
-        constraint_based_percentage_errors = np.zeros_like(errors)
-        constraint_widths = get_constraint_widths()
-
-        for i in range(len(errors)):
-            param_name = param_names[i]
-            # Standardize parameter name to match constraint definitions
-            standardized_name = standardize_param_name(param_name)
-            constraint_width = constraint_widths.get(standardized_name)
-            if constraint_width is not None:
-                constraint_based_percentage_errors[i] = (
-                    np.abs(errors[i]) / constraint_width * 100
-                )
-            else:
-                logger.warning(
-                    "Could not find constraint width for %s (standardized: %s)",
-                    param_name,
-                    standardized_name,
-                )
-                constraint_based_percentage_errors[i] = percentage_errors[i]
-
-        return float(np.mean(constraint_based_percentage_errors))
-    else:
-        return float(np.mean(percentage_errors))
+    return float(np.mean(constraint_errors))
 
 
 def standardize_param_name(param_name: str) -> str:
@@ -199,31 +169,14 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     model_mapes = []
     random_mapes = []
 
-    # Determine priors type from first successful result
-    priors_type = None
-    for result in successful_results.values():
-        if "priors_config" in result:
-            priors_type = result["priors_config"].get("priors_type")
-            break
-
-    logger.info(f"  Priors type: {priors_type}")
-
     for exp_id, result in successful_results.items():
         # Get model MAPE
         if "param_metrics" in result and result["param_metrics"]:
             param_metrics = result["param_metrics"]
 
-            if priors_type == "constraint_based":
-                if (
-                    "overall" in param_metrics
-                    and "constraint_mape" in param_metrics["overall"]
-                ):
-                    model_mape = param_metrics["overall"]["constraint_mape"]
-                    model_mapes.append(model_mape)
-            else:
-                if "overall" in param_metrics and "mape" in param_metrics["overall"]:
-                    model_mape = param_metrics["overall"]["mape"]
-                    model_mapes.append(model_mape)
+            model_mape = param_metrics.get("overall", {}).get("constraint_mape")
+            if model_mape is not None:
+                model_mapes.append(model_mape)
 
         # Get true parameters and param names
         if "true_params_dict" not in result or "prediction_dict" not in result:
@@ -248,7 +201,7 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
         # Generate ONE random prediction per experiment
         random_pred = generate_random_prediction(param_names, prior_bounds)
         random_mape = calculate_mape_for_prediction(
-            random_pred, true_params, param_names, priors_type
+            random_pred, true_params, param_names
         )
         if random_mape >= 0:
             random_mapes.append(random_mape)
@@ -257,51 +210,6 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     logger.info(f"  Collected {len(random_mapes)} random MAPEs")
 
     return model_mapes, random_mapes
-
-
-def plot_comparison_histogram(
-    model_mapes: List[float],
-    random_mapes: List[float],
-    batch_name: str,
-    output_path: Path,
-    priors_type: str = None,
-    layer_count: int = 1,
-    narrow_priors_deviation: float = 0.99,
-    use_prominent_features: bool = False,
-    fix_sld_mode: str = "none",
-    failed_count: int = 0,
-    outlier_count: int = 0,
-    paper_mode: bool = False,
-):
-    """
-    Create comparison histogram with model and random-guess MAPEs.
-
-    Wrapper around plot_random_guessing_comparison from plotting_utils.
-
-    Args:
-        model_mapes: List of model MAPE values
-        random_mapes: List of random-guess MAPE values
-        batch_name: Name of the batch for plot title (unused, kept for compatibility)
-        output_path: Path to save the plot
-        priors_type: Type of priors used
-        layer_count: Number of layers
-        narrow_priors_deviation: Deviation for narrow priors (unused, kept for compatibility)
-        use_prominent_features: Whether prominent features filtering was used
-        fix_sld_mode: SLD fixing mode (unused, kept for compatibility)
-        failed_count: Number of failed experiments (unused, kept for compatibility)
-        outlier_count: Number of outlier experiments (unused, kept for compatibility)
-        paper_mode: Use paper styling if True (unused, kept for compatibility)
-    """
-    output_dir = output_path.parent
-    plot_random_guessing_comparison(
-        model_mapes=model_mapes,
-        random_mapes=random_mapes,
-        output_dir=output_dir,
-        save=True,
-        priors_type=priors_type,
-        layer_count=layer_count,
-        use_prominent_features=use_prominent_features,
-    )
 
 
 def process_batches(batch_numbers: List[int]):
@@ -338,59 +246,23 @@ def process_batches(batch_numbers: List[int]):
                 logger.info(f"  Skipping batch {batch_num} - no valid data")
                 continue
 
-            # Load batch results to get configuration details
+            # Load batch results to determine the layer count.
             batch_results = load_batch_results(batch_dir)
 
-            # Get configuration from first successful result
-            priors_type = None
-            fix_sld_mode = "none"
-            narrow_priors_deviation = 0.99
             use_prominent_features = "PROMINENT" in batch_dir.name
             layer_count = 1
 
-            # Count outliers and failures
-            outlier_count = sum(
-                1 for v in batch_results.values() if v.get("excluded_as_outlier", False)
-            )
-            failed_count = sum(
-                1
-                for v in batch_results.values()
-                if not v.get("success", False)
-                and not v.get("excluded_as_outlier", False)
-            )
-
             for result in batch_results.values():
                 if result.get("success") and "priors_config" in result:
-                    priors_type = result["priors_config"].get("priors_type")
-                    fix_sld_mode = result["priors_config"].get("fix_sld_mode", "none")
                     layer_count = result.get("layer_count", 1)
-
-                    # Extract narrow_priors_deviation from batch name
-                    if "5constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.05
-                    elif "30constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.30
-                    elif "60constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.60
-                    elif "99constraint" in batch_dir.name:
-                        narrow_priors_deviation = 0.99
-
                     break
 
-            # Generate comparison plot with original layout
-            output_path = output_dir / f"batch_{batch_num:03d}_comparison.png"
-            plot_comparison_histogram(
-                model_mapes,
-                random_mapes,
-                batch_dir.name,
-                output_path,
-                priors_type,
-                layer_count,
-                narrow_priors_deviation,
-                use_prominent_features,
-                fix_sld_mode,
-                failed_count,
-                outlier_count,
+            plot_random_guessing_comparison(
+                model_mapes=model_mapes,
+                random_mapes=random_mapes,
+                output_dir=output_dir,
+                layer_count=layer_count,
+                use_prominent_features=use_prominent_features,
             )
 
         except (OSError, ValueError, KeyError, RuntimeError) as e:
@@ -487,9 +359,7 @@ def generate_synthetic_random_evaluation(
         pred_params = generate_random_prediction(param_names, prior_bounds)
 
         # Calculate constraint-based MAPE (overall)
-        mape = calculate_mape_for_prediction(
-            pred_params, true_params, param_names, "constraint_based"
-        )
+        mape = calculate_mape_for_prediction(pred_params, true_params, param_names)
 
         if mape >= 0:
             mapes.append(mape)

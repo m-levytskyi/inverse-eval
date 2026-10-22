@@ -43,66 +43,6 @@ def convert_to_json_serializable(obj):
             return str(obj)
 
 
-def validate_layer_count(layer_count):
-    """
-    Validate that layer count is within acceptable range.
-
-    Args:
-        layer_count: Number of layers to validate
-
-    Returns:
-        bool: True if valid
-
-    Raises:
-        ValueError: If layer count is invalid
-    """
-    if not isinstance(layer_count, int):
-        raise ValueError(f"Layer count must be an integer, got {type(layer_count)}")
-
-    if layer_count < 0 or layer_count > 2:
-        raise ValueError(f"Layer count must be 0, 1, or 2, got {layer_count}")
-
-    return True
-
-
-def format_parameter_value(param_name, value, units=True):
-    """
-    Format parameter values for display with appropriate units and precision.
-
-    Args:
-        param_name: Name of the parameter
-        value: Parameter value
-        units: Whether to include units in output
-
-    Returns:
-        str: Formatted parameter string
-    """
-    if "sld" in param_name.lower():
-        # SLD values in scientific notation
-        if units:
-            return f"{value:.2e} Å⁻²"
-        else:
-            return f"{value:.2e}"
-    elif "thickness" in param_name.lower():
-        # Thickness in Angstroms
-        if units:
-            return f"{value:.1f} Å"
-        else:
-            return f"{value:.1f}"
-    elif "rough" in param_name.lower():
-        # Roughness in Angstroms
-        if units:
-            return f"{value:.1f} Å"
-        else:
-            return f"{value:.1f}"
-    else:
-        # Default formatting
-        if units:
-            return f"{value:.3f}"
-        else:
-            return f"{value:.3f}"
-
-
 def ensure_directory_exists(directory_path):
     """
     Ensure a directory exists, creating it if necessary.
@@ -118,23 +58,3 @@ def ensure_directory_exists(directory_path):
     directory = Path(directory_path)
     directory.mkdir(parents=True, exist_ok=True)
     return directory
-
-
-def format_time_duration(seconds):
-    """
-    Format a time duration in seconds to a human-readable string.
-
-    Args:
-        seconds: Duration in seconds
-
-    Returns:
-        str: Formatted duration string
-    """
-    if seconds < 60:
-        return f"{seconds:.1f} seconds"
-    elif seconds < 3600:
-        minutes = seconds / 60
-        return f"{minutes:.1f} minutes"
-    else:
-        hours = seconds / 3600
-        return f"{hours:.1f} hours"
