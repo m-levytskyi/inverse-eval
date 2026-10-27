@@ -27,7 +27,8 @@ The pipeline evaluates the custom **nflows_reflectorch** package — an extensio
 1. **Loads** experimental neutron reflectometry curves (Q vs. R with error bars dR)
 2. **Preprocesses** the data (filters high-error points that cause tensor errors)
 3. **Constructs constraint-based prior bounds** from the true structure parameters
-4. **Runs inference** using an NF model trained via the `nflows_reflectorch` package
+4. **Runs inference** with the reflectorch prediction backend or the NF backend
+   provided by `nflows_reflectorch`
 5. **Evaluates** predictions against true parameters using Constraint MAPE
 6. **Generates publication-quality plots** matching the thesis figure style
 
@@ -162,7 +163,6 @@ inverse-eval/
 ├── requirements-dev.txt          # Development and quality tooling
 ├── requirements.torch-*.txt      # CUDA-specific PyTorch pins
 ├── Makefile                      # macOS/Linux setup helper
-├── config.py                     # Centralized path and parameter configuration
 ├── model_constraints.json        # Physical constraint bounds (per parameter type)
 ├── paper.mplstyle                # Matplotlib style matching thesis typography
 │
@@ -187,8 +187,7 @@ inverse-eval/
 │   └── find_prominent_peaks.py   # Peak detection for prominent-feature subsets
 │
 ├── Plotting
-│   ├── plotting_utils.py         # All publication-quality plot functions
-│   ├── plot_mape_vs_std.py       # MAPE vs. posterior std scatter and coverage
+│   ├── plotting_utils.py         # Curve/SLD and batch-analysis plots
 │   ├── replot_batch_results.py   # Regenerate plots from saved batch JSON
 │   ├── compare_sld_profiles.py   # SLD profile comparison utilities
 │   └── sld_profile_utils.py      # SLD profile generation helpers
@@ -200,31 +199,29 @@ inverse-eval/
 │   └── sweep_configs/            # YAML configs for automated sweeps
 │       ├── baseline.yaml         # NF baseline model sweep
 │       ├── qweighted.yaml        # Q-weighted input transformation sweep
-│       ├── calibration.yaml      # Calibration analysis sweep
+│       ├── calibration.yaml      # Baseline settings for calibration runs
 │       └── ...
 │
 ├── Results
-│   ├── batch_inference_results/  # Timestamped batch output directories
-│   └── paper_batches/            # Curated batches used in thesis figures
+│   ├── batch_results/            # Default batch output directory (created at runtime)
+│   └── sweep_results*/           # Sweep output directories (created at runtime)
 │
 └── notebooks/
     ├── 01_single_experiment.ipynb                # Single-experiment walkthrough
-    ├── 03_orso_l2_nf_inference.ipynb             # ORSO two-layer inference
-    └── 04_pnr_polarisation_l2_nf_inference.ipynb # Polarized PNR inference
+    ├── 02_orso_l2_nf_inference.ipynb             # ORSO two-layer inference
+    └── 03_pnr_polarisation_l2_nf_inference.ipynb # Polarized PNR inference
 ```
 
 ---
 
 ## Dataset Setup
 
-The repository root is the canonical data home. Standard train/test data lives
-under `dataset/`, and derived datasets used by both training and evaluation
-should also live at the root under their historical names, for example
-`denoised_as_theoretical_q/`. By default, `config.py` points to:
-
-```python
-DATA_DIRECTORY = "dataset/test"
-```
+Run training and evaluation commands from the repository root. Standard
+train/test data lives under `dataset/`, and derived datasets used by both
+training and evaluation should also live at the root under their historical
+names, for example `denoised_as_theoretical_q/`. The single-experiment
+notebooks use `dataset/test`; the batch CLI defaults to `data` and accepts
+`--data-directory` to select another dataset directory.
 
 Training and evaluation commands are expected to run from the `inverse-eval`
 root. This keeps relative paths in reflectorch configs stable:
@@ -236,13 +233,15 @@ checkout state; do not rely on it for new workflows.
 ### Dataset Layout
 
 Experiment IDs use the format `sXXXXXX` (zero-padded six-digit integer), e.g. `s000780`.
-Each experiment consists of three files stored flat inside the split directory:
+Experiments are stored flat inside the split directory. Common files include
+the measured curve and model parameters; theoretical curves are available for
+some experiments:
 
 ```
 dataset/
 ├── test/
-│   ├── s000004_experimental_curve.dat   # Q, R, dR columns (experimental)
-│   ├── s000004_theoretical_curve.dat    # Q, R columns (simulated ground truth)
+│   ├── s000004_experimental_curve.dat   # Q, R, dR, dQ columns (measured)
+│   ├── s000004_theoretical_curve.dat    # Q, R and derived columns (if available)
 │   ├── s000004_model.txt                # True structural parameters
 │   ├── s000014_experimental_curve.dat
 │   ├── s000014_model.txt
@@ -256,18 +255,18 @@ dataset/
 
 ## Configuration
 
-All default paths and hyperparameters live in `config.py`. Override specific values per-run via CLI flags.
+There is no central `config.py` module. Set options at the entry point you use:
 
-### Key configuration values
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `DEFAULT_NF_CONFIG` | `example_nf_config_reflectorch.yaml` | NF model YAML config |
-| `DEFAULT_NF_SAMPLES` | `1000` | Posterior samples per experiment |
-| `DEFAULT_PRIORS_TYPE` | `constraint_based` | Prior construction method |
-| `DEFAULT_PRIORS_DEVIATION` | `0.30` | Constraint half-width (30% of true value) |
-| `DEFAULT_SLD_MODE` | `none` | SLD fixing: `none`, `backing`, or `all` |
-| `DEFAULT_LAYER_COUNT` | `1` | Target film structure |
+- For a single experiment, pass options to `simple_pipeline.run_single_experiment(...)`.
+- For batch inference, use `batch_pipeline.py` options such as `--data-directory`,
+  `--output-dir`, `--layer-count`, `--priors-type`, `--priors-deviation`,
+  `--fix-sld-mode`, `--inference-backend`, `--config-name`, and
+  `--nf-num-samples`. Run `python batch_pipeline.py --help` for the full list.
+- The single-experiment notebooks set their dataset path in a `DATA_DIRECTORY`
+  cell; edit that value when using another dataset.
+- For parameter sweeps, use YAML files in `sweep_configs/`; command-line options
+  to `batch_sweep_runner.py` can override sweep settings. Run
+  `python batch_sweep_runner.py --help` for available overrides.
 
 ### Sweep configuration files
 
@@ -275,12 +274,12 @@ YAML files in `sweep_configs/` define automated multi-run parameter sweeps:
 
 | File | Model | Description |
 |------|-------|-------------|
-| `baseline.yaml` | NF baseline | Default generated-data training |
+| `baseline.yaml` | NF baseline | Baseline NF evaluation on `dataset/test` |
 | `qweighted.yaml` | NF + Q-weighted + dR | Mixed data, Q-weighted inputs |
-| `q_exp1_2.yaml` | NF + Q-weighted α=2,β=2 | Standard Fresnel weighting |
-| `q_exp2.yaml` | NF + Q-weighted α=4,β=4 | Strong Fresnel weighting |
+| `q_exp1.yaml` | NF + Q-weighted exp1 | Q-weighted mixed-sigma inputs |
+| `q_exp2.yaml` | NF + Q-weighted exp2 | Q-weighted mixed-sigma inputs |
 | `mean.yaml` | NF + mean conditioned | Mean-centered curve scaling |
-| `calibration.yaml` | Calibration analysis | MAPE vs. posterior std |
+| `calibration.yaml` | NF baseline | Baseline settings for calibration runs |
 
 ---
 
@@ -318,6 +317,7 @@ from simple_pipeline import run_single_experiment
 results = run_single_experiment(
     experiment_id="s000004",
     enable_preprocessing=True,
+    data_directory="dataset/test",
 )
 print(results["param_metrics"]["overall"]["constraint_mape"])
 ```
@@ -327,6 +327,7 @@ print(results["param_metrics"]["overall"]["constraint_mape"])
 ```bash
 .venv/bin/python batch_pipeline.py \
   --layer-count 1 \
+  --data-directory dataset/test \
   --num-experiments 100 \
   --priors-type constraint_based \
   --priors-deviation 30 \
@@ -340,12 +341,12 @@ Key flags:
 
 | Flag | Values | Description |
 |------|--------|-------------|
-| `--layer-count` | `0`, `1`, `2` | Film layer count |
+| `--layer-count` | `1`, `2` | Film layer count |
 | `--num-experiments` | integer or omit | Experiments to process (omit = all) |
-| `--priors-deviation` | `5`, `30`, `99` | Constraint width as % of true value |
+| `--priors-deviation` | `5`, `30`, `60`, `99` | Prior deviation percentage |
 | `--fix-sld-mode` | `none`, `backing`, `all` | Fix SLD parameters from ground truth |
 | `--use-prominent-features` | flag | Restrict to high-contrast curve subset |
-| `--inference-backend` | `nf` | Inference backend |
+| `--inference-backend` | `predict`, `nf` | Inference backend |
 | `--config-name` | filename | NF model YAML config file |
 | `--use-sigmas-input` | flag | Pass dR as additional model input |
 
@@ -382,7 +383,7 @@ python batch_sweep_runner.py --config sweep_configs/qweighted.yaml
 ### Re-generate plots from saved results
 
 ```bash
-.venv/bin/python replot_batch_results.py --batch-id 075 --base-dir batch_inference_results
+.venv/bin/python replot_batch_results.py batch_results/YOUR_BATCH_DIRECTORY
 ```
 
 ---
@@ -418,7 +419,7 @@ python batch_pipeline.py [OPTIONS]
 | Class / Function | Description |
 |-----------------|-------------|
 | `BatchInferencePipeline` | Orchestrates multi-experiment processing |
-| `.run_batch_inference()` | Main entry point; discovers experiments, runs pipeline, saves JSON |
+| `.run()` | Main entry point; discovers experiments, runs the pipeline, and saves JSON |
 
 ### `batch_sweep_runner.py`
 
@@ -441,11 +442,12 @@ python batch_sweep_runner.py --config sweep_configs/baseline.yaml
 
 ### `plotting_utils.py`
 
-All plotting is publication-ready (PDF output, LaTeX labels, `paper.mplstyle`).
+Plotting utilities cover single-experiment curve/SLD comparisons and batch
+summaries; batch plots can be saved as PDF files or displayed interactively.
 
 | Function | Output File | Description |
 |----------|-------------|-------------|
-| `plot_simple_comparison(results, ...)` | `comparison_*.pdf` | Single experiment: curve + SLD profile |
+| `plot_simple_comparison(q_exp, curve_exp, ..., predicted_sld_y, ...)` | displayed figure | Single experiment: curve + SLD profile |
 | `plot_batch_mape_distribution(batch_results, ...)` | `mape_distribution_*.pdf` | MAPE histogram over all experiments |
 | `plot_batch_parameter_breakdown(batch_results, ...)` | `parameter_breakdown_*.pdf` | Per-parameter MAPE breakdown |
 | `plot_model_comparison_histogram(...)` | user-specified | Overlay two model MAPE distributions |
@@ -464,13 +466,14 @@ Steps applied:
 
 ### `parameter_discovery.py`
 
-Discovers experiment files, parses true structural parameters from `model.dat`, and builds constraint-based prior bounds.
+Discovers experiment files, parses true structural parameters from model files
+(normally named `*_model.txt`), and builds constraint-based prior bounds.
 
 ### `error_calculation.py`
 
 Calculates MAPE variants:
 - **Standard MAPE**: `|pred - true| / |true| × 100`
-- **Constraint MAPE**: `|pred - true| / constraint_width × 100` — normalises by prior half-width rather than true value, making it interpretable across different parameter scales
+- **Constraint MAPE**: `|pred - true| / constraint_width × 100` — normalises by the parameter-specific width in `model_constraints.json`, making it interpretable across different parameter scales.
 
 ### `find_prominent_peaks.py`
 
