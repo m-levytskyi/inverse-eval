@@ -26,6 +26,7 @@ from reflectorch import EasyInferenceModel
 
 from device_utils import detect_torch_device
 from error_calculation import calculate_parameter_metrics
+from nf_statistics import validate_nf_samples
 from multimodal_posterior_mape import (
     select_current_ml_sample,
     select_multimodal_ml_sample,
@@ -37,7 +38,8 @@ from parameter_discovery import (
 )
 from simple_pipeline import (
     _extend_prior_bounds_for_nf,
-    _map_pred_param_name_to_canonical_true_name,
+    align_samples_to_true,
+    get_inference_prior_limits,
     load_experimental_data,
 )
 
@@ -66,12 +68,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def to_numpy(value):
-    if hasattr(value, "detach"):
-        value = value.detach().cpu()
-    return np.asarray(value)
-
-
 def quiet_call(func, *args, **kwargs):
     with contextlib.redirect_stdout(io.StringIO()):
         return func(*args, **kwargs)
@@ -85,21 +81,6 @@ def success_ids(saved_batch_json: Path, n: int, seed: int, use_all: bool):
     rng = random.Random(seed)
     rng.shuffle(ids)
     return ids[:n], data
-
-
-def align_samples_to_true(samples, pred_param_names, true_param_names, layer_count):
-    canonical_to_index = {}
-    for index, pred_name in enumerate(pred_param_names):
-        canonical = _map_pred_param_name_to_canonical_true_name(pred_name, layer_count)
-        if canonical in true_param_names and canonical not in canonical_to_index:
-            canonical_to_index[canonical] = index
-
-    missing = [name for name in true_param_names if name not in canonical_to_index]
-    if missing:
-        raise ValueError(f"Predicted posterior is missing true parameters: {missing}")
-
-    indices = [canonical_to_index[name] for name in true_param_names]
-    return np.asarray(samples, dtype=float)[:, indices]
 
 
 def parameter_metrics(pred_params, true_params, true_param_names):
@@ -145,6 +126,10 @@ def evaluate_one(
     true_block = true_params_dict[f"{layer_count}_layer"]
     true_params = np.asarray(true_block["params"], dtype=float)
     true_param_names = list(true_block["param_names"])
+    ambient_sld = true_block.get("ambient_sld", 0.0)
+    model_ranges, width_limits = get_inference_prior_limits(
+        inference_model, layer_count, ambient_sld
+    )
     prior_bounds = quiet_call(
         get_prior_bounds_for_experiment,
         experiment_id,
@@ -153,38 +138,42 @@ def evaluate_one(
         deviation=0.30,
         layer_count=layer_count,
         fix_sld_mode="none",
-    )
-
-    q_model, curve_interp = quiet_call(
-        inference_model.interpolate_data_to_model_q, q_exp, curve_exp
+        model_ranges=model_ranges,
+        width_limits=width_limits,
     )
     posterior = quiet_call(
         inference_model.preprocess_and_sample,
-        reflectivity_curve=curve_interp,
-        q_values=q_model,
+        reflectivity_curve=curve_exp,
+        q_values=q_exp,
         num_samples=nf_num_samples,
-        prior_bounds=_extend_prior_bounds_for_nf(prior_bounds),
+        prior_bounds=_extend_prior_bounds_for_nf(prior_bounds, inference_model),
         q_resolution=0.1,
         calc_sampled_curves=False,
         calc_sampled_sld_profiles=False,
         calc_log_likelihoods=True,
         enable_importance_sampling=True,
         clip_prediction=True,
+        ambient_sld=ambient_sld,
+        kwargs_param_labels={"number_top_to_bottom": True},
+        enable_error_bars_filtering=False,
+        rel_err_factor=0.2,
     )
 
+    raw_samples, log_likelihoods, valid_mask = validate_nf_samples(
+        posterior["predicted_params_array"], posterior["log_likelihoods"]
+    )
     samples = align_samples_to_true(
-        to_numpy(posterior["predicted_params_array"]).astype(float),
+        raw_samples,
         list(posterior["param_names"]),
         true_param_names,
         layer_count,
     )
-    log_likelihoods = to_numpy(posterior["log_likelihoods"]).astype(float)
-
     current = select_current_ml_sample(
         samples,
         log_likelihoods,
         true_params,
         true_param_names,
+        valid_mask=valid_mask,
     )
     multimodal = select_multimodal_ml_sample(
         samples,
@@ -193,6 +182,7 @@ def evaluate_one(
         true_param_names,
         k_values=k_values,
         random_state=0,
+        valid_mask=valid_mask,
     )
     current_metrics = parameter_metrics(
         current["selected_params"], true_params, true_param_names

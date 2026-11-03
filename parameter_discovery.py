@@ -17,121 +17,70 @@ from sld_profile_utils import sld_profile
 logger = logging.getLogger(__name__)
 
 
+def _find_experiment_pairs(
+    data_directory, layer_count, use_theoretical, experiment_id=None
+):
+    """Find complete same-directory pairs, validating path and model layer counts."""
+    if layer_count not in (None, 1, 2):
+        raise ValueError(f"Unsupported layer count: {layer_count}")
+    root = Path(data_directory)
+    suffix = "_theoretical_curve.dat" if use_theoretical else "_experimental_curve.dat"
+    pattern = f"{experiment_id}{suffix}" if experiment_id is not None else f"s*{suffix}"
+    for curve in sorted(root.rglob(pattern)):
+        path_layer = next(
+            (
+                int(directory.name)
+                for directory in [curve.parent, *curve.parent.parents]
+                if directory.name in {"1", "2"}
+                and (directory == root or root in directory.parents)
+            ),
+            None,
+        )
+        if layer_count is not None and path_layer not in (None, layer_count):
+            continue
+        exp_id = curve.name.removesuffix(suffix)
+        model = next(
+            (
+                candidate
+                for extension in ("txt", "dat")
+                if (
+                    candidate := curve.with_name(f"{exp_id}_model.{extension}")
+                ).is_file()
+            ),
+            None,
+        )
+        if model is None:
+            continue
+        parsed = parse_true_parameters_from_model_file(model)
+        model_layer = next((n for n in (1, 2) if f"{n}_layer" in parsed), None)
+        if model_layer is None:
+            logger.warning("Skipping %s: no supported one- or two-layer model", model)
+            continue
+        if path_layer is not None and model_layer not in (None, path_layer):
+            raise ValueError(f"Layer directory and model disagree for {model}")
+        detected_layer = model_layer or path_layer
+        if layer_count is not None and detected_layer not in (None, layer_count):
+            continue
+        yield exp_id, curve, model, detected_layer
+
+
 def discover_experiment_files(
     experiment_id, data_directory, layer_count=None, use_theoretical=False
 ):
-    """
-    Discover experimental data and model files for a given experiment ID.
-
-    Args:
-        experiment_id: Experiment identifier (e.g., 's000000')
-        data_directory: Base data directory to search
-        layer_count: Number of layers (1 or 2). If None, searches both
-        use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
-
-    Returns:
-        Tuple of (data_file_path, model_file_path, detected_layer_count) or (None, None, None) if not found
-    """
-    data_dir = Path(data_directory)
-    exp_data_file = None
-    exp_model_file = None
-    detected_layer_count = None
-
-    logger.info(f"Searching for experiment files for {experiment_id}")
-    logger.info(f"Base directory: {data_dir}")
-    if layer_count:
-        logger.info(f"Looking specifically for {layer_count}-layer data")
-
-    # Define search patterns - choose based on use_theoretical flag
-    if use_theoretical:
-        data_patterns = [f"{experiment_id}_theoretical_curve.dat"]
-        logger.info("Using THEORETICAL curves")
-    else:
-        data_patterns = [f"{experiment_id}_experimental_curve.dat"]
-        logger.info("Using EXPERIMENTAL curves")
-
-    model_patterns = [f"{experiment_id}_model.txt", f"{experiment_id}_model.dat"]
-
-    # Define layer directories to search
-    layer_dirs_to_search = []
-    if layer_count is not None:
-        layer_dirs_to_search = [str(layer_count)]
-    else:
-        layer_dirs_to_search = ["1", "2"]  # Search both if not specified
-
-    # Search in subdirectories recursively
-    def search_directory(directory, depth=0):
-        nonlocal exp_data_file, exp_model_file, detected_layer_count
-
-        if depth > 3:  # Prevent infinite recursion
-            return
-
-        if not directory.is_dir():
-            return
-
-        logger.info(f"Searching in: {directory}")
-
-        # Check if this is a layer directory (contains '1' or '2')
-        dir_name = directory.name
-        current_layer_count = None
-
-        # Check if directory name indicates layer count
-        if dir_name in layer_dirs_to_search:
-            current_layer_count = int(dir_name)
-            logger.info(
-                f"Found layer directory: {directory} (layer count: {current_layer_count})"
-            )
-
-        # Look for data files in current directory
-        for pattern in data_patterns:
-            data_file = directory / pattern
-            if data_file.exists():
-                logger.info(f"Found experimental data: {data_file}")
-                exp_data_file = data_file
-                if current_layer_count:
-                    detected_layer_count = current_layer_count
-                break
-
-        # Look for model files in current directory
-        for pattern in model_patterns:
-            model_file = directory / pattern
-            if model_file.exists():
-                logger.info(f"Found model file: {model_file}")
-                exp_model_file = model_file
-                if current_layer_count and detected_layer_count is None:
-                    detected_layer_count = current_layer_count
-                break
-
-        # If both files found, stop searching
-        if exp_data_file and exp_model_file:
-            return
-
-        # Recursively search subdirectories
-        try:
-            for subdir in directory.iterdir():
-                if subdir.is_dir():
-                    search_directory(subdir, depth + 1)
-                    if exp_data_file and exp_model_file:
-                        return
-        except PermissionError:
-            logger.warning("Permission denied accessing: %s", directory)
-
-    # Start search from data directory
-    search_directory(data_dir)
-
-    if not exp_data_file:
-        logger.warning("Experimental data file for %s not found", experiment_id)
-        logger.info(f"Searched patterns: {data_patterns}")
-        logger.info(f"In layer directories: {layer_dirs_to_search}")
-    if not exp_model_file:
-        logger.warning("Model file for %s not found", experiment_id)
-        logger.info(f"Searched patterns: {model_patterns}")
-        logger.info(f"In layer directories: {layer_dirs_to_search}")
-
-    if detected_layer_count:
-        logger.info(f"Detected layer count: {detected_layer_count}")
-
-    return exp_data_file, exp_model_file, detected_layer_count
+    """Return one same-directory curve/model pair; reject ambiguous experiment IDs."""
+    pairs = list(
+        _find_experiment_pairs(
+            data_directory, layer_count, use_theoretical, experiment_id
+        )
+    )
+    if len(pairs) > 1:
+        raise ValueError(
+            f"Ambiguous experiment {experiment_id}: {[str(p[1]) for p in pairs]}"
+        )
+    if not pairs:
+        return None, None, None
+    _, curve, model, detected_layer = pairs[0]
+    return curve, model, detected_layer
 
 
 def parse_true_parameters_from_model_file(model_file_path):
@@ -232,6 +181,7 @@ def parse_true_parameters_from_model_file(model_file_path):
         true_params_dict["1_layer"] = {
             "params": params_1_layer,
             "param_names": names_1_layer,
+            "ambient_sld": fronting.get("sld", 0.0) * 1e6,
         }
         logger.info(f"1-layer parameters: {params_1_layer}")
         logger.info(
@@ -275,6 +225,7 @@ def parse_true_parameters_from_model_file(model_file_path):
         true_params_dict["2_layer"] = {
             "params": params_2_layer,
             "param_names": names_2_layer,
+            "ambient_sld": fronting.get("sld", 0.0) * 1e6,
         }
         logger.info(f"2-layer parameters: {params_2_layer}")
         logger.info(
@@ -312,7 +263,7 @@ def get_parameter_names_for_layer_count(layer_count):
 
 
 def generate_true_sld_profile(
-    true_params_dict, x_range=(0, 1000), n_points=1000, ambient_sld=0.0, x_axis=None
+    true_params_dict, x_range=(0, 1000), n_points=1000, ambient_sld=None, x_axis=None
 ):
     """
     Generate a true SLD profile from parsed parameters.
@@ -321,7 +272,7 @@ def generate_true_sld_profile(
         true_params_dict: Dictionary with parsed true parameters
         x_range: Tuple of (min, max) depth values in Angstroms
         n_points: Number of points in the profile
-        ambient_sld: SLD of the fronting medium in 10^-6 Angstrom^-2
+        ambient_sld: Optional override of the parsed fronting SLD, in 10^-6 Angstrom^-2
         x_axis: Optional explicit depth axis in Angstroms
 
     Returns:
@@ -341,6 +292,8 @@ def generate_true_sld_profile(
 
     params = true_params_dict[layer_key]["params"]
     param_names = true_params_dict[layer_key]["param_names"]
+    if ambient_sld is None:
+        ambient_sld = true_params_dict[layer_key].get("ambient_sld", 0.0)
 
     logger.info(f"Using {layer_key} interpretation")
     logger.info(f"Parameters: {dict(zip(param_names, params))}")
@@ -382,155 +335,99 @@ def generate_true_sld_profile(
     return x_axis, profile
 
 
-def apply_sld_fixing(bounds, true_params_dict, layer_count, fix_sld_mode):
-    """
-    Apply SLD fixing to prior bounds based on the specified mode.
-
-    Args:
-        bounds: List of (min, max) tuples for prior bounds
-        true_params_dict: Dictionary with true parameters
-        layer_count: Number of layers (1 or 2)
-        fix_sld_mode: SLD fixing mode - "backing", "all", or "none"
-
-    Returns:
-        Updated list of (min, max) tuples with fixed SLD bounds
-    """
-    if fix_sld_mode == "none" or not true_params_dict:
-        return bounds
-
-    layer_key = f"{layer_count}_layer"
-    if layer_key not in true_params_dict:
-        logger.info(
-            f"Warning: No true parameters found for {layer_count} layer - cannot apply SLD fixing"
+def _bounded_prior(value, requested_width, value_range, width_range, name):
+    """Keep the requested width inside model limits without moving truth outside it."""
+    lower, upper = value_range
+    minimum_width, maximum_width = width_range
+    if not np.all(
+        np.isfinite(
+            [value, requested_width, lower, upper, minimum_width, maximum_width]
         )
-        return bounds
+    ):
+        raise ValueError(f"Non-finite prior values for {name}")
+    if (
+        lower >= upper
+        or minimum_width <= 0
+        or maximum_width < minimum_width
+        or requested_width < 0
+    ):
+        raise ValueError(f"Invalid prior limits for {name}")
+    if not lower <= value <= upper:
+        raise ValueError(
+            f"True {name}={value} is outside supported inference range [{lower}, {upper}]"
+        )
+    maximum_width = min(maximum_width, upper - lower)
+    if maximum_width < minimum_width:
+        raise ValueError(
+            f"Supported inference range for {name} is narrower than its minimum prior width"
+        )
+    width = min(max(requested_width, minimum_width), maximum_width)
+    low = min(max(value - width / 2, lower), upper - width)
+    return float(low), float(low + width)
 
-    true_params = true_params_dict[layer_key]["params"]
-    param_names = get_parameter_names_for_layer_count(layer_count)
 
-    # Create a copy of bounds to modify
-    fixed_bounds = list(bounds)
+def _prior_limits(model_ranges=None, width_limits=None):
+    """Retain legacy point-model limits for callers without a selected model."""
+    evaluation_ranges = get_constraint_ranges()
+    ranges = dict(evaluation_ranges)
+    if model_ranges is not None:
+        for name, (lower, upper) in model_ranges.items():
+            if name in ranges:
+                ranges[name] = (
+                    max(lower, ranges[name][0]),
+                    min(upper, ranges[name][1]),
+                )
+    widths = {
+        name: (0.01, 5.0 if "sld" in name else upper - lower)
+        for name, (lower, upper) in evaluation_ranges.items()
+    }
+    if width_limits is not None:
+        widths.update(width_limits)
+    return ranges, widths
 
-    logger.info(f"Applying SLD fixing mode: {fix_sld_mode}")
 
-    # Define which SLDs to fix based on mode
-    if fix_sld_mode == "backing":
-        if layer_count == 1:
-            # Can only fix backing (sub_sld) - fronting SLD is not a parameter
-            sld_params_to_fix = ["sub_sld"]  # backing only
-        elif layer_count == 2:
-            # Can only fix backing (sub_sld) - fronting SLD is not a parameter
-            sld_params_to_fix = ["sub_sld"]  # backing only
-    elif fix_sld_mode == "all":
-        if layer_count == 1:
-            sld_params_to_fix = ["layer_sld", "sub_sld"]  # all SLDs
-        elif layer_count == 2:
-            sld_params_to_fix = ["layer1_sld", "layer2_sld", "sub_sld"]  # all SLDs
-    else:
+def apply_sld_fixing(
+    bounds,
+    true_params_dict,
+    layer_count,
+    fix_sld_mode,
+    model_ranges=None,
+    width_limits=None,
+):
+    """Use the narrowest supported SLD intervals for the requested fixing mode."""
+    if fix_sld_mode not in {"none", "backing", "all"}:
         raise ValueError(f"Unknown fix_sld_mode: {fix_sld_mode}")
-
-    # Apply fixing
-    for i, param_name in enumerate(param_names):
-        if param_name in sld_params_to_fix:
-            true_value = true_params[i]
-            # Set tight bounds around the true value (±0.001 to essentially fix it)
-            epsilon = 0.001
-            fixed_bounds[i] = (true_value - epsilon, true_value + epsilon)
-            logger.info(
-                f"  Fixed {param_name}: {true_value:.3f} (bounds: [{true_value - epsilon:.3f}, {true_value + epsilon:.3f}])"
+    if fix_sld_mode == "none":
+        return bounds
+    block = true_params_dict[f"{layer_count}_layer"]
+    names = get_parameter_names_for_layer_count(layer_count)
+    ranges, widths = _prior_limits(model_ranges, width_limits)
+    fixed = list(bounds)
+    for index, (name, value) in enumerate(zip(names, block["params"])):
+        if name == "sub_sld" or (fix_sld_mode == "all" and "sld" in name):
+            fixed[index] = _bounded_prior(
+                value, 0.002, ranges[name], widths[name], name
             )
-
-    return fixed_bounds
+    return fixed
 
 
 def get_constraint_based_prior_bounds(
-    true_params_dict, layer_count, constraint_percentage
+    true_params_dict,
+    layer_count,
+    constraint_percentage,
+    model_ranges=None,
+    width_limits=None,
 ):
-    """
-    Generate constraint-based prior bounds using a percentage of the model constraint span.
-
-    Args:
-        true_params_dict: Dictionary with true parameters
-        layer_count: Number of layers (1 or 2)
-        constraint_percentage: Percentage of constraint span to use (e.g., 0.3 for 30%)
-
-    Returns:
-        List of (min, max) tuples for prior bounds
-    """
-    layer_key = f"{layer_count}_layer"
-    if layer_key not in true_params_dict:
-        raise ValueError(f"No true parameters found for {layer_count} layer")
-
-    true_params = true_params_dict[layer_key]["params"]
-    param_names = get_parameter_names_for_layer_count(layer_count)
-
-    # Load model constraints from centralized definition
-    model_constraints = get_constraint_ranges()
-
-    # Allowed widths (same as in narrow priors)
-    allowed_widths = {
-        "thickness": (0.01, 1000.0),
-        "amb_rough": (0.01, 60.0),
-        "sub_rough": (0.01, 60.0),
-        "int_rough": (0.01, 60.0),  # for 2-layer
-        "layer_sld": (0.01, 5.0),
-        "layer1_sld": (0.01, 5.0),  # for 2-layer
-        "layer2_sld": (0.01, 5.0),  # for 2-layer
-        "sub_sld": (0.01, 5.0),
-        "thickness1": (0.01, 1000.0),  # for 2-layer
-        "thickness2": (0.01, 1000.0),  # for 2-layer
-    }
-
-    bounds = []
-
-    logger.info(
-        f"Generating constraint-based prior bounds ({constraint_percentage * 100:.0f}% of constraint span)"
+    """Generate priors from fixed evaluation spans, capped by the selected model."""
+    return get_prior_bounds_for_experiment(
+        "unknown",
+        true_params_dict,
+        priors_type="constraint_based",
+        deviation=constraint_percentage,
+        layer_count=layer_count,
+        model_ranges=model_ranges,
+        width_limits=width_limits,
     )
-
-    for i, (param_name, param_value) in enumerate(zip(param_names, true_params)):
-        # Get constraints for this parameter
-        model_min, model_max = model_constraints.get(param_name, (-1e6, 1e6))
-        width_min, width_max = allowed_widths.get(param_name, (0.01, 1e6))
-
-        # Calculate span of model constraints
-        constraint_span = model_max - model_min
-
-        # Calculate width as percentage of constraint span
-        target_width = constraint_percentage * constraint_span
-
-        # Clip to allowed widths
-        target_width = max(width_min, min(target_width, width_max))
-
-        # Center around true value
-        half_width = target_width / 2
-        min_val = param_value - half_width
-        max_val = param_value + half_width
-
-        # Adjust if bounds exceed model constraints
-        if max_val > model_max:
-            # Shift left
-            shift = max_val - model_max
-            max_val = model_max
-            min_val = max(min_val - shift, model_min)
-
-        if min_val < model_min:
-            # Shift right
-            shift = model_min - min_val
-            min_val = model_min
-            max_val = min(max_val + shift, model_max)
-
-        # Final safety check - ensure bounds are within model constraints
-        min_val = max(min_val, model_min)
-        max_val = min(max_val, model_max)
-
-        bounds.append((min_val, max_val))
-
-        logger.info(
-            f"  {param_name}: true={param_value:.3f}, constraint_span={constraint_span:.1f}, "
-            f"target_width={target_width:.3f} -> [{min_val:.3f}, {max_val:.3f}]"
-        )
-
-    return bounds
 
 
 def get_prior_bounds_for_experiment(
@@ -540,166 +437,41 @@ def get_prior_bounds_for_experiment(
     deviation=0.5,
     layer_count=1,
     fix_sld_mode="none",
+    model_ranges=None,
+    width_limits=None,
 ):
-    """
-    Generate appropriate prior bounds for an experiment.
-
-    Args:
-        experiment_id: Experiment identifier
-        true_params_dict: Dictionary with true parameters (for narrow/constraint_based priors)
-        priors_type: "narrow" or "constraint_based"
-        deviation: Relative deviation for narrow priors (e.g., 0.5 for 50%) or
-                  constraint percentage for constraint_based priors (e.g., 0.3 for 30%)
-        layer_count: Number of layers (1 or 2)
-        fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
-
-    Returns:
-        List of (min, max) tuples for prior bounds
-    """
-    logger.info(
-        f"Generating {priors_type} prior bounds for {experiment_id} ({layer_count} layer{'s' if layer_count > 1 else ''})"
-    )
-    if fix_sld_mode != "none":
-        logger.info(f"SLD fixing mode: {fix_sld_mode}")
-
-    if priors_type == "constraint_based" and true_params_dict:
-        # Use constraint-based priors
-        bounds = get_constraint_based_prior_bounds(
-            true_params_dict, layer_count, deviation
+    """Build absolute-coordinate priors while retaining fixed evaluation spans."""
+    if priors_type not in {"constraint_based", "narrow"}:
+        raise ValueError(f"Unsupported priors_type='{priors_type}'")
+    if not np.isfinite(deviation) or deviation < 0:
+        raise ValueError("Prior deviation must be finite and nonnegative")
+    block = (true_params_dict or {}).get(f"{layer_count}_layer")
+    if block is None:
+        raise ValueError(
+            f"No true parameters found for {experiment_id} ({layer_count} layers)"
         )
-
-        # Apply SLD fixing if requested
-        if fix_sld_mode != "none":
-            bounds = apply_sld_fixing(
-                bounds, true_params_dict, layer_count, fix_sld_mode
-            )
-
-        return bounds
-
-    elif priors_type == "narrow" and true_params_dict:
-        # Use true parameters to generate narrow priors
-        layer_key = f"{layer_count}_layer"
-        if layer_key in true_params_dict:
-            true_params = true_params_dict[layer_key]["params"]
-            param_names = get_parameter_names_for_layer_count(layer_count)
-            bounds = []
-
-            # Load model constraints from centralized definition
-            model_constraints = get_constraint_ranges()
-
-            allowed_widths = {
-                "thickness": (0.01, 1000.0),
-                "amb_rough": (0.01, 60.0),
-                "sub_rough": (0.01, 60.0),
-                "int_rough": (0.01, 60.0),  # for 2-layer
-                "layer_sld": (0.01, 5.0),
-                "layer1_sld": (0.01, 5.0),  # for 2-layer
-                "layer2_sld": (0.01, 5.0),  # for 2-layer
-                "sub_sld": (0.01, 5.0),
-                "thickness1": (0.01, 1000.0),  # for 2-layer
-                "thickness2": (0.01, 1000.0),  # for 2-layer
-            }
-
-            for i, (param_name, param_value) in enumerate(
-                zip(param_names, true_params)
-            ):
-                # Get constraints for this parameter
-                model_min, model_max = model_constraints.get(param_name, (-1e6, 1e6))
-                width_min, width_max = allowed_widths.get(param_name, (0.01, 1e6))
-
-                # Calculate initial bounds based on deviation
-                if param_value > 0:
-                    min_val = param_value * (1 - deviation)
-                    max_val = param_value * (1 + deviation)
-                else:
-                    # For negative parameters, use relative deviation around the true value
-                    min_val = param_value * (1 + deviation)  # More negative
-                    max_val = param_value * (1 - deviation)  # Less negative
-
-                # Ensure proper ordering (min < max)
-                if min_val > max_val:
-                    min_val, max_val = max_val, min_val
-
-                # Calculate current width
-                current_width = max_val - min_val
-
-                # Constrain width to allowed limits
-                if current_width < width_min:
-                    # Expand bounds symmetrically around true value
-                    center = param_value
-                    half_width = width_min / 2
-                    min_val = center - half_width
-                    max_val = center + half_width
-                elif current_width > width_max:
-                    # Shrink bounds symmetrically around true value
-                    center = param_value
-                    half_width = width_max / 2
-                    min_val = center - half_width
-                    max_val = center + half_width
-
-                # Constrain to model limits
-                min_val = max(min_val, model_min)
-                max_val = min(max_val, model_max)
-
-                # Ensure min <= max after constraining to model limits
-                if min_val > max_val:
-                    # If true parameter is outside model constraints, use full model range
-                    if param_value > model_max:
-                        # True value too high, use full model range or centered around model_max
-                        max_val = model_max
-                        min_val = max(model_max - width_max, model_min)
-                    elif param_value < model_min:
-                        # True value too low, use full model range or centered around model_min
-                        min_val = model_min
-                        max_val = min(model_min + width_max, model_max)
-                    else:
-                        # Should not happen, but safety fallback
-                        min_val = model_min
-                        max_val = model_max
-
-                # Final check: ensure minimum width is still respected after model constraints
-                final_width = max_val - min_val
-                if final_width < width_min:
-                    # If constraining to model limits made width too small,
-                    # expand within model limits as much as possible
-                    available_width = model_max - model_min
-                    if available_width >= width_min:
-                        center = (min_val + max_val) / 2
-                        half_width = width_min / 2
-                        min_val = max(center - half_width, model_min)
-                        max_val = min(center + half_width, model_max)
-                        # Adjust if still outside bounds
-                        if max_val > model_max:
-                            max_val = model_max
-                            min_val = max_val - width_min
-                        if min_val < model_min:
-                            min_val = model_min
-                            max_val = min_val + width_min
-
-                bounds.append((min_val, max_val))
-
-            logger.info(
-                f"Generated narrow priors with {deviation * 100}% deviation (constrained to model limits)"
-            )
-
-            # Apply SLD fixing if requested
-            if fix_sld_mode != "none":
-                bounds = apply_sld_fixing(
-                    bounds, true_params_dict, layer_count, fix_sld_mode
-                )
-
-            # Log the detailed bounds for debugging
-            logger.info("Final narrow prior bounds details:")
-            for i, (name, (min_val, max_val)) in enumerate(zip(param_names, bounds)):
-                width = max_val - min_val
-                logger.info(
-                    f"  {name}: [{min_val:.3f}, {max_val:.3f}] (width: {width:.3f})"
-                )
-
-            return bounds
-
-    raise ValueError(
-        f"Unsupported priors_type='{priors_type}' for layer_count={layer_count}"
+    names = get_parameter_names_for_layer_count(layer_count)
+    values = block["params"]
+    if len(values) != len(names):
+        raise ValueError("True parameter count does not match layer count")
+    ranges, widths = _prior_limits(model_ranges, width_limits)
+    evaluation_ranges = get_constraint_ranges()
+    bounds = []
+    for name, value in zip(names, values):
+        span = evaluation_ranges[name][1] - evaluation_ranges[name][0]
+        requested_width = deviation * (
+            span if priors_type == "constraint_based" else 2 * abs(value)
+        )
+        bounds.append(
+            _bounded_prior(value, requested_width, ranges[name], widths[name], name)
+        )
+    return apply_sld_fixing(
+        bounds,
+        true_params_dict,
+        layer_count,
+        fix_sld_mode,
+        model_ranges=model_ranges,
+        width_limits=width_limits,
     )
 
 
@@ -710,125 +482,22 @@ def discover_batch_experiments(
     experiment_ids=None,
     use_theoretical=False,
 ):
-    """
-    Discover available experiments in the data directory for batch processing.
-
-    Args:
-        data_directory: Base data directory to search
-        layer_count: Number of layers to search for (1 or 2). If None, searches all
-        num_experiments: Maximum number of experiments to return (None for all)
-        experiment_ids: List of specific experiment IDs to validate (None for discovery)
-        use_theoretical: If True, discover theoretical curve files; otherwise experimental
-
-    Returns:
-        List of experiment IDs
-    """
-    data_dir = Path(data_directory)
-
+    """Discover complete pairs in stable order; keep explicit IDs for failure reporting."""
     if experiment_ids:
-        logger.info(f"\nValidating {len(experiment_ids)} provided experiment IDs")
-        return experiment_ids
-
-    # Original discovery logic
-    logger.info(f"\nDiscovering experiments in {data_dir}")
-    if layer_count is not None:
-        logger.info(f"  Looking for {layer_count}-layer experiments")
-    if num_experiments is not None:
-        logger.info(f"  Limiting to first {num_experiments} experiments")
-
-    experiments = []
-    curve_suffix = (
-        "_theoretical_curve.dat" if use_theoretical else "_experimental_curve.dat"
-    )
-    curve_pattern = f"s*{curve_suffix}"
-
-    logger.info(
-        f"  Discovery mode: {'theoretical' if use_theoretical else 'experimental'} curves"
-    )
-
-    # Try MARIA dataset structure first
-    maria_dataset_path = data_dir / "MARIA_VIPR_dataset"
-    if maria_dataset_path.exists():
-        logger.info(f"  Found MARIA dataset: {maria_dataset_path}")
-
-        # Search in subdirectories (e.g., 0/, 1/, 2/)
-        layer_dirs_to_search = []
-        if layer_count is not None:
-            layer_dirs_to_search = [str(layer_count)]
-        else:
-            layer_dirs_to_search = ["0", "1", "2"]
-
-        for layer_dir_name in layer_dirs_to_search:
-            layer_dir = maria_dataset_path / layer_dir_name
-            if layer_dir.is_dir():
-                logger.info(f"  Checking layer directory: {layer_dir.name}")
-
-                # Find all experimental data files
-                exp_files = list(layer_dir.glob(curve_pattern))
-
-                for exp_file in exp_files:
-                    exp_id = exp_file.name.replace(curve_suffix, "")
-
-                    # Check if model file exists
-                    model_file = layer_dir / f"{exp_id}_model.txt"
-                    if not model_file.exists():
-                        model_file = layer_dir / f"{exp_id}_model.dat"
-
-                    if model_file.exists():
-                        experiments.append(exp_id)
-                    else:
-                        logger.info(f"  Skipping {exp_id}: no model file found")
-
-    else:
-        logger.info(f"  Directory not found: {maria_dataset_path}")
-
-        # Try test data structure
-        test_data_path = data_dir / "test_data"
-        if test_data_path.exists():
-            logger.info(f"  Found test data: {test_data_path}")
-
-            if layer_count is not None:
-                layer_test_dir = test_data_path / str(layer_count)
-                if layer_test_dir.exists():
-                    exp_files = list(layer_test_dir.glob(curve_pattern))
-                    for exp_file in exp_files:
-                        exp_id = exp_file.name.replace(curve_suffix, "")
-                        experiments.append(exp_id)
-                else:
-                    logger.info(f"  Layer directory not found: {layer_test_dir}")
-            else:
-                # Search all layer directories
-                for layer_dir in test_data_path.iterdir():
-                    if layer_dir.is_dir() and layer_dir.name.isdigit():
-                        exp_files = list(layer_dir.glob(curve_pattern))
-                        for exp_file in exp_files:
-                            exp_id = exp_file.name.replace(curve_suffix, "")
-                            experiments.append(exp_id)
-        else:
-            logger.info(f"  Directory not found: {test_data_path}")
-
-            # Fallback: Search directly in data_directory
-            logger.info(f"  Searching directly in: {data_dir}")
-            exp_files = list(data_dir.glob(curve_pattern))
-
-            if exp_files:
-                logger.info(
-                    f"  Found {len(exp_files)} experiment files in root directory"
-                )
-                for exp_file in exp_files:
-                    exp_id = exp_file.name.replace(curve_suffix, "")
-                    experiments.append(exp_id)
-            else:
-                logger.info("  No experiment files found in root directory")
-
-    logger.info(f"Found {len(experiments)} experiments")
-
-    # Limit to requested number
-    if num_experiments is not None and len(experiments) > num_experiments:
-        logger.info(f"Limiting to first {num_experiments} experiments")
-        experiments = experiments[:num_experiments]
-
-    return experiments
+        return list(dict.fromkeys(experiment_ids))
+    if num_experiments is not None and num_experiments < 0:
+        raise ValueError("num_experiments must be nonnegative")
+    pairs = {}
+    for exp_id, curve, model, detected_layer in _find_experiment_pairs(
+        data_directory, layer_count, use_theoretical
+    ):
+        if exp_id in pairs:
+            raise ValueError(
+                f"Ambiguous experiment {exp_id}: {pairs[exp_id]} and {curve}"
+            )
+        pairs[exp_id] = curve
+    ids = sorted(pairs)
+    return ids if num_experiments is None else ids[:num_experiments]
 
 
 def check_experiment_within_constraints(experiment_id, true_params_dict, layer_count):
@@ -862,7 +531,11 @@ def check_experiment_within_constraints(experiment_id, true_params_dict, layer_c
             logger.debug("No constraint range configured for %s", param_name)
             continue
         constraint_min, constraint_max = constraint_ranges[param_name]
-        if param_value < constraint_min or param_value > constraint_max:
+        if (
+            not np.isfinite(param_value)
+            or param_value < constraint_min
+            or param_value > constraint_max
+        ):
             outlier_parameters.append(
                 (param_name, param_value, constraint_min, constraint_max)
             )
