@@ -12,8 +12,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Tuple
-from constraints_utils import get_constraint_range, get_constraint_widths
-from plotting_utils import plot_random_guessing_comparison
+from constraints_utils import get_constraint_range
+from error_calculation import calculate_parameter_metrics
+from plotting_utils import (
+    plot_random_guessing_comparison,
+    _get_mape_ranges,
+    _count_mapes_in_ranges,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -32,15 +37,14 @@ def generate_random_prediction(
     Returns:
         Array of random parameter values
     """
-    random_params = []
-    for i, (param_name, (min_val, max_val)) in enumerate(
-        zip(param_names, prior_bounds)
-    ):
-        # Generate uniform random value within bounds
-        random_val = np.random.uniform(min_val, max_val)
-        random_params.append(random_val)
-
-    return np.array(random_params)
+    bounds = np.asarray(prior_bounds, dtype=float)
+    if bounds.shape != (len(param_names), 2) or not np.all(np.isfinite(bounds)):
+        raise ValueError(
+            "Prior bounds must contain one finite interval per physical parameter"
+        )
+    if np.any(bounds[:, 0] > bounds[:, 1]):
+        raise ValueError("Prior bounds must be ordered lower <= upper")
+    return np.random.uniform(bounds[:, 0], bounds[:, 1])
 
 
 def calculate_mape_for_prediction(
@@ -58,69 +62,9 @@ def calculate_mape_for_prediction(
     Returns:
         MAPE value as percentage
     """
-    if len(pred_params) != len(true_params):
-        return -1.0
-
-    errors = np.asarray(pred_params, dtype=float) - np.asarray(true_params, dtype=float)
-
-    constraint_errors = np.zeros_like(errors)
-    constraint_widths = get_constraint_widths()
-    for i, param_name in enumerate(param_names):
-        standardized_name = standardize_param_name(param_name)
-        constraint_width = constraint_widths.get(standardized_name)
-        if constraint_width is None:
-            raise ValueError(f"No constraint width configured for {standardized_name}")
-        constraint_errors[i] = np.abs(errors[i]) / constraint_width * 100
-
-    return float(np.mean(constraint_errors))
-
-
-def standardize_param_name(param_name: str) -> str:
-    """
-    Standardize parameter names to match constraint definitions.
-
-    Args:
-        param_name: Original parameter name (e.g., "Thickness L1", "SLD sub")
-
-    Returns:
-        Standardized parameter name for constraint lookup
-    """
-    param_lower = param_name.lower()
-
-    # Thickness parameters
-    if "thickness" in param_lower:
-        if "l1" in param_lower or "layer 1" in param_lower:
-            return "thickness1" if "l2" in param_lower else "thickness"
-        elif "l2" in param_lower or "layer 2" in param_lower:
-            return "thickness2"
-        else:
-            return "thickness"
-
-    # Roughness parameters
-    if "rough" in param_lower:
-        if "amb" in param_lower or "front" in param_lower:
-            return "amb_rough"
-        elif "sub" in param_lower or "back" in param_lower:
-            return "sub_rough"
-        elif "int" in param_lower or "interface" in param_lower:
-            return "int_rough"
-        else:
-            return "sub_rough"
-
-    # SLD parameters
-    if "sld" in param_lower:
-        if "amb" in param_lower or "front" in param_lower:
-            return "amb_sld"
-        elif "sub" in param_lower or "back" in param_lower:
-            return "sub_sld"
-        elif "l1" in param_lower or "layer 1" in param_lower:
-            return "layer1_sld" if "l2" in param_lower else "layer_sld"
-        elif "l2" in param_lower or "layer 2" in param_lower:
-            return "layer2_sld"
-        else:
-            return "layer_sld"
-
-    return param_name
+    return calculate_parameter_metrics(pred_params, true_params, param_names)[
+        "overall"
+    ]["constraint_mape"]
 
 
 def load_batch_results(batch_dir: Path) -> Dict:
@@ -170,40 +114,31 @@ def evaluate_batch_against_random(batch_dir: Path) -> Tuple[List[float], List[fl
     random_mapes = []
 
     for exp_id, result in successful_results.items():
-        # Get model MAPE
-        if "param_metrics" in result and result["param_metrics"]:
-            param_metrics = result["param_metrics"]
-
-            model_mape = param_metrics.get("overall", {}).get("constraint_mape")
-            if model_mape is not None:
-                model_mapes.append(model_mape)
-
-        # Get true parameters and param names
-        if "true_params_dict" not in result or "prediction_dict" not in result:
-            continue
-
-        true_params_dict = result["true_params_dict"]
-        param_names = result["prediction_dict"]["param_names"]
-        prior_bounds = result.get("prior_bounds", [])
-
-        if not prior_bounds:
-            continue
-
-        # Extract true params from nested structure
-        layer_count = result.get("layer_count", 1)
-        layer_key = f"{layer_count}_layer"
-
-        if layer_key not in true_params_dict:
-            continue
-
-        true_params = np.array(true_params_dict[layer_key]["params"])
-
-        # Generate ONE random prediction per experiment
-        random_pred = generate_random_prediction(param_names, prior_bounds)
-        random_mape = calculate_mape_for_prediction(
-            random_pred, true_params, param_names
+        model_mape = (
+            (result.get("param_metrics") or {})
+            .get("overall", {})
+            .get("constraint_mape")
         )
-        if random_mape >= 0:
+        if model_mape is None or not np.isfinite(model_mape) or model_mape < 0:
+            continue
+        layer_key = f"{result.get('layer_count', 1)}_layer"
+        truth = (result.get("true_params_dict") or {}).get(layer_key)
+        if not truth or not result.get("prior_bounds"):
+            continue
+        try:
+            # NF prediction labels include nuisance parameters; truth defines the scored physical parameters.
+            param_names = truth["param_names"]
+            random_pred = generate_random_prediction(
+                param_names, result["prior_bounds"]
+            )
+            random_mape = calculate_mape_for_prediction(
+                random_pred, truth["params"], param_names
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Skipping unpaired random baseline for %s: %s", exp_id, exc)
+            continue
+        if np.isfinite(random_mape) and random_mape >= 0:
+            model_mapes.append(model_mape)
             random_mapes.append(random_mape)
 
     logger.info(f"  Collected {len(model_mapes)} model MAPEs")
@@ -225,16 +160,20 @@ def process_batches(batch_numbers: List[int]):
 
     for batch_num in batch_numbers:
         # Find batch directory
-        batch_dirs = list(base_dir.glob(f"{batch_num}_*"))
+        batch_dirs = sorted(
+            path
+            for path in base_dir.iterdir()
+            if path.is_dir()
+            and path.name.split("_")[0].isdigit()
+            and int(path.name.split("_")[0]) == batch_num
+        )
 
         if not batch_dirs:
             logger.info(f"Batch {batch_num} not found")
             continue
 
         if len(batch_dirs) > 1:
-            logger.info(
-                f"Warning: Multiple directories found for batch {batch_num}, using first"
-            )
+            raise ValueError(f"Ambiguous batch {batch_num}: {batch_dirs}")
 
         batch_dir = batch_dirs[0]
 
@@ -260,7 +199,7 @@ def process_batches(batch_numbers: List[int]):
             plot_random_guessing_comparison(
                 model_mapes=model_mapes,
                 random_mapes=random_mapes,
-                output_dir=output_dir,
+                output_dir=output_dir / batch_dir.name,
                 layer_count=layer_count,
                 use_prominent_features=use_prominent_features,
             )
@@ -278,305 +217,119 @@ def generate_synthetic_random_evaluation(
     deviation: float = 0.99,
     output_path: Path = None,
 ):
-    """
-    Generate synthetic evaluation where BOTH true values and predictions are random.
-
-    This simulates truly uninformed random guessing where we don't even know
-    the true parameters - everything is sampled from constraint intervals.
-
-    Args:
-        num_experiments: Number of synthetic experiments to generate
-        layer_count: Number of layers (1 or 2)
-        deviation: Prior deviation from true value (0.99 = 99% constraint-based)
-        output_path: Path to save the plot
-    """
-    logger.info(f"\n{'=' * 80}")
-    logger.info("SYNTHETIC RANDOM EVALUATION")
-    logger.info(f"{'=' * 80}")
-    logger.info(f"Generating {num_experiments} synthetic experiments")
-    logger.info(f"Layer count: {layer_count}")
-    logger.info(f"Prior deviation: ±{int(deviation * 100)}%")
-    logger.info("")
-
-    # Import prior bounds generation from main pipeline
+    """Sample truths globally, then random predictions within truth-conditioned priors."""
     from parameter_discovery import (
         get_parameter_names_for_layer_count,
         get_constraint_based_prior_bounds,
     )
 
-    # Get parameter names for this layer count
+    if num_experiments <= 0:
+        raise ValueError("num_experiments must be positive")
     param_names = get_parameter_names_for_layer_count(layer_count)
-
-    logger.info(f"Parameters: {param_names}")
-    logger.info("")
-
-    # Get constraint ranges for reference
-    constraint_ranges = []
-    constraint_widths = []
-
-    for param_name in param_names:
-        standardized = standardize_param_name(param_name)
-        min_val, max_val = get_constraint_range(standardized)
-        width = max_val - min_val
-        constraint_ranges.append((min_val, max_val))
-        constraint_widths.append(width)
-        logger.info(
-            f"  {param_name:20s} -> {standardized:15s}: [{min_val:7.2f}, {max_val:7.2f}] (width: {width:.2f})"
-        )
-
-    logger.info("")
-    logger.info("Generating random true values and predictions...")
-    logger.info(
-        "Using get_constraint_based_prior_bounds() to ensure physical constraints are respected"
-    )
-    logger.info("")
-
+    constraint_ranges = [get_constraint_range(name) for name in param_names]
     mapes = []
-    per_param_mapes = {param_name: [] for param_name in param_names}
-
-    for i in range(num_experiments):
-        # Generate random TRUE values from full constraint ranges
+    per_param_mapes = {name: [] for name in param_names}
+    for _ in range(num_experiments):
         true_params = np.array(
-            [
-                np.random.uniform(min_val, max_val)
-                for min_val, max_val in constraint_ranges
-            ]
+            [np.random.uniform(lo, hi) for lo, hi in constraint_ranges]
         )
-
-        # Create true_params_dict in the format expected by get_constraint_based_prior_bounds
-        layer_key = f"{layer_count}_layer"
-        true_params_dict = {
-            layer_key: {"params": true_params.tolist(), "param_names": param_names}
+        truth = {
+            f"{layer_count}_layer": {
+                "params": true_params.tolist(),
+                "param_names": param_names,
+            }
         }
-
-        # Use the same prior bounds calculation as the main pipeline
-        # This ensures physical constraints are properly applied
-        prior_bounds = get_constraint_based_prior_bounds(
-            true_params_dict, layer_count, deviation
-        )
-
-        # Generate random PREDICTION from prior bounds
-        pred_params = generate_random_prediction(param_names, prior_bounds)
-
-        # Calculate constraint-based MAPE (overall)
-        mape = calculate_mape_for_prediction(pred_params, true_params, param_names)
-
-        if mape >= 0:
-            mapes.append(mape)
-
-            # Calculate per-parameter MAPEs
-            for j, param_name in enumerate(param_names):
-                standardized = standardize_param_name(param_name)
-                constraint_min, constraint_max = get_constraint_range(standardized)
-                constraint_width = constraint_max - constraint_min
-
-                param_error = abs(pred_params[j] - true_params[j])
-                param_mape = (param_error / constraint_width) * 100
-                per_param_mapes[param_name].append(param_mape)
-
-    logger.info(f"Generated {len(mapes)} valid MAPE values")
-    logger.info(f"Mean MAPE: {np.mean(mapes):.2f}%")
-    logger.info(f"Median MAPE: {np.median(mapes):.2f}%")
-    logger.info(f"Std Dev: {np.std(mapes):.2f}%")
-    logger.info(f"Min: {np.min(mapes):.2f}%")
-    logger.info(f"Max: {np.max(mapes):.2f}%")
-    logger.info("")
-
-    # Create plot
-    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-
-    title = f"Synthetic Random - {num_experiments} {layer_count}-Layer Experiments\n"
-    title += f"(±{int(deviation * 100)}% Constraint-Based Priors, Both True & Predicted Random)"
-    fig.suptitle(title, fontsize=16, fontweight="bold")
-
-    # Define MAPE ranges
-    mape_ranges = list(range(0, 105, 5))
-    range_labels = [f"{i}-{i + 5}%" for i in range(0, 100, 5)]
-
-    # Count MAPEs in each range
-    counts = []
-    for i in range(len(mape_ranges) - 1):
-        count = sum(1 for mape in mapes if mape_ranges[i] <= mape < mape_ranges[i + 1])
-        counts.append(count)
-
-    # Create bar chart
-    bars = ax.bar(range(len(counts)), counts, alpha=0.8)
-
-    # Add value labels on bars
-    for i, (bar, count) in enumerate(zip(bars, counts)):
-        if count > 0:
-            percentage = (count / len(mapes)) * 100
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.1,
-                f"{count}\n({percentage:.1f}%)",
-                ha="center",
-                va="bottom",
-                fontsize=10,
-                fontweight="bold",
+        prior_bounds = get_constraint_based_prior_bounds(truth, layer_count, deviation)
+        prediction = generate_random_prediction(param_names, prior_bounds)
+        metrics = calculate_parameter_metrics(prediction, true_params, param_names)
+        mapes.append(metrics["overall"]["constraint_mape"])
+        for name in param_names:
+            per_param_mapes[name].append(
+                metrics["by_parameter"][name]["constraint_percentage_error"]
             )
 
-    ax.set_xlabel("Constraint-Based MAPE Range", fontsize=14)
-    ax.set_ylabel("Number of Experiments", fontsize=14)
-    ax.set_xticks(range(len(range_labels)))
-    ax.set_xticklabels(range_labels, rotation=45, ha="right")
-
-    # Add statistics text
-    stats_text = f"Total: {len(mapes)} experiments\n"
-    stats_text += f"Mean Constraint MAPE: {np.mean(mapes):.1f}%\n"
-    stats_text += f"Median Constraint MAPE: {np.median(mapes):.1f}%\n"
-    stats_text += f"Std Dev: {np.std(mapes):.1f}%\n"
-    stats_text += f"Min Constraint MAPE: {np.min(mapes):.1f}%\n"
-    stats_text += f"Max Constraint MAPE: {np.max(mapes):.1f}%\n"
-
-    ax.text(
-        0.98,
-        0.98,
-        stats_text,
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=10,
-        bbox=dict(boxstyle="round,pad=0.5", alpha=0.8),
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ranges, labels = _get_mape_ranges()
+    counts = _count_mapes_in_ranges(mapes, ranges)
+    bars = ax.bar(labels, counts)
+    for bar, count in zip(bars, counts):
+        if count:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                count,
+                f"{count}\n({count / len(mapes):.1%})",
+                ha="center",
+                va="bottom",
+            )
+    ax.set_title(
+        f"Random within truth-conditioned priors: {num_experiments} experiments\n"
+        f"{layer_count} layers, prior fraction {deviation:.0%}"
     )
-
-    # Remove ticks
-    ax.tick_params(axis="both", which="both", length=0)
-
-    plt.tight_layout()
-
-    # Save plot
+    ax.set_xlabel("Constraint MAPE (%)")
+    ax.set_ylabel("Experiments")
+    ax.tick_params(axis="x", rotation=45)
+    statistics = (
+        f"Total: {len(mapes)} experiments\nMean: {np.mean(mapes):.2f}%\n"
+        f"Median: {np.median(mapes):.2f}%\nStd: {np.std(mapes):.2f}%\n"
+        f"Min: {np.min(mapes):.2f}%\nMax: {np.max(mapes):.2f}%"
+    )
+    ax.text(0.98, 0.98, statistics, transform=ax.transAxes, ha="right", va="top")
+    logger.info("Overall constraint MAPE statistics:\n%s", statistics)
+    fig.tight_layout()
     if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved plot: {output_path}")
-
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, dpi=300)
+        logger.info("Saved plot: %s", output_path)
+    plt.show()
     plt.close(fig)
 
-    # Create per-parameter MAPE histograms
-    logger.info("\nGenerating per-parameter MAPE distributions...")
-    fig_params, axes = plt.subplots(2, 3, figsize=(18, 12))
-    axes = axes.flatten()
-
-    fig_params.suptitle(
-        f"Per-Parameter MAPE Distributions - Synthetic Random Evaluation\n"
-        f"{num_experiments} {layer_count}-Layer Experiments (±{int(deviation * 100)}% Priors)",
-        fontsize=16,
-        fontweight="bold",
-    )
-
-    for idx, param_name in enumerate(param_names):
-        if idx >= len(axes):
-            break
-
-        ax = axes[idx]
-        param_mapes = per_param_mapes[param_name]
-
-        # Get constraint info for theoretical expectation
-        standardized = standardize_param_name(param_name)
-        constraint_min, constraint_max = get_constraint_range(standardized)
-        constraint_width = constraint_max - constraint_min
-        theoretical_mean = 100 / 3  # For uniform distribution
-
-        # Create histogram
-        n_bins = 50
-        counts, bins, patches = ax.hist(param_mapes, bins=n_bins, alpha=0.7)
-
-        # Add theoretical mean line
+    rows = (len(param_names) + 2) // 3
+    fig_params, axes = plt.subplots(rows, 3, squeeze=False, figsize=(15, 4 * rows))
+    axes = axes.ravel()
+    fig_params.suptitle("Random within truth-conditioned priors: physical parameters")
+    for index, name in enumerate(param_names):
+        ax = axes[index]
+        values = per_param_mapes[name]
+        ax.hist(values, bins=50, alpha=0.7)
+        actual_mean = np.mean(values)
         ax.axvline(
-            theoretical_mean,
-            linestyle="--",
-            linewidth=2,
-            label=f"Theoretical: {theoretical_mean:.1f}%",
+            actual_mean, linestyle="--", label=f"Actual mean: {actual_mean:.2f}%"
         )
-
-        # Add actual mean line
-        actual_mean = np.mean(param_mapes)
-        ax.axvline(
-            actual_mean,
-            linestyle="--",
-            linewidth=2,
-            label=f"Actual: {actual_mean:.1f}%",
-        )
-
-        # Styling
-        ax.set_xlabel("Constraint-Based MAPE (%)", fontsize=10)
-        ax.set_ylabel("Frequency", fontsize=10)
+        lower, upper = constraint_ranges[index]
         ax.set_title(
-            f"{param_name}\n"
-            f"Constraint: [{constraint_min:.1f}, {constraint_max:.1f}] (width: {constraint_width:.1f})",
-            fontsize=11,
-            fontweight="bold",
+            f"{name}\nConstraint: [{lower:g}, {upper:g}] (width: {upper - lower:g})"
         )
-        ax.legend(fontsize=9)
-
-        # Add statistics box
-        stats = f"Mean: {actual_mean:.1f}%\n"
-        stats += f"Median: {np.median(param_mapes):.1f}%\n"
-        stats += f"Std: {np.std(param_mapes):.1f}%"
+        ax.set_xlabel("Constraint MAPE (%)")
+        ax.set_ylabel("Experiments")
+        parameter_stats = f"Mean: {actual_mean:.2f}%\nMedian: {np.median(values):.2f}%\nStd: {np.std(values):.2f}%"
         ax.text(
-            0.98,
-            0.98,
-            stats,
-            transform=ax.transAxes,
-            ha="right",
-            va="top",
-            fontsize=8,
-            bbox=dict(boxstyle="round,pad=0.3", alpha=0.8),
+            0.98, 0.98, parameter_stats, transform=ax.transAxes, ha="right", va="top"
         )
-
-        # Remove ticks
-        ax.tick_params(axis="both", which="both", length=0)
-
-    # Hide unused subplots
-    for idx in range(len(param_names), len(axes)):
-        axes[idx].axis("off")
-
-    plt.tight_layout()
-
-    # Save per-parameter plot
-    if output_path:
-        per_param_path = (
-            output_path.parent / f"{output_path.stem}_per_parameter{output_path.suffix}"
-        )
-        plt.savefig(per_param_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved per-parameter plot: {per_param_path}")
-
-    plt.close(fig_params)
-
-    # Print per-parameter statistics
-    logger.info("\nPer-Parameter MAPE Statistics:")
-    logger.info("=" * 80)
-    logger.info(
-        f"{'Parameter':<20} {'Mean':<10} {'Median':<10} {'Std Dev':<10} {'Theoretical':<12}"
-    )
-    logger.info("=" * 80)
-    for param_name in param_names:
-        param_mapes = per_param_mapes[param_name]
+        ax.legend(loc="upper left")
         logger.info(
-            f"{param_name:<20} {np.mean(param_mapes):>8.2f}%  {np.median(param_mapes):>8.2f}%  "
-            f"{np.std(param_mapes):>8.2f}%  {100 / 3:>10.2f}%"
+            "%s: mean=%.2f%% median=%.2f%% std=%.2f%%",
+            name,
+            actual_mean,
+            np.median(values),
+            np.std(values),
         )
-    logger.info("=" * 80)
-
-    logger.info(f"\n{'=' * 80}")
-    logger.info("INTERPRETATION:")
-    logger.info(f"{'=' * 80}")
+    for ax in axes[len(param_names) :]:
+        ax.set_visible(False)
+    fig_params.tight_layout()
+    if output_path:
+        per_param_path = output_path.with_name(
+            f"{output_path.stem}_per_parameter{output_path.suffix}"
+        )
+        fig_params.savefig(per_param_path, dpi=300)
+        logger.info("Saved per-parameter plot: %s", per_param_path)
+    plt.show()
+    plt.close(fig_params)
     logger.info(
-        "This represents the WORST CASE scenario - completely uninformed guessing"
+        "Mean constraint MAPE: %.2f%%; priors use ground truth, so this is a truth-conditioned baseline.",
+        np.mean(mapes),
     )
-    logger.info("where we don't even know the true parameter values.")
-    logger.info("")
-    logger.info(f"Expected mean MAPE ≈ {100 / 3:.1f}% for uniform random (theoretical)")
-    logger.info(f"Actual overall mean MAPE = {np.mean(mapes):.1f}%")
-    logger.info("")
-    logger.info(
-        "Each parameter should follow a triangular distribution with mean ≈ 33.33%"
-    )
-    logger.info("when both true and predicted values are uniformly sampled.")
-    logger.info("")
-    logger.info("Any model or informed random guessing that performs better than")
-    logger.info(f"{np.mean(mapes):.1f}% demonstrates knowledge of the true parameters!")
-    logger.info(f"{'=' * 80}")
+    return {"mapes": mapes, "by_parameter": per_param_mapes}
 
 
 if __name__ == "__main__":
