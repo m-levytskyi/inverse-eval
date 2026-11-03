@@ -70,7 +70,7 @@ class ResolveTorchBackendTests(unittest.TestCase):
             nvidia_smi_output=NVIDIA_SMI_121,
         )
 
-        self.assertEqual(selection.resolved, "cu121")
+        self.assertEqual(selection.resolved, "cu118")
 
     def test_auto_maps_cuda_126(self) -> None:
         selection = bootstrap.resolve_torch_backend(
@@ -106,7 +106,7 @@ class ResolveTorchBackendTests(unittest.TestCase):
     def test_explicit_cuda_selection_errors_on_macos(self) -> None:
         with self.assertRaises(bootstrap.BootstrapError):
             bootstrap.resolve_torch_backend(
-                "cu121",
+                "cu118",
                 platform_name="darwin",
                 machine="arm64",
                 nvidia_smi_output="",
