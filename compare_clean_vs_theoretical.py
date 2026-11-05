@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from utils import validate_positional_experiment_ids
+
 
 @dataclass
 class CurveComparison:
@@ -139,11 +141,9 @@ def compare_dataset(
 ) -> list[CurveComparison]:
     comparisons: list[CurveComparison] = []
 
-    if len(curve_files) > r_clean.shape[0]:
-        raise ValueError(
-            f"More curve files ({len(curve_files)}) than rows in R_clean "
-            f"({r_clean.shape[0]}). Ensure the pickle and curve directory match."
-        )
+    validate_positional_experiment_ids(
+        [_extract_experiment_id(path) for path in curve_files], r_clean.shape[0]
+    )
 
     for row_idx, curve_file in enumerate(curve_files):
         exp_id = _extract_experiment_id(curve_file)
@@ -165,9 +165,7 @@ def compare_dataset(
 
         q_match = True
         if q_from_pickle is not None:
-            q_match = bool(
-                np.allclose(q_file, q_from_pickle, atol=q_atol, rtol=q_rtol)
-            )
+            q_match = bool(np.allclose(q_file, q_from_pickle, atol=q_atol, rtol=q_rtol))
 
         diff = np.abs(r_file - r_ref)
         r_match = bool(
@@ -199,7 +197,11 @@ def print_report(
     any_mismatch = [c for c in comparisons if (not c.q_match) or (not c.r_match)]
 
     global_max_abs = max((c.max_abs_diff for c in comparisons), default=float("nan"))
-    global_mean_abs = float(np.mean([c.mean_abs_diff for c in comparisons])) if comparisons else float("nan")
+    global_mean_abs = (
+        float(np.mean([c.mean_abs_diff for c in comparisons]))
+        if comparisons
+        else float("nan")
+    )
 
     print("=" * 80)
     print("R_CLEAN VS THEORETICAL CURVES COMPARISON")
@@ -235,7 +237,10 @@ def main() -> int:
     if not curves_dir.exists():
         raise FileNotFoundError(f"Curves directory not found: {curves_dir}")
 
-    curve_files = sorted(curves_dir.glob(args.pattern), key=lambda p: _extract_experiment_index(_extract_experiment_id(p)))
+    curve_files = sorted(
+        curves_dir.glob(args.pattern),
+        key=lambda p: _extract_experiment_index(_extract_experiment_id(p)),
+    )
     if not curve_files:
         raise FileNotFoundError(
             f"No curve files found in {curves_dir} with pattern {args.pattern}"
