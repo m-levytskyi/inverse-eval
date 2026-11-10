@@ -197,14 +197,19 @@ def _nf_prediction_to_single_prediction_dict(nf_prediction_dict):
         array = to_numpy(nf_prediction_dict[name])
         if array.ndim == 1 and len(samples) == 1:
             array = array[None, :]
-        if axis.ndim != 1 or not axis.size or not np.all(np.isfinite(axis)):
-            raise ValueError(f"NF {name} requires a finite non-empty 1D axis")
-        if array.shape != (len(samples), axis.size):
+        if array.ndim != 2 or array.shape[0] != len(samples) or not array.shape[1]:
+            raise ValueError(f"NF {name} must be non-empty 2D with one row per sample")
+        if axis.ndim == 1 and axis.size == array.shape[1]:
+            valid &= np.all(np.isfinite(axis))
+        elif name == "sampled_sld_profiles" and axis.shape == array.shape:
+            valid &= np.all(np.isfinite(axis), axis=1)
+        else:
             raise ValueError(f"NF {name} shape must match sample count and axis length")
+        valid &= np.all(np.isfinite(array), axis=1)
         arrays[name] = array
+    if not valid.any():
+        raise ValueError("NF posterior contains no finite complete sample rows")
     best_idx = select_global_ml_index(samples, log_likelihoods, valid)
-    if any(not np.all(np.isfinite(array[best_idx])) for array in arrays.values()):
-        raise ValueError("NF global-ML sample has a non-finite curve or SLD profile")
     return {
         "param_names": names,
         "predicted_params_array": samples[best_idx].copy(),
@@ -212,7 +217,7 @@ def _nf_prediction_to_single_prediction_dict(nf_prediction_dict):
         "q_plot_pred": q_axis,
         "predicted_curve": arrays["sampled_curves"][best_idx],
         "polished_curve": arrays["sampled_curves"][best_idx],
-        "predicted_sld_xaxis": z_axis,
+        "predicted_sld_xaxis": z_axis[best_idx] if z_axis.ndim == 2 else z_axis,
         "predicted_sld_profile": arrays["sampled_sld_profiles"][best_idx],
         "sld_profile_polished": arrays["sampled_sld_profiles"][best_idx],
         "nf_best_idx": best_idx,

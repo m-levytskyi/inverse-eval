@@ -281,7 +281,8 @@ def generate_synthetic_random_evaluation(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path, dpi=300)
         logger.info("Saved plot: %s", output_path)
-    plt.show()
+    else:
+        plt.show()
     plt.close(fig)
 
     rows = (len(param_names) + 2) // 3
@@ -323,7 +324,8 @@ def generate_synthetic_random_evaluation(
         )
         fig_params.savefig(per_param_path, dpi=300)
         logger.info("Saved per-parameter plot: %s", per_param_path)
-    plt.show()
+    else:
+        plt.show()
     plt.close(fig_params)
     logger.info(
         "Mean constraint MAPE: %.2f%%; priors use ground truth, so this is a truth-conditioned baseline.",

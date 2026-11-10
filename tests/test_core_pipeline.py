@@ -285,6 +285,132 @@ def test_production_and_diagnostics_share_full_sample_validity_and_original_indi
     assert oracle["selected_silhouette"] == 0.0
 
 
+@pytest.mark.parametrize("per_sample_depths", [False, True])
+@pytest.mark.parametrize("count", [1, 3])
+def test_nf_adapter_keeps_selected_sample_and_depth_axis_aligned(
+    per_sample_depths, count
+):
+    posterior = FakeModel().preprocess_and_sample(num_samples=count)
+    if count == 1:
+        # The vendor may squeeze the sample dimension for singleton outputs.
+        posterior["sampled_curves"] = posterior["sampled_curves"][0]
+        posterior["sampled_sld_profiles"] = posterior["sampled_sld_profiles"][0]
+    if per_sample_depths:
+        posterior["sampled_sld_xaxis"] = np.arange(count * 4.0).reshape(count, 4)
+    prediction = _nf_prediction_to_single_prediction_dict(posterior)
+    best = count - 1
+    expected_depths = posterior["sampled_sld_xaxis"]
+    if per_sample_depths:
+        expected_depths = expected_depths[best]
+    assert prediction["nf_best_idx"] == best
+    assert prediction["nf_best_log_likelihood"] == float(best)
+    np.testing.assert_array_equal(prediction["predicted_sld_xaxis"], expected_depths)
+    assert prediction["predicted_sld_xaxis"].ndim == 1
+    for key in ("predicted_params_array", "polished_params_array"):
+        np.testing.assert_array_equal(prediction[key], np.r_[TRUTH, 1.0, -7.0])
+    for key, length in (
+        ("predicted_curve", 3),
+        ("polished_curve", 3),
+        ("predicted_sld_profile", 4),
+        ("sld_profile_polished", 4),
+    ):
+        np.testing.assert_array_equal(prediction[key], np.ones(length))
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "predicted_params_array",
+        "log_likelihoods",
+        "sampled_curves",
+        "sampled_sld_profiles",
+        "sampled_sld_xaxis",
+    ],
+)
+@pytest.mark.parametrize("invalid", [np.nan, np.inf])
+@pytest.mark.parametrize("per_sample_depths", [False, True])
+def test_nf_adapter_selects_best_complete_row_at_original_index(
+    field, invalid, per_sample_depths
+):
+    posterior = FakeModel().preprocess_and_sample(num_samples=3)
+    if per_sample_depths:
+        posterior["sampled_sld_xaxis"] = np.arange(12.0).reshape(3, 4)
+    posterior["log_likelihoods"] = np.array([50.0, 10.0, 100.0])
+    # Both higher-ranked rows are invalid; the surviving row keeps index 1.
+    posterior["sampled_curves"][0, 0] = np.nan
+    if field == "sampled_sld_xaxis" and not per_sample_depths:
+        # A non-finite shared axis invalidates every sample.
+        posterior[field][2] = invalid
+        with pytest.raises(ValueError, match="no finite complete sample rows"):
+            _nf_prediction_to_single_prediction_dict(posterior)
+        return
+    posterior[field][2] = invalid
+    prediction = _nf_prediction_to_single_prediction_dict(posterior)
+    assert prediction["nf_best_idx"] == 1
+    assert prediction["nf_best_log_likelihood"] == 10.0
+    np.testing.assert_array_equal(
+        prediction["predicted_sld_xaxis"],
+        [4, 5, 6, 7] if per_sample_depths else [0, 1, 2, 3],
+    )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "sampled_curves",
+        "sampled_sld_profiles",
+        "sampled_sld_xaxis",
+        "q_plot_pred",
+    ],
+)
+def test_nf_adapter_rejects_posterior_without_complete_finite_rows(field):
+    posterior = FakeModel().preprocess_and_sample(num_samples=2)
+    posterior[field][...] = np.nan
+    with pytest.raises(ValueError, match="no finite complete sample rows"):
+        _nf_prediction_to_single_prediction_dict(posterior)
+
+
+@pytest.mark.parametrize(
+    "field, shape",
+    [
+        ("sampled_sld_xaxis", (1, 4)),
+        ("sampled_sld_xaxis", (2, 3)),
+        ("sampled_sld_xaxis", (2, 1, 4)),
+        ("q_plot_pred", (2, 3)),
+        ("sampled_sld_profiles", (2, 0)),
+    ],
+)
+def test_nf_adapter_rejects_malformed_axes_and_empty_profiles(field, shape):
+    posterior = FakeModel().preprocess_and_sample(num_samples=2)
+    posterior[field] = np.ones(shape)
+    with pytest.raises(ValueError):
+        _nf_prediction_to_single_prediction_dict(posterior)
+
+
+def test_nf_pipeline_accepts_per_sample_depths_and_skips_invalid_top_curve(tmp_path):
+    write_experiment(tmp_path)
+
+    class PerSampleModel(FakeModel):
+        def preprocess_and_sample(self, **kwargs):
+            posterior = super().preprocess_and_sample(**kwargs)
+            posterior["sampled_sld_xaxis"] = np.arange(8.0).reshape(2, 4)
+            posterior["sampled_curves"][1, 0] = np.nan
+            return posterior
+
+    result = run_single_experiment(
+        "s000001",
+        data_directory=str(tmp_path),
+        inference_backend="nf",
+        inference_model=PerSampleModel(),
+        nf_num_samples=2,
+    )
+    assert result["experiment_id"] == "s000001"
+    prediction = result["prediction_dict"]
+    assert prediction["nf_best_idx"] == 0
+    np.testing.assert_array_equal(prediction["predicted_sld_xaxis"], [0, 1, 2, 3])
+    assert result["param_metrics"]["overall"]["constraint_mape"] == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize(
     "mutation", ["all_invalid", "count", "names", "curve_shape", "profile_shape"]
 )

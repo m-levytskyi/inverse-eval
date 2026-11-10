@@ -237,18 +237,33 @@ def test_parameter_grid_shows_all_eight_parameters(monkeypatch):
     plt.close("all")
 
 
+@pytest.mark.parametrize("save", [False, True])
 def test_synthetic_baseline_labels_truth_conditioning_and_saves_all_parameters(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, save
 ):
     shown = []
+    saved = []
     monkeypatch.setattr(plt, "show", lambda: shown.append(plt.gcf()))
+    original_savefig = matplotlib.figure.Figure.savefig
+
+    def savefig(fig, *args, **kwargs):
+        saved.append(fig)
+        return original_savefig(fig, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.figure.Figure, "savefig", savefig)
     output = tmp_path / "baseline.png"
     result = random_baseline.generate_synthetic_random_evaluation(
-        2, layer_count=2, output_path=output
+        2, layer_count=2, output_path=output if save else None
     )
     assert len(result["by_parameter"]) == 8
-    assert output.exists() and output.with_name("baseline_per_parameter.png").exists()
-    assert len([ax for ax in shown[1].axes if ax.get_visible()]) == 8
-    texts = [text.get_text() for fig in shown for ax in fig.axes for text in ax.texts]
+    assert len(shown) == (0 if save else 2)
+    assert len(saved) == (2 if save else 0)
+    if save:
+        assert output.stat().st_size > 0
+        assert output.with_name("baseline_per_parameter.png").stat().st_size > 0
+    figures = saved if save else shown
+    assert all(not plt.fignum_exists(fig.number) for fig in figures)
+    assert len([ax for ax in figures[1].axes if ax.get_visible()]) == 8
+    texts = [text.get_text() for fig in figures for ax in fig.axes for text in ax.texts]
     assert not any("Theoretical" in text or "33.33" in text for text in texts)
-    assert "truth-conditioned" in shown[0].axes[0].get_title()
+    assert "truth-conditioned" in figures[0].axes[0].get_title()
