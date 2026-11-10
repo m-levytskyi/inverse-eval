@@ -24,6 +24,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 import yaml
+from utils import write_json_atomic
 
 # =============================================================================
 # DEFAULT CONFIGURATION
@@ -38,14 +39,18 @@ DEFAULT_CONFIG = {
     # Inference backend configuration
     "inference_backend": "nf",
     "nf_config_name": "example_nf_config_reflectorch.yaml",
+    "config_name": None,
     "nf_num_samples": 1000,
     "nf_disable_importance_sampling": False,
     "use_sigmas_as_input": False,
     "use_theoretical": False,
+    "disable_preprocessing": False,
+    "disable_constraints": False,
+    "experiment_ids": None,
     # Experiment configuration
     "num_experiments": None,
     "layer_count": 1,
-    "data_directory": "../reflectorch_devvm/reflectorch/dataset/test",
+    "data_directory": "dataset/test",
     # Output configuration
     "sweep_results_dir": "sweep_results",
 }
@@ -63,16 +68,32 @@ class BatchPipelineSweep:
     def __init__(self, config=None):
         """Initialize sweep with configuration."""
         self.config = DEFAULT_CONFIG.copy()
-        if config:
+        if config is not None:
+            if not isinstance(config, dict):
+                raise ValueError("Sweep configuration must be a mapping")
             self.config.update(config)
+        for key, allowed in (
+            ("prior_deviations", {5, 30, 60, 99}),
+            ("sld_modes", {"none", "backing", "all"}),
+            ("prominent_features", {False, True}),
+        ):
+            values = self.config[key]
+            if (
+                not isinstance(values, list)
+                or not values
+                or any(value not in allowed for value in values)
+            ):
+                raise ValueError(f"{key} must be a nonempty list drawn from {allowed}")
 
         self.num_experiments = self.config["num_experiments"]
         self.layer_count = self.config["layer_count"]
         self.data_directory = self.config["data_directory"]
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.sweep_dir = Path(self.config["sweep_results_dir"]) / f"sweep_{timestamp}"
-        self.sweep_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        self.sweep_dir = (
+            Path(self.config["sweep_results_dir"]).resolve() / f"sweep_{timestamp}"
+        )
+        self.sweep_dir.mkdir(parents=True, exist_ok=False)
 
         self.results_summary = []
         self.total_runs = (
@@ -81,6 +102,7 @@ class BatchPipelineSweep:
             * len(self.config["prominent_features"])
         )
         self.run_count = 0
+        self.save_summary()
 
         logger.info(
             f"Initialized sweep with {self.total_runs} total parameter combinations"
@@ -104,9 +126,13 @@ class BatchPipelineSweep:
             )
         logger.info(f"{'=' * 80}\n")
 
+        batch_output_root = self.sweep_dir / f"run_{self.run_count:03d}"
+        batch_output_root.mkdir()
         cmd = [
             sys.executable,
-            "batch_pipeline.py",
+            str(Path(__file__).resolve().with_name("batch_pipeline.py")),
+            "--output-dir",
+            str(batch_output_root),
         ]
 
         if self.num_experiments is not None:
@@ -132,9 +158,19 @@ class BatchPipelineSweep:
         if use_prominent_features:
             cmd.append("--use-prominent-features")
 
+        for key in ("disable_preprocessing", "disable_constraints"):
+            if self.config[key]:
+                cmd.append("--" + key.replace("_", "-"))
+        if self.config["experiment_ids"]:
+            cmd.extend(["--experiment-ids", *self.config["experiment_ids"]])
+
+        config_name = self.config["config_name"]
+        if config_name is None and self.config["inference_backend"] == "nf":
+            config_name = self.config["nf_config_name"]
+        if config_name:
+            cmd.extend(["--config-name", config_name])
+
         if self.config["inference_backend"] == "nf":
-            if self.config["nf_config_name"]:
-                cmd.extend(["--config-name", self.config["nf_config_name"]])
             cmd.extend(["--nf-num-samples", str(self.config["nf_num_samples"])])
             if self.config["nf_disable_importance_sampling"]:
                 cmd.append("--nf-disable-importance-sampling")
@@ -146,6 +182,16 @@ class BatchPipelineSweep:
             cmd.append("--use-theoretical")
 
         start_time = time.time()
+        run_result = {
+            "run_number": self.run_count,
+            "prior_deviation": prior_deviation,
+            "sld_mode": sld_mode,
+            "use_prominent_features": use_prominent_features,
+            "success": False,
+            "return_code": "EXCEPTION",
+            "output_dir": str(batch_output_root),
+            "command": cmd,
+        }
 
         try:
             result = subprocess.run(
@@ -154,70 +200,45 @@ class BatchPipelineSweep:
                 capture_output=True,
                 text=True,
                 timeout=7200,
+                cwd=Path(__file__).resolve().parent,
             )
-
-            execution_time = time.time() - start_time
-
-            run_result = {
-                "run_number": self.run_count,
-                "prior_deviation": prior_deviation,
-                "sld_mode": sld_mode,
-                "use_prominent_features": use_prominent_features,
-                "success": True,
-                "execution_time": execution_time,
-                "return_code": result.returncode,
-            }
-
-            logger.info(
-                f"Run {self.run_count} completed successfully in {execution_time:.1f}s"
-            )
+            run_result.update(success=True, return_code=result.returncode)
 
         except subprocess.TimeoutExpired:
-            execution_time = time.time() - start_time
-            run_result = {
-                "run_number": self.run_count,
-                "prior_deviation": prior_deviation,
-                "sld_mode": sld_mode,
-                "use_prominent_features": use_prominent_features,
-                "success": False,
-                "execution_time": execution_time,
-                "return_code": "TIMEOUT",
-                "error_output": "Process timed out after 7200 seconds",
-            }
-            logger.info(f"Run {self.run_count} TIMED OUT after {execution_time:.1f}s")
+            run_result.update(
+                return_code="TIMEOUT",
+                error_output="Process timed out after 7200 seconds",
+            )
 
         except subprocess.CalledProcessError as e:
-            execution_time = time.time() - start_time
-            run_result = {
-                "run_number": self.run_count,
-                "prior_deviation": prior_deviation,
-                "sld_mode": sld_mode,
-                "use_prominent_features": use_prominent_features,
-                "success": False,
-                "execution_time": execution_time,
-                "return_code": e.returncode,
-                "error_output": e.stderr[:500] if e.stderr else "",
-            }
-            logger.info(f"Run {self.run_count} FAILED with return code {e.returncode}")
+            run_result.update(
+                return_code=e.returncode,
+                error_output=e.stderr[-2000:] if e.stderr else "",
+            )
 
         except OSError as e:
-            execution_time = time.time() - start_time
-            run_result = {
-                "run_number": self.run_count,
-                "prior_deviation": prior_deviation,
-                "sld_mode": sld_mode,
-                "use_prominent_features": use_prominent_features,
-                "success": False,
-                "execution_time": execution_time,
-                "return_code": "EXCEPTION",
-                "error_output": str(e),
-            }
+            run_result["error_output"] = str(e)
             logger.exception(
                 "Run %s failed while launching subprocess: %s", self.run_count, e
             )
-
-        self.results_summary.append(run_result)
-        self.save_summary()
+        except KeyboardInterrupt:
+            run_result.update(return_code=130, error_output="Interrupted by user")
+            raise
+        finally:
+            run_result["execution_time"] = time.time() - start_time
+            child_directories = sorted(
+                path for path in batch_output_root.iterdir() if path.is_dir()
+            )
+            if len(child_directories) == 1:
+                run_result["output_dir"] = str(child_directories[0])
+            self.results_summary.append(run_result)
+            self.save_summary()
+            logger.info(
+                "Run %s finished with status %s; results: %s",
+                self.run_count,
+                run_result["return_code"],
+                run_result["output_dir"],
+            )
 
         return run_result
 
@@ -233,8 +254,7 @@ class BatchPipelineSweep:
             "results": self.results_summary,
         }
 
-        with open(summary_file, "w", encoding="utf-8") as f:
-            json.dump(summary_data, f, indent=2)
+        write_json_atomic(summary_file, summary_data)
 
     def run_full_sweep(self):
         """Run complete parameter sweep."""
@@ -268,7 +288,10 @@ class BatchPipelineSweep:
 def load_config_from_yaml(config_path):
     """Load configuration from YAML file."""
     with open(config_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    if not isinstance(config, dict):
+        raise ValueError("Sweep configuration must be a YAML mapping")
+    return config
 
 
 def parse_arguments():
@@ -375,7 +398,7 @@ def parse_arguments():
     parser.add_argument(
         "--use-sigmas-input",
         action="store_true",
-        help="Use sigmas as additional input channel to neural network (requires 2-channel model)",
+        help="Supply measured uncertainties to the inference backend",
     )
 
     parser.add_argument(
@@ -396,13 +419,17 @@ def main():
     config = {}
     if args.config:
         logger.info(f"Loading configuration from: {args.config}")
-        config = load_config_from_yaml(args.config)
+        try:
+            config = load_config_from_yaml(args.config)
+        except (OSError, ValueError, yaml.YAMLError) as error:
+            logger.error("Invalid sweep configuration: %s", error)
+            return 1
 
     # Override with command line arguments
     if args.sweep_name:
         config["sweep_results_dir"] = f"sweep_results_{args.sweep_name}"
 
-    if args.num_experiments:
+    if args.num_experiments is not None:
         config["num_experiments"] = args.num_experiments
 
     if args.layer_count:
@@ -438,9 +465,9 @@ def main():
         config["inference_backend"] = args.inference_backend
 
     if args.config_name:
-        config["nf_config_name"] = args.config_name
+        config["config_name"] = args.config_name
 
-    if args.nf_num_samples:
+    if args.nf_num_samples is not None:
         config["nf_num_samples"] = args.nf_num_samples
 
     if args.nf_disable_importance_sampling:
@@ -455,21 +482,26 @@ def main():
     logger.info("Starting automated batch pipeline parameter sweep...")
     logger.info(f"Configuration: {json.dumps(config, indent=2)}")
 
-    sweep = BatchPipelineSweep(config=config)
-
+    sweep = None
     try:
-        sweep.run_full_sweep()
+        sweep = BatchPipelineSweep(config=config)
+        results = sweep.run_full_sweep()
+        if any(not result["success"] for result in results):
+            logger.error("\nParameter sweep completed with failed runs")
+            return 1
         logger.info("\nParameter sweep completed successfully!")
         return 0
 
     except KeyboardInterrupt:
         logger.warning("\nParameter sweep interrupted by user")
-        sweep.save_summary()
-        return 1
+        if sweep is not None:
+            sweep.save_summary()
+        return 130
 
     except (OSError, ValueError, KeyError, RuntimeError) as e:
         logger.exception("\nParameter sweep failed with error: %s", e)
-        sweep.save_summary()
+        if sweep is not None:
+            sweep.save_summary()
         return 1
 
 

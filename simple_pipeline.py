@@ -9,6 +9,7 @@ the core workflow for analyzing a single reflectometry experiment.
 import torch
 import numpy as np
 import logging
+from pathlib import Path
 from typing import Literal
 from reflectorch import EasyInferenceModel
 from device_utils import detect_torch_device
@@ -20,6 +21,7 @@ from parameter_discovery import (
     parse_true_parameters_from_model_file,
     generate_true_sld_profile,
     get_prior_bounds_for_experiment,
+    get_parameter_names_for_layer_count,
 )
 from error_calculation import (
     calculate_parameter_metrics,
@@ -27,7 +29,13 @@ from error_calculation import (
 )
 from data_preprocessing import preprocess_experimental_data
 from parameter_constraints import apply_physical_constraints
-from nf_statistics import compute_nf_sample_statistics
+from nf_statistics import (
+    compute_nf_sample_statistics,
+    select_global_ml_index,
+    validate_nf_samples,
+)
+from utils import to_numpy
+from constraints_utils import get_constraint_ranges
 
 # Set seed for reproducibility
 torch.manual_seed(42)
@@ -108,8 +116,9 @@ def run_inference(
     use_q_shift=True,
     polish_prediction=True,
     sigmas_exp=None,
+    ambient_sld=0.0,
 ):
-    """Run the inference prediction."""
+    """Run the inference prediction in the absolute SLD coordinate system."""
     logger.info("Performing inference prediction...")
 
     # Interpolate data to model grid
@@ -136,6 +145,8 @@ def run_inference(
         "prior_bounds": prior_bounds,
         "q_values": q_model,
         "q_resolution": q_resolution,
+        "ambient_sld": ambient_sld,
+        "kwargs_param_labels": {"number_top_to_bottom": True},
         "clip_prediction": clip_prediction,
         "polish_prediction": polish_prediction,
         "use_q_shift": use_q_shift,
@@ -159,107 +170,80 @@ def run_inference(
 
 
 def _nf_prediction_to_single_prediction_dict(nf_prediction_dict):
-    """Adapt NF `preprocess_and_sample` output into the existing single-prediction schema.
-
-    This selects the single best sample by max log-likelihood and maps it onto keys
-    expected elsewhere in the pipeline.
-    """
-    if (
-        "log_likelihoods" not in nf_prediction_dict
-        or nf_prediction_dict["log_likelihoods"] is None
-    ):
-        raise ValueError(
-            "NF prediction_dict is missing required 'log_likelihoods' (calc_log_likelihoods=True)"
-        )
-
-    log_likelihoods = np.asarray(nf_prediction_dict["log_likelihoods"])
-    if log_likelihoods.ndim != 1 or log_likelihoods.size == 0:
-        raise ValueError("NF 'log_likelihoods' must be a non-empty 1D array")
-
-    best_idx = int(np.argmax(log_likelihoods))
-
-    if "predicted_params_array" not in nf_prediction_dict:
-        raise ValueError("NF prediction_dict is missing 'predicted_params_array'")
-    pred_params_all = np.asarray(nf_prediction_dict["predicted_params_array"])
-    if pred_params_all.ndim != 2:
-        raise ValueError(
-            "NF 'predicted_params_array' must be a 2D array (num_samples, num_params)"
-        )
-    pred_params = pred_params_all[best_idx]
-
-    if "sampled_curves" not in nf_prediction_dict:
-        raise ValueError(
-            "NF prediction_dict is missing 'sampled_curves' (calc_sampled_curves=True)"
-        )
-    sampled_curves = np.asarray(nf_prediction_dict["sampled_curves"])
-    if sampled_curves.ndim != 2:
-        raise ValueError("NF 'sampled_curves' must be a 2D array (num_samples, n_q)")
-    predicted_curve = sampled_curves[best_idx]
-
-    if "q_plot_pred" not in nf_prediction_dict:
-        raise ValueError("NF prediction_dict is missing 'q_plot_pred'")
-
-    if "sampled_sld_profiles" not in nf_prediction_dict:
-        raise ValueError(
-            "NF prediction_dict is missing 'sampled_sld_profiles' (calc_sampled_sld_profiles=True)"
-        )
-    sampled_sld_profiles = np.asarray(nf_prediction_dict["sampled_sld_profiles"])
-    if sampled_sld_profiles.ndim != 2:
-        raise ValueError(
-            "NF 'sampled_sld_profiles' must be a 2D array (num_samples, n_z)"
-        )
-    predicted_sld_profile = sampled_sld_profiles[best_idx]
-
-    if "sampled_sld_xaxis" not in nf_prediction_dict:
-        raise ValueError("NF prediction_dict is missing 'sampled_sld_xaxis'")
-    predicted_sld_xaxis = np.asarray(nf_prediction_dict["sampled_sld_xaxis"])
-
-    param_names = nf_prediction_dict.get("param_names")
-    if param_names is None:
-        raise ValueError("NF prediction_dict is missing 'param_names'")
-
+    """Adapt a validated finite global-ML sample into the single-prediction schema."""
+    required = (
+        "predicted_params_array",
+        "log_likelihoods",
+        "sampled_curves",
+        "q_plot_pred",
+        "sampled_sld_profiles",
+        "sampled_sld_xaxis",
+        "param_names",
+    )
+    missing = [name for name in required if nf_prediction_dict.get(name) is None]
+    if missing:
+        raise ValueError(f"NF prediction is missing required fields: {missing}")
+    samples, log_likelihoods, valid = validate_nf_samples(
+        nf_prediction_dict["predicted_params_array"],
+        nf_prediction_dict["log_likelihoods"],
+    )
+    names = list(nf_prediction_dict["param_names"])
+    if len(names) != samples.shape[1]:
+        raise ValueError("NF parameter names must match the sample columns")
+    q_axis = to_numpy(nf_prediction_dict["q_plot_pred"])
+    z_axis = to_numpy(nf_prediction_dict["sampled_sld_xaxis"])
+    arrays = {}
+    for name, axis in (("sampled_curves", q_axis), ("sampled_sld_profiles", z_axis)):
+        array = to_numpy(nf_prediction_dict[name])
+        if array.ndim == 1 and len(samples) == 1:
+            array = array[None, :]
+        if array.ndim != 2 or array.shape[0] != len(samples) or not array.shape[1]:
+            raise ValueError(f"NF {name} must be non-empty 2D with one row per sample")
+        if axis.ndim == 1 and axis.size == array.shape[1]:
+            valid &= np.all(np.isfinite(axis))
+        elif name == "sampled_sld_profiles" and axis.shape == array.shape:
+            valid &= np.all(np.isfinite(axis), axis=1)
+        else:
+            raise ValueError(f"NF {name} shape must match sample count and axis length")
+        valid &= np.all(np.isfinite(array), axis=1)
+        arrays[name] = array
+    if not valid.any():
+        raise ValueError("NF posterior contains no finite complete sample rows")
+    best_idx = select_global_ml_index(samples, log_likelihoods, valid)
     return {
-        # parameters
-        "param_names": param_names,
-        "predicted_params_array": pred_params,
-        "polished_params_array": pred_params,
-        # curves
-        "q_plot_pred": np.asarray(nf_prediction_dict["q_plot_pred"]),
-        "predicted_curve": predicted_curve,
-        "polished_curve": predicted_curve,
-        # sld
-        "predicted_sld_xaxis": predicted_sld_xaxis,
-        "predicted_sld_profile": predicted_sld_profile,
-        "sld_profile_polished": predicted_sld_profile,
-        # minimal NF metadata
+        "param_names": names,
+        "predicted_params_array": samples[best_idx].copy(),
+        "polished_params_array": samples[best_idx].copy(),
+        "q_plot_pred": q_axis,
+        "predicted_curve": arrays["sampled_curves"][best_idx],
+        "polished_curve": arrays["sampled_curves"][best_idx],
+        "predicted_sld_xaxis": z_axis[best_idx] if z_axis.ndim == 2 else z_axis,
+        "predicted_sld_profile": arrays["sampled_sld_profiles"][best_idx],
+        "sld_profile_polished": arrays["sampled_sld_profiles"][best_idx],
         "nf_best_idx": best_idx,
         "nf_best_log_likelihood": float(log_likelihoods[best_idx]),
     }
 
 
-def _extend_prior_bounds_for_nf(prior_bounds):
-    """Extend standard prior bounds with NF nuisance-parameter bounds when needed.
-
-    The example NF config expects two additional parameters beyond the standard
-    geometry/SLD parameters: r_scale and log10_background.
-    """
-    prior_bounds_list = list(prior_bounds)
-
-    if len(prior_bounds_list) in (5, 8):
-        # Append nuisance bounds in the expected order.
-        # r_scale: [0.9, 1.1]
-        # log10_background: [-10, -4]
-        prior_bounds_list.extend([(0.9, 1.1), (-10.0, -4.0)])
-        return prior_bounds_list
-
-    if len(prior_bounds_list) in (7, 10):
-        return prior_bounds_list
-
-    raise ValueError(
-        f"Unsupported NF prior_bounds length={len(prior_bounds_list)}. "
-        "Expected 5/7 (1-layer) or 8/10 (2-layer), depending on whether nuisance "
-        "parameters (r_scale, log10_background) are included."
-    )
+def _extend_prior_bounds_for_nf(prior_bounds, inference_model=None):
+    """Append selected-model nuisance bounds; retain the historical no-model call."""
+    bounds = list(prior_bounds)
+    if inference_model is None:
+        if len(bounds) in (5, 8):
+            return bounds + [(0.9, 1.1), (-10.0, -4.0)]
+        if len(bounds) in (7, 10):
+            return bounds
+        raise ValueError(f"Unsupported NF prior_bounds length={len(bounds)}")
+    sampler = inference_model.trainer.loader.prior_sampler
+    parameter_count = sampler.param_dim
+    physical_count = 3 * sampler.max_num_layers + 2
+    if len(bounds) == parameter_count:
+        return bounds
+    if len(bounds) != physical_count or parameter_count < physical_count:
+        raise ValueError("Prior bounds do not match the selected model parameter count")
+    lower = to_numpy(sampler.min_bounds).reshape(-1)
+    upper = to_numpy(sampler.max_bounds).reshape(-1)
+    return bounds + list(zip(lower[physical_count:], upper[physical_count:]))
 
 
 def _map_pred_param_name_to_canonical_true_name(
@@ -324,74 +308,44 @@ def run_nf_inference(
     nf_enable_importance_sampling=True,
     clip_prediction=True,
     sigmas_exp=None,
+    ambient_sld=0.0,
 ):
-    """Run NF inference via `preprocess_and_sample` and adapt to the standard schema."""
-    logger.info("Performing NF inference (preprocess_and_sample)...")
-
-    if sigmas_exp is not None:
-        q_model, exp_curve_interp, sigmas_interp = (
-            inference_model.interpolate_data_to_model_q(
-                q_exp, curve_exp, sigmas_exp=sigmas_exp
-            )
-        )
-        logger.info(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
-        if q_model.max() < 0.05:
-            logger.warning(
-                "Model Q max (%.4f) is very low; inference may be unreliable.",
-                q_model.max(),
-            )
-        logger.info(f"Interpolated curve shape: {exp_curve_interp.shape}")
-        logger.info(f"Interpolated sigmas shape: {sigmas_interp.shape}")
-    else:
-        q_model, exp_curve_interp = inference_model.interpolate_data_to_model_q(
-            q_exp, curve_exp
-        )
-        sigmas_interp = None
-        logger.info(f"Model Q range: {q_model.min():.4f} - {q_model.max():.4f} Å⁻¹")
-        if q_model.max() < 0.05:
-            logger.warning(
-                "Model Q max (%.4f) is very low; inference may be unreliable.",
-                q_model.max(),
-            )
-        logger.info(f"Interpolated curve shape: {exp_curve_interp.shape}")
-
-    preprocess_kwargs = {
-        "reflectivity_curve": exp_curve_interp,
-        "q_values": q_model,
-        "num_samples": nf_num_samples,
-        "prior_bounds": _extend_prior_bounds_for_nf(prior_bounds),
-        "q_resolution": q_resolution,
-        "calc_sampled_curves": True,
-        "calc_sampled_sld_profiles": True,
-        "calc_log_likelihoods": True,
-        "enable_importance_sampling": nf_enable_importance_sampling,
-        "clip_prediction": clip_prediction,
-    }
-    if sigmas_interp is not None:
-        preprocess_kwargs["sigmas"] = sigmas_interp
-
-    nf_prediction_dict = inference_model.preprocess_and_sample(**preprocess_kwargs)
-
-    # Compute NF sample statistics before selecting best sample
-    logger.info("Computing NF sample statistics...")
-    nf_stats = compute_nf_sample_statistics(
-        predicted_params_array=nf_prediction_dict["predicted_params_array"],
-        log_prob=nf_prediction_dict["log_likelihoods"],
+    """Sample once on the vendor grid, retaining the legacy likelihood noise model."""
+    if not isinstance(nf_num_samples, (int, np.integer)) or nf_num_samples < 1:
+        raise ValueError("nf_num_samples must be a positive integer")
+    posterior = inference_model.preprocess_and_sample(
+        reflectivity_curve=curve_exp,
+        q_values=q_exp,
+        sigmas=sigmas_exp,
+        num_samples=nf_num_samples,
+        prior_bounds=_extend_prior_bounds_for_nf(prior_bounds, inference_model),
+        q_resolution=q_resolution,
+        ambient_sld=ambient_sld,
+        kwargs_param_labels={"number_top_to_bottom": True},
+        calc_sampled_curves=True,
+        calc_sampled_sld_profiles=True,
+        calc_log_likelihoods=True,
+        enable_importance_sampling=nf_enable_importance_sampling,
+        clip_prediction=clip_prediction,
+        enable_error_bars_filtering=False,
+        rel_err_factor=0.2,
     )
-
-    prediction_dict = _nf_prediction_to_single_prediction_dict(nf_prediction_dict)
-
-    # Merge NF statistics into prediction_dict
-    prediction_dict.update(nf_stats)
-
+    prediction = _nf_prediction_to_single_prediction_dict(posterior)
+    prediction.update(
+        compute_nf_sample_statistics(
+            posterior["predicted_params_array"], posterior["log_likelihoods"]
+        )
+    )
+    ess = posterior.get("ess")
+    prediction["nf_ess"] = float(ess) if ess is not None and np.isfinite(ess) else None
+    prediction["nf_likelihood_noise"] = (
+        {"source": "provided_sigmas"}
+        if sigmas_exp is not None
+        else {"source": "relative", "relative_error": 0.2, "absolute_floor": 1e-12}
+    )
     if apply_constraints:
-        logger.info("Applying physical constraints...")
-        prediction_dict = apply_physical_constraints(prediction_dict)
-    else:
-        logger.info("Physical constraints disabled - skipping constraint application")
-
-    q_pred = np.asarray(prediction_dict["q_plot_pred"])
-    return q_pred, prediction_dict
+        prediction = apply_physical_constraints(prediction)
+    return np.asarray(prediction["q_plot_pred"]), prediction
 
 
 def display_results(prediction_dict):
@@ -409,6 +363,108 @@ def display_results(prediction_dict):
         logger.info(
             f"{param_name.ljust(18)} -> Predicted: {pred_val:.3f}    Polished: {polished_val:.3f}"
         )
+
+
+def resolve_inference_config(
+    layer_count=1, inference_backend="predict", config_name=None
+):
+    """Resolve the supported default model without loading weights."""
+    if layer_count not in (1, 2):
+        raise ValueError(f"Unsupported layer count: {layer_count}")
+    if inference_backend not in {"predict", "nf"}:
+        raise ValueError(f"Unknown inference backend: {inference_backend}")
+    if config_name is None:
+        if inference_backend == "nf":
+            if layer_count != 1:
+                raise ValueError(
+                    "Provide an explicit NF config matching the requested layer_count"
+                )
+            config_name = "example_nf_config_reflectorch.yaml"
+        else:
+            config_name = (
+                f"b_mc_point_neutron_conv_standard_L{layer_count}_InputQDq.yaml"
+            )
+    return config_name if config_name.endswith(".yaml") else config_name + ".yaml"
+
+
+def _validate_inference_model(inference_model, layer_count, config_name=None):
+    sampler = inference_model.trainer.loader.prior_sampler
+    if sampler.max_num_layers != layer_count:
+        raise ValueError(
+            f"Model has {sampler.max_num_layers} layers but experiment has {layer_count}"
+        )
+    if config_name is not None:
+        actual = getattr(inference_model, "config_name", None)
+        expected = config_name.removesuffix(".yaml")
+        if actual is not None and actual.removesuffix(".yaml") != expected:
+            raise ValueError(
+                f"Injected model config {actual} does not match {config_name}"
+            )
+    return sampler
+
+
+def create_inference_model(
+    layer_count=1, inference_backend="predict", config_name=None, inference_device=None
+):
+    """Create one model that can be reused across compatible experiments."""
+    config_name = resolve_inference_config(layer_count, inference_backend, config_name)
+    model = EasyInferenceModel(
+        config_name=config_name, device=detect_torch_device(inference_device)
+    )
+    _validate_inference_model(model, layer_count, config_name)
+    return model
+
+
+def get_inference_prior_limits(inference_model, layer_count, ambient_sld=0.0):
+    """Expose selected-model limits in absolute coordinates and canonical names."""
+    if not np.isfinite(ambient_sld):
+        raise ValueError("ambient_sld must be finite")
+    sampler = _validate_inference_model(inference_model, layer_count)
+    labels = sampler.param_model.get_param_labels(number_top_to_bottom=True)
+    names = [
+        _map_pred_param_name_to_canonical_true_name(name, layer_count)
+        for name in labels
+    ]
+    required = get_parameter_names_for_layer_count(layer_count)
+    if names[: len(required)] != required:
+        raise ValueError(
+            "Selected model parameter order does not match the supported layer model"
+        )
+    arrays = [
+        to_numpy(value).reshape(-1)
+        for value in (
+            sampler.min_bounds,
+            sampler.max_bounds,
+            sampler.min_delta,
+            sampler.max_delta,
+        )
+    ]
+    if any(len(values) != len(names) for values in arrays):
+        raise ValueError("Selected model limits do not match its parameter labels")
+    ranges, widths = {}, {}
+    for index, name in enumerate(required):
+        lower, upper, minimum, maximum = [float(values[index]) for values in arrays]
+        shift = ambient_sld if "sld" in name else 0.0
+        ranges[name] = (lower + shift, upper + shift)
+        widths[name] = (minimum, maximum)
+    return ranges, widths
+
+
+def align_samples_to_true(samples, pred_param_names, true_param_names, layer_count):
+    """Align physical parameters by name while preserving all sample row indices."""
+    samples = to_numpy(samples)
+    if samples.ndim != 2 or samples.shape[1] != len(pred_param_names):
+        raise ValueError("Sample columns must match predicted parameter names")
+    canonical_to_index = {}
+    for index, name in enumerate(pred_param_names):
+        canonical = _map_pred_param_name_to_canonical_true_name(name, layer_count)
+        if canonical in canonical_to_index:
+            raise ValueError(f"Duplicate predicted parameter name: {canonical}")
+        canonical_to_index[canonical] = index
+    missing = [name for name in true_param_names if name not in canonical_to_index]
+    if missing:
+        raise ValueError(f"Predicted posterior is missing true parameters: {missing}")
+    return samples[:, [canonical_to_index[name] for name in true_param_names]]
 
 
 def run_single_experiment(
@@ -431,6 +487,7 @@ def run_single_experiment(
     use_sigmas_input: bool = False,
     inference_device: str | None = None,
     data_directory: str = "data",
+    inference_model=None,
 ):
     """
     Run a single experiment inference with configurable options.
@@ -449,10 +506,12 @@ def run_single_experiment(
         fix_sld_mode: SLD fixing mode - "none", "backing", or "all"
         use_theoretical: If True, use theoretical curves; if False (default), use experimental curves
         clip_prediction: Whether to clip predicted parameters to prior bounds (default: True)
-        use_sigmas_input: Use sigmas as additional input channel to neural network (requires 2-channel model)
+        use_sigmas_input: Provide loaded uncertainties for likelihood/polishing;
+                          the selected model controls whether they also enter the network.
         inference_device: Optional explicit torch device ("cpu", "cuda", or "mps").
                          If None, automatically prefers CUDA, then MPS, then CPU.
         data_directory: Base data directory to search for experiment files (default: "data")
+        inference_model: Optional compatible model to reuse across experiments.
 
     Returns:
         Dictionary with results including parameters and metrics
@@ -481,7 +540,26 @@ def run_single_experiment(
     if model_file:
         true_params_dict = parse_true_parameters_from_model_file(str(model_file))
 
-    # Get prior bounds
+    if inference_backend not in {"predict", "nf"}:
+        raise ValueError(f"Unknown inference backend: {inference_backend}")
+    if inference_model is None:
+        inference_model = create_inference_model(
+            final_layer_count, inference_backend, config_name, inference_device
+        )
+    else:
+        _validate_inference_model(inference_model, final_layer_count, config_name)
+    resolved_device = str(inference_model.device)
+    if inference_device is not None and resolved_device != str(
+        detect_torch_device(inference_device)
+    ):
+        raise ValueError(
+            "Injected model device does not match the requested inference_device"
+        )
+    true_block = (true_params_dict or {}).get(f"{final_layer_count}_layer", {})
+    ambient_sld = float(true_block.get("ambient_sld", 0.0))
+    model_ranges, width_limits = get_inference_prior_limits(
+        inference_model, final_layer_count, ambient_sld
+    )
     prior_bounds = get_prior_bounds_for_experiment(
         experiment_id,
         true_params_dict,
@@ -489,24 +567,8 @@ def run_single_experiment(
         deviation=priors_deviation,
         layer_count=final_layer_count,
         fix_sld_mode=fix_sld_mode,
-    )
-
-    # Initialize inference model
-    if config_name is None:
-        if inference_backend == "nf":
-            if final_layer_count != 1:
-                raise ValueError(
-                    "Default NF config 'example_nf_config_reflectorch.yaml' is a 1-layer model. "
-                    "Provide --config-name for an NF model matching the requested layer_count."
-                )
-            config_name = "example_nf_config_reflectorch.yaml"
-        else:
-            config_name = "b_mc_point_neutron_conv_standard_L1_InputQDq"
-    resolved_device = detect_torch_device(inference_device)
-    logger.info(f"Using inference device: {resolved_device}")
-    inference_model = EasyInferenceModel(
-        config_name=config_name,
-        device=resolved_device,
+        model_ranges=model_ranges,
+        width_limits=width_limits,
     )
 
     # Run inference
@@ -524,6 +586,7 @@ def run_single_experiment(
             nf_enable_importance_sampling=nf_enable_importance_sampling,
             clip_prediction=clip_prediction,
             sigmas_exp=sigmas_for_inference,
+            ambient_sld=ambient_sld,
         )
     else:
         q_model, prediction_dict = run_inference(
@@ -535,6 +598,7 @@ def run_single_experiment(
             apply_constraints=apply_constraints,
             clip_prediction=clip_prediction,
             sigmas_exp=sigmas_for_inference,
+            ambient_sld=ambient_sld,
         )
 
     param_metrics = None
@@ -546,31 +610,12 @@ def run_single_experiment(
         pred_params_for_metrics = prediction_dict["polished_params_array"]
         pred_param_names = prediction_dict.get("param_names", [])
 
-        # NF models can include nuisance parameters (e.g., r_scale, log10_background) and
-        # can label standard parameters differently (e.g., "Thickness L1").
-        # Align predicted parameters to the true parameter set by name.
-        if len(pred_params_for_metrics) != len(true_params) and pred_param_names:
-            canonical_to_index: dict[str, int] = {}
-            for i, pred_name in enumerate(pred_param_names):
-                canonical = _map_pred_param_name_to_canonical_true_name(
-                    pred_name, final_layer_count
-                )
-                if canonical and canonical not in canonical_to_index:
-                    canonical_to_index[canonical] = i
-
-            missing = [
-                true_name
-                for true_name in true_param_names
-                if true_name not in canonical_to_index
-            ]
-            if missing:
-                raise ValueError(
-                    f"Predicted param_names missing required true params: {missing}. "
-                    f"Predicted names: {pred_param_names}"
-                )
-
-            indices = [canonical_to_index[true_name] for true_name in true_param_names]
-            pred_params_for_metrics = np.asarray(pred_params_for_metrics)[indices]
+        pred_params_for_metrics = align_samples_to_true(
+            np.asarray(pred_params_for_metrics)[None, :],
+            pred_param_names,
+            true_param_names,
+            final_layer_count,
+        )[0]
 
         param_metrics = calculate_parameter_metrics(
             pred_params_for_metrics,
@@ -581,6 +626,10 @@ def run_single_experiment(
     # Prepare results dictionary
     results = {
         "experiment_id": experiment_id,
+        "input_files": {
+            "data_file": str(Path(data_file).resolve()),
+            "model_file": str(Path(model_file).resolve()) if model_file else None,
+        },
         "layer_count": final_layer_count,
         "prediction_dict": prediction_dict,
         "param_metrics": param_metrics,
@@ -590,11 +639,25 @@ def run_single_experiment(
         "sigmas_exp": sigmas_exp,
         "q_model": q_model,
         "prior_bounds": prior_bounds,
+        "ambient_sld": ambient_sld,
         "inference_device": resolved_device,
         "priors_config": {
             "priors_type": priors_type,
             "priors_deviation": priors_deviation,
             "fix_sld_mode": fix_sld_mode,
+            "effective_widths": [upper - lower for lower, upper in prior_bounds],
+            "requested_widths": [
+                0.002
+                if (name == "sub_sld" and fix_sld_mode != "none")
+                or ("sld" in name and fix_sld_mode == "all")
+                else priors_deviation
+                * (
+                    get_constraint_ranges()[name][1] - get_constraint_ranges()[name][0]
+                    if priors_type == "constraint_based"
+                    else 2 * abs(value)
+                )
+                for name, value in zip(true_block["param_names"], true_block["params"])
+            ],
         },
     }
 

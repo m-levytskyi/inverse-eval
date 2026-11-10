@@ -60,7 +60,7 @@ help:
 	@echo "  make distclean          Remove .venv and vendor/"
 	@echo ""
 	@echo "Torch wheel modes:"
-	@echo "  TORCH_WHEEL=cpu|auto|cu118|cu121|cu126|cu128 (default: $(TORCH_WHEEL))"
+	@echo "  TORCH_WHEEL=cpu|auto|cu118|cu126|cu128 (default: $(TORCH_WHEEL))"
 	@echo "  auto selects the newest pinned CUDA backend supported by your NVIDIA driver,"
 	@echo "  or falls back to the default CPU/macOS wheel."
 
@@ -100,16 +100,16 @@ check-torch: require-venv
 install-hooks: dev-deps
 	$(call RUN_BOOTSTRAP,install-hooks)
 
-test: deps dev-deps
+test: require-venv
 	$(call RUN_BOOTSTRAP,test)
 
-lint: dev-deps
+lint: require-venv
 	$(call RUN_BOOTSTRAP,lint)
 
-type-check: deps dev-deps
+type-check: require-venv
 	$(call RUN_BOOTSTRAP,type-check)
 
-pre-commit: dev-deps
+pre-commit: require-venv
 	$(call RUN_BOOTSTRAP,pre-commit)
 
 require-venv:

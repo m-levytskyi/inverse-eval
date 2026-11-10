@@ -13,6 +13,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from utils import validate_positional_experiment_ids
+
 
 logger = logging.getLogger(__name__)
 
@@ -212,11 +214,9 @@ def main() -> int:
         )
         selected_for_plots = [exp_files[i] for i in np.unique(positions)]
 
-    if len(exp_files) > r_denoised.shape[0]:
-        raise ValueError(
-            f"More experimental files ({len(exp_files)}) than rows in R_denoised "
-            f"({r_denoised.shape[0]}). Ensure the pickle and input directory match."
-        )
+    validate_positional_experiment_ids(
+        [extract_experiment_id(path) for path in exp_files], r_denoised.shape[0]
+    )
 
     for row_idx, exp_file in enumerate(exp_files):
         exp_id = extract_experiment_id(exp_file)

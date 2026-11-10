@@ -7,9 +7,8 @@ def test_restore_ambient_sld_updates_sld_columns_for_batched_and_single_predicti
     for shape in [(7,), (2, 7)]:
         prediction = {"predicted_params_array": np.zeros(shape)}
 
-        EasyInferenceModel._restore_slds_after_ambient_shift(
-            None, prediction, slice(3, 5), 3.5
-        )
+        model = EasyInferenceModel()
+        model._restore_slds_after_ambient_shift(prediction, slice(3, 5), 3.5)
 
         assert np.all(prediction["predicted_params_array"][..., 3:5] == 3.5)
         assert np.all(prediction["predicted_params_array"][..., :3] == 0.0)
