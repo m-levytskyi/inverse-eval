@@ -11,6 +11,8 @@ The baseline model appears as grey background bars, q-weighted as colored foregr
 
 import json
 import logging
+import math
+import re
 from pathlib import Path
 from typing import Dict, List, Tuple
 from collections import defaultdict
@@ -23,21 +25,9 @@ from plotting_utils import (
 logger = logging.getLogger(__name__)
 
 
-def load_batch_summary(batch_dir: Path) -> Dict:
-    """
-    Load batch summary from JSON file.
-
-    Args:
-        batch_dir: Path to batch directory
-
-    Returns:
-        Dictionary with batch summary data
-    """
-    summary_file = batch_dir / "batch_summary_1layer.json"
-    if not summary_file.exists():
-        raise FileNotFoundError(f"Summary file not found: {summary_file}")
-
-    with open(summary_file, "r") as f:
+def load_batch_results(batch_dir: Path) -> Dict:
+    """Load current per-experiment records, including historical batch files."""
+    with (batch_dir / "batch_results.json").open() as f:
         return json.load(f)
 
 
@@ -51,23 +41,27 @@ def parse_batch_config(batch_name: str) -> Dict:
     Returns:
         Dictionary with parsed configuration
     """
-    parts = batch_name.split("_")
-
+    match = re.match(
+        r"^(\d+)_(?:custom_)?(\d+|None)exps_(\d+)layers_(\d+)(constraint|priors)(?:_|$)",
+        batch_name,
+        re.IGNORECASE,
+    )
+    if not match:
+        raise ValueError(f"Cannot parse batch setup: {batch_name}")
+    batch_num, count, layers, deviation, prior_kind = match.groups()
     config = {
-        "batch_num": int(parts[0]),
-        "num_exps": int(parts[1].replace("exps", "")),
-        "layer_count": int(parts[2].replace("layers", "")),
+        "batch_num": int(batch_num),
+        "num_exps": None if count.lower() == "none" else int(count),
+        "layer_count": int(layers),
+        "constraint": int(deviation),
+        "deviation": int(deviation) / 100.0,
+        "priors_type": "constraint_based"
+        if prior_kind.lower() == "constraint"
+        else "narrow",
         "prominent": "PROMINENT" in batch_name.upper(),
         "sld_fix_mode": "none",
+        "use_theoretical": False,
     }
-
-    # Parse constraint/prior deviation
-    for part in parts:
-        if "constraint" in part.lower():
-            constraint_val = int(part.replace("constraint", ""))
-            config["constraint"] = constraint_val
-            config["deviation"] = constraint_val / 100.0
-            break
 
     # Parse SLD fix mode
     if "allSLDfix" in batch_name or "allsldfix" in batch_name.lower():
@@ -78,75 +72,58 @@ def parse_batch_config(batch_name: str) -> Dict:
     return config
 
 
-def extract_mapes_from_batch(batch_dir: Path) -> Tuple[List[float], Dict]:
-    """
-    Extract MAPE values from batch summary.
+def load_batch_config(batch_dir: Path) -> Dict:
+    """Prefer persisted settings; older runs retain directory-name lookup."""
+    metadata_path = batch_dir / "run_metadata.json"
+    if not metadata_path.exists():
+        return parse_batch_config(batch_dir.name)
+    config = json.loads(metadata_path.read_text())["config"]
+    return {
+        "layer_count": config["layer_count"],
+        "constraint": config["priors_deviation"] * 100,
+        "deviation": config["priors_deviation"],
+        "priors_type": config["priors_type"],
+        "sld_fix_mode": config["fix_sld_mode"],
+        "prominent": config["use_prominent_features"],
+        "use_theoretical": config.get("use_theoretical", False),
+    }
 
-    Args:
-        batch_dir: Path to batch directory
-    Returns:
-        Tuple of (mape_list, per_param_mapes_dict)
-    """
-    summary = load_batch_summary(batch_dir)
 
+def _scored_records(batch_results):
+    """Keep successful records with a usable production score."""
+    records = {}
+    for exp_id, result in batch_results.items():
+        score = (
+            (result.get("param_metrics") or {})
+            .get("overall", {})
+            .get("constraint_mape")
+        )
+        if (
+            result.get("success")
+            and score is not None
+            and math.isfinite(score)
+            and score >= 0
+        ):
+            records[exp_id] = result
+    return records
+
+
+def extract_mapes_from_batch(
+    batch_dir: Path, experiment_ids=None
+) -> Tuple[List[float], Dict]:
+    """Extract current scores, optionally in an explicit paired ID order."""
+    records = _scored_records(load_batch_results(batch_dir))
+    ids = sorted(records) if experiment_ids is None else experiment_ids
     mapes = []
     per_param_mapes = defaultdict(list)
-
-    if "debug_info" not in summary:
-        return mapes, per_param_mapes
-
-    for exp_info in summary["debug_info"]:
-        if "param_metrics" not in exp_info or not exp_info["param_metrics"]:
-            continue
-
-        # Extract overall MAPE
-        overall = exp_info["param_metrics"].get("overall", {})
-        if "constraint_mape" in overall:
-            mapes.append(overall["constraint_mape"])
-
-        # Extract per-parameter MAPE
-        if "by_parameter" in exp_info["param_metrics"]:
-            for param_name, param_data in exp_info["param_metrics"][
-                "by_parameter"
-            ].items():
-                if "constraint_percentage_error" in param_data:
-                    per_param_mapes[param_name].append(
-                        param_data["constraint_percentage_error"]
-                    )
-
+    for exp_id in ids:
+        metrics = records[exp_id]["param_metrics"]
+        mapes.append(metrics["overall"]["constraint_mape"])
+        for name, data in metrics.get("by_parameter", {}).items():
+            score = data.get("constraint_percentage_error")
+            if score is not None and math.isfinite(score) and score >= 0:
+                per_param_mapes[name].append(score)
     return mapes, dict(per_param_mapes)
-
-
-def get_batch_metadata(batch_dir: Path) -> Dict:
-    """
-    Get batch metadata including failure and outlier counts.
-
-    Args:
-        batch_dir: Path to batch directory
-
-    Returns:
-        Dictionary with metadata
-    """
-    summary = load_batch_summary(batch_dir)
-
-    total = summary.get("total_experiments", 0)
-    successful = 0
-    outliers = 0
-
-    if "debug_info" in summary:
-        for exp_info in summary["debug_info"]:
-            if exp_info.get("param_metrics"):
-                successful += 1
-                if exp_info.get("excluded_as_outlier", False):
-                    outliers += 1
-
-    return {
-        "total": total,
-        "successful": successful,
-        "failed": total - successful,
-        "outliers": outliers,
-        "priors_type": summary.get("priors_type", "unknown"),
-    }
 
 
 def find_matching_batches(
@@ -162,25 +139,31 @@ def find_matching_batches(
     Returns:
         List of tuples (baseline_path, qweighted_path, config)
     """
-    # Parse configurations
-    baseline_configs = [(b, parse_batch_config(b.name)) for b in baseline_batches]
-    qweighted_configs = [(q, parse_batch_config(q.name)) for q in qweighted_batches]
-
-    # Match by constraint level, SLD fix mode, and prominent flag
-    matches = []
-
-    for baseline_path, baseline_config in baseline_configs:
-        for qweighted_path, qweighted_config in qweighted_configs:
-            if (
-                baseline_config["constraint"] == qweighted_config["constraint"]
-                and baseline_config["sld_fix_mode"] == qweighted_config["sld_fix_mode"]
-                and baseline_config["prominent"] == qweighted_config["prominent"]
-            ):
-                # Use the q-weighted config for labeling (they should be identical)
-                matches.append((baseline_path, qweighted_path, qweighted_config))
-                break
-
-    return matches
+    keys = (
+        "layer_count",
+        "priors_type",
+        "deviation",
+        "sld_fix_mode",
+        "prominent",
+        "use_theoretical",
+    )
+    groups = []
+    for batches in (baseline_batches, qweighted_batches):
+        setups = {}
+        for path in batches:
+            config = load_batch_config(path)
+            setup = tuple(config[key] for key in keys)
+            if setup in setups:
+                raise ValueError(
+                    f"Ambiguous duplicate setup: {setups[setup][0]} and {path}"
+                )
+            setups[setup] = (path, config)
+        groups.append(setups)
+    return [
+        (path, groups[1][setup][0], config)
+        for setup, (path, config) in groups[0].items()
+        if setup in groups[1]
+    ]
 
 
 def generate_comparison_plots(
@@ -211,14 +194,25 @@ def generate_comparison_plots(
 
     # Find batch directories
     all_batches = sorted(
-        [d for d in base_dir.iterdir() if d.is_dir() and d.name[0].isdigit()]
+        [d for d in base_dir.iterdir() if d.is_dir() and d.name.split("_")[0].isdigit()]
     )
 
     baseline_batches = []
     qweighted_batches = []
 
+    selected_numbers = {}
     for batch_dir in all_batches:
         batch_num = int(batch_dir.name.split("_")[0])
+        selected = (
+            baseline_range[0] <= batch_num <= baseline_range[1]
+            or qweighted_range[0] <= batch_num <= qweighted_range[1]
+        )
+        if selected and batch_num in selected_numbers:
+            raise ValueError(
+                f"Ambiguous batch {batch_num}: {selected_numbers[batch_num]} and {batch_dir}"
+            )
+        if selected:
+            selected_numbers[batch_num] = batch_dir
         if baseline_range[0] <= batch_num <= baseline_range[1]:
             baseline_batches.append(batch_dir)
         elif qweighted_range[0] <= batch_num <= qweighted_range[1]:
@@ -233,10 +227,7 @@ def generate_comparison_plots(
     logger.info(f"Found {len(matches)} matching batch pairs")
     logger.info("")
 
-    # Create output directory structure
-    for subdir in ["mape", "mape_prom", "param_mape", "param_mape_prom"]:
-        (output_dir / subdir).mkdir(parents=True, exist_ok=True)
-
+    saved_paths = []
     # Generate plots for each matching pair
     for baseline_path, qweighted_path, config in matches:
         logger.info("\nProcessing pair:")
@@ -248,63 +239,86 @@ def generate_comparison_plots(
         )
 
         try:
-            # Extract MAPEs
-            baseline_mapes, baseline_per_param = extract_mapes_from_batch(baseline_path)
-            qweighted_mapes, qweighted_per_param = extract_mapes_from_batch(
-                qweighted_path
+            baseline = _scored_records(load_batch_results(baseline_path))
+            comparison = _scored_records(load_batch_results(qweighted_path))
+            paired_ids = sorted(baseline.keys() & comparison.keys())
+            logger.info(
+                "  Paired %s experiments; unmatched baseline=%s, comparison=%s",
+                len(paired_ids),
+                len(baseline) - len(paired_ids),
+                len(comparison) - len(paired_ids),
             )
-
-            # Get metadata
-            baseline_meta = get_batch_metadata(baseline_path)
-            qweighted_meta = get_batch_metadata(qweighted_path)
-
-            logger.info(f"  Baseline: {len(baseline_mapes)} MAPEs extracted")
-            logger.info(f"  Q-Weighted: {len(qweighted_mapes)} MAPEs extracted")
-
-            if not baseline_mapes or not qweighted_mapes:
+            if not paired_ids:
                 logger.info("  Skipping - insufficient data")
                 continue
-
-            # Determine output filenames
-            constraint = config["constraint"]
-            sld_suffix = {"none": "nofix", "backing": "backing", "all": "allSLDfixed"}[
-                config["sld_fix_mode"]
+            baseline_mapes, qweighted_mapes = [
+                [
+                    records[exp_id]["param_metrics"]["overall"]["constraint_mape"]
+                    for exp_id in paired_ids
+                ]
+                for records in (baseline, comparison)
             ]
-
-            filename = f"{constraint}_{sld_suffix}.png"
-
-            # Generate overall MAPE plot
-            if config["prominent"]:
-                overall_output = output_dir / "mape_prom" / filename
-            else:
-                overall_output = output_dir / "mape" / filename
-
-            plot_model_comparison_histogram(
-                baseline_mapes=baseline_mapes,
-                comparison_mapes=qweighted_mapes,
-                config=config,
-                output_dir=overall_output.parent,
-                save=True,
-                baseline_label="Baseline (Generated Data Only)",
-                comparison_label="Q-Weighted (Mixed Data)",
-                baseline_meta=baseline_meta,
-                comparison_meta=qweighted_meta,
+            baseline_per_param, qweighted_per_param = (
+                defaultdict(list),
+                defaultdict(list),
             )
+            for exp_id in paired_ids:
+                left = baseline[exp_id]["param_metrics"].get("by_parameter", {})
+                right = comparison[exp_id]["param_metrics"].get("by_parameter", {})
+                for name in left.keys() & right.keys():
+                    scores = [
+                        side[name].get("constraint_percentage_error")
+                        for side in (left, right)
+                    ]
+                    if all(
+                        value is not None and math.isfinite(value) and value >= 0
+                        for value in scores
+                    ):
+                        baseline_per_param[name].append(scores[0])
+                        qweighted_per_param[name].append(scores[1])
 
-            # Generate per-parameter MAPE plot
-            if config["prominent"]:
-                param_output = output_dir / "param_mape_prom" / filename
-            else:
-                param_output = output_dir / "param_mape" / filename
-
-            plot_parameter_comparison_grid(
-                baseline_per_param=baseline_per_param,
-                comparison_per_param=qweighted_per_param,
-                config=config,
-                output_dir=param_output.parent,
-                save=True,
-                baseline_label="Baseline",
-                comparison_label="Q-Weighted",
+            pair_output = (
+                output_dir
+                / f"{baseline_path.name.split('_')[0]}_vs_{qweighted_path.name.split('_')[0]}"
+            )
+            pair_output.mkdir(parents=True, exist_ok=True)
+            (pair_output / "comparison_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "baseline": str(baseline_path),
+                        "comparison": str(qweighted_path),
+                        "experiment_ids": paired_ids,
+                        "unmatched_baseline": sorted(
+                            baseline.keys() - comparison.keys()
+                        ),
+                        "unmatched_comparison": sorted(
+                            comparison.keys() - baseline.keys()
+                        ),
+                    },
+                    indent=2,
+                )
+            )
+            saved_paths.append(
+                plot_model_comparison_histogram(
+                    baseline_mapes=baseline_mapes,
+                    comparison_mapes=qweighted_mapes,
+                    config=config,
+                    output_dir=pair_output,
+                    save=True,
+                    baseline_label="Baseline (Generated Data Only)",
+                    comparison_label="Q-Weighted (Mixed Data)",
+                )
+            )
+            saved_paths.append(
+                plot_parameter_comparison_grid(
+                    baseline_per_param=baseline_per_param,
+                    comparison_per_param=qweighted_per_param,
+                    config=config,
+                    output_dir=pair_output,
+                    save=True,
+                    baseline_label="Baseline",
+                    comparison_label="Q-Weighted",
+                )
             )
 
         except (OSError, ValueError, KeyError, RuntimeError) as e:
@@ -314,6 +328,7 @@ def generate_comparison_plots(
     logger.info(f"\n{'=' * 80}")
     logger.info(f"Comparison complete! Plots saved to: {output_dir}")
     logger.info(f"{'=' * 80}")
+    return [path for path in saved_paths if path is not None]
 
 
 if __name__ == "__main__":

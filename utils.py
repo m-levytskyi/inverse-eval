@@ -10,6 +10,24 @@ import json
 import numpy as np
 
 
+def to_numpy(value):
+    """Detach tensor-like values before exposing their NumPy representation."""
+    if hasattr(value, "detach"):
+        value = value.detach().cpu()
+    return np.asarray(value)
+
+
+def validate_positional_experiment_ids(experiment_ids, row_count):
+    """Require the complete zero-based sequence used by positional curve pickles."""
+    expected = [f"s{index:06d}" for index in range(row_count)]
+    if list(experiment_ids) != expected:
+        raise ValueError(
+            "Positional pickle rows require the complete ordered experiment sequence "
+            "s000000 through the final row. Missing, duplicate, filtered, or reordered "
+            "files cannot be matched safely."
+        )
+
+
 def convert_to_json_serializable(obj):
     """
     Recursively convert objects to JSON serializable format.
@@ -58,3 +76,33 @@ def ensure_directory_exists(directory_path):
     directory = Path(directory_path)
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+def write_json_atomic(path, data):
+    """Replace a JSON file only after its complete, finite contents reach disk."""
+    import os
+    from pathlib import Path
+    import tempfile
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(
+                convert_to_json_serializable(data), temporary, indent=2, allow_nan=False
+            )
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)

@@ -51,8 +51,8 @@ def _build_filename(prefix, layer_count, use_prominent_features=False):
 
 def _get_mape_ranges():
     """Return standard MAPE ranges and labels."""
-    mape_ranges = list(range(0, 105, 5))
-    range_labels = [f"{i}-{i + 5}" for i in range(0, 100, 5)]
+    mape_ranges = [*range(0, 105, 5), np.inf]
+    range_labels = [f"{i}-{i + 5}" for i in range(0, 100, 5)] + ["≥100"]
     return mape_ranges, range_labels
 
 
@@ -226,13 +226,8 @@ def plot_batch_mape_distribution(
     # Create distribution plot
     fig, ax = plt.subplots()
 
-    # Fixed 5% bins from 0-100%
-    bin_edges = list(range(0, 105, 5))
-    range_labels = [f"{i}-{i + 5}" for i in range(0, 100, 5)]
-
-    counts = []
-    for i in range(len(bin_edges) - 1):
-        counts.append(sum(1 for m in mapes if bin_edges[i] <= m < bin_edges[i + 1]))
+    bin_edges, range_labels = _get_mape_ranges()
+    counts = _count_mapes_in_ranges(mapes, bin_edges)
 
     bars = ax.bar(range_labels, counts, alpha=0.7)
 
@@ -271,6 +266,7 @@ def plot_batch_mape_distribution(
             "mape_distribution", layer_count, use_prominent_features
         )
         plot_file = Path(output_dir) / filename
+        plot_file.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(plot_file)
         plt.close()
         logger.info(f"MAPE distribution plot saved to: {plot_file}")
@@ -462,8 +458,6 @@ def plot_model_comparison_histogram(
     save=True,
     baseline_label="Baseline",
     comparison_label="Comparison",
-    baseline_meta=None,
-    comparison_meta=None,
 ):
     """
     Create comparison histogram with baseline and comparison model MAPEs.
@@ -476,20 +470,16 @@ def plot_model_comparison_histogram(
         save: Whether to save the plot
         baseline_label: Label for baseline model
         comparison_label: Label for comparison model
-        baseline_meta: Metadata dict for baseline (priors_type, failed, outliers)
-        comparison_meta: Metadata dict for comparison
 
     Returns:
         Figure path if saved, None otherwise
     """
-    baseline_meta = baseline_meta or {}
-    comparison_meta = comparison_meta or {}
-
     mape_label = _mape_label()
     mape_type, title_suffix, deviation_pct = _build_comparison_title(config)
 
     # Create plot
     fig, ax = plt.subplots()
+    ax.set_title(f"{mape_type}{title_suffix}\nPrior fraction: {deviation_pct}%")
 
     # Get MAPE ranges and count values
     mape_ranges, range_labels = _get_mape_ranges()
@@ -576,7 +566,13 @@ def plot_random_guessing_comparison(
     width = 0.35
 
     ax.bar(x - width / 2, model_counts, width, alpha=0.8, label="Model")
-    ax.bar(x + width / 2, random_counts, width, alpha=0.8, label="Random Guessing")
+    ax.bar(
+        x + width / 2,
+        random_counts,
+        width,
+        alpha=0.8,
+        label="Random within truth-conditioned priors",
+    )
 
     ax.set_xlabel("MAPE Range (%)")
     ax.set_ylabel("Number of Experiments")
@@ -588,7 +584,7 @@ def plot_random_guessing_comparison(
     model_mean = np.mean(model_mapes)
     random_mean = np.mean(random_mapes) if random_mapes else 0
     stats_text = f"Model Mean {mape_label}: {model_mean:.1f}%\n"
-    stats_text += f"Random Guessing Mean {mape_label}: {random_mean:.1f}%"
+    stats_text += f"Random within priors Mean {mape_label}: {random_mean:.1f}%"
 
     ax.text(
         0.98,
@@ -628,7 +624,7 @@ def plot_parameter_comparison_grid(
     comparison_label="Comparison",
 ):
     """
-    Create per-parameter MAPE comparison plots in a 2x3 grid.
+    Create a comparison panel for every parameter.
 
     Args:
         baseline_per_param: Dict of parameter name -> list of MAPEs for baseline
@@ -653,21 +649,19 @@ def plot_parameter_comparison_grid(
     mape_type, title_suffix, deviation_pct = _build_comparison_title(config)
 
     # Create subplots
-    fig, axes = plt.subplots(2, 3)
+    rows = (len(param_names) + 2) // 3
+    fig, axes = plt.subplots(rows, 3, squeeze=False, figsize=(15, 4 * rows))
     axes = axes.flatten()
 
     fig.suptitle(
         f"Per-Parameter {mape_type} Distributions{title_suffix}\n"
-        f"($\\pm${deviation_pct}% Constraint-Based Priors)",
+        f"(Prior fraction: {deviation_pct}%)",
     )
 
     # Get MAPE ranges
     mape_ranges, range_labels = _get_mape_ranges()
 
     for idx, param_name in enumerate(param_names):
-        if idx >= len(axes):
-            break
-
         ax = axes[idx]
 
         baseline_vals = baseline_per_param.get(param_name, [])
@@ -678,19 +672,32 @@ def plot_parameter_comparison_grid(
         comparison_counts = _count_mapes_in_ranges(comparison_vals, mape_ranges)
 
         # Plot baseline as background
-        ax.bar(range(len(baseline_counts)), baseline_counts, alpha=0.3, linewidth=1.0)
+        ax.bar(
+            range(len(baseline_counts)),
+            baseline_counts,
+            alpha=0.3,
+            linewidth=1.0,
+            label=baseline_label,
+        )
 
         # Overlay comparison as foreground
         ax.bar(
-            range(len(comparison_counts)), comparison_counts, alpha=0.8, linewidth=0.5
+            range(len(comparison_counts)),
+            comparison_counts,
+            alpha=0.8,
+            linewidth=0.5,
+            label=comparison_label,
         )
 
         ax.set_title(param_name)
         ax.set_xlabel("MAPE Range (%)")
         ax.set_ylabel("Count")
-        ax.set_xticks(range(0, len(range_labels), 4))
+        shown_ticks = sorted(
+            set(range(0, len(range_labels), 4)) | {len(range_labels) - 1}
+        )
+        ax.set_xticks(shown_ticks)
         ax.set_xticklabels(
-            [range_labels[i] for i in range(0, len(range_labels), 4)],
+            [range_labels[i] for i in shown_ticks],
             rotation=45,
             ha="right",
         )
@@ -699,11 +706,9 @@ def plot_parameter_comparison_grid(
         if baseline_vals and comparison_vals:
             baseline_mean = np.mean(baseline_vals)
             comparison_mean = np.mean(comparison_vals)
-            improvement = ((baseline_mean - comparison_mean) / baseline_mean) * 100
-
             stats = f"{comparison_label[:4]}: {comparison_mean:.1f}%\n"
             stats += f"{baseline_label[:4]}: {baseline_mean:.1f}%\n"
-            stats += f"$\\Delta$: {improvement:+.1f}%"
+            stats += f"Difference: {comparison_mean - baseline_mean:+.1f} pp"
             ax.text(
                 0.98,
                 0.98,
@@ -718,6 +723,9 @@ def plot_parameter_comparison_grid(
     # Hide unused subplots
     for idx in range(len(param_names), len(axes)):
         axes[idx].axis("off")
+
+    axes[0].legend()
+    fig.tight_layout()
 
     if save:
         output_dir = Path(output_dir)

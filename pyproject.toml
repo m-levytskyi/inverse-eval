@@ -22,6 +22,7 @@ pythonpath = ["."]
 [tool.ty.environment]
 python-version = "3.10"
 root = ["."]
+extra-paths = ["vendor/nflows_reflectorch"]
 
 [tool.ty.src]
 include = ["bootstrap.py", "bootstrap_windows.py", "device_utils.py", "tests"]

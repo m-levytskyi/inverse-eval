@@ -11,6 +11,7 @@ multimodal_eval_results/
 *.md
 *.codex
 !README.md
+!docs/plans/*.md
 
 # Local/derived datasets
 1_new/

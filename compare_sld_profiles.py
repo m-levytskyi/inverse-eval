@@ -89,6 +89,7 @@ def calculate_sld_from_model(model_file_path, z_range=None, n_points=1000):
 
     params = true_params_dict[layer_key]["params"]
     param_names = true_params_dict[layer_key]["param_names"]
+    ambient_sld = true_params_dict[layer_key].get("ambient_sld", 0.0) * 1e-6
 
     logger.info(f"Using {layer_key} model")
     logger.info(f"Parameters: {dict(zip(param_names, params))}")
@@ -101,7 +102,7 @@ def calculate_sld_from_model(model_file_path, z_range=None, n_points=1000):
         # Set up for sld_profile function
         # Convert SLD values back to Å^-2 units (they come as 10^-6 Å^-2 from parser)
         # SLDs: [ambient, layer, substrate]
-        slds = [3.5e-6, layer_sld * 1e-6, sub_sld * 1e-6]  # Convert back to Å^-2
+        slds = [ambient_sld, layer_sld * 1e-6, sub_sld * 1e-6]  # Convert back to Å^-2
         interfaces = [0, thickness]  # Interface positions
         roughnesses = [amb_rough, sub_rough]  # Roughnesses at each interface
 
@@ -124,7 +125,7 @@ def calculate_sld_from_model(model_file_path, z_range=None, n_points=1000):
         # Convert SLD values back to Å^-2 units (they come as 10^-6 Å^-2 from parser)
         # SLDs: [ambient, layer1, layer2, substrate]
         slds = [
-            3.5e-6,
+            ambient_sld,
             layer1_sld * 1e-6,
             layer2_sld * 1e-6,
             sub_sld * 1e-6,

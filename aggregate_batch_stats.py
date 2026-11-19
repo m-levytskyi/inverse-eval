@@ -197,19 +197,44 @@ def aggregate_category(
     all_arrays: dict[str, list] = {}
 
     for batch_id in batch_ids:
-        pattern = f"{batch_id:03d}_*"
-        matches = list(base_dir.glob(pattern))
+        matches = sorted(
+            path
+            for path in base_dir.iterdir()
+            if path.is_dir()
+            and path.name.split("_")[0].isdigit()
+            and int(path.name.split("_")[0]) == batch_id
+        )
         if not matches:
             logger.info(f"  [warn] batch {batch_id} not found in {base_dir}")
             continue
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous batch {batch_id}: {matches}")
 
         batch_dir = matches[0]
         setup = parse_setup(batch_dir.name)
+        metadata_path = batch_dir / "run_metadata.json"
+        if metadata_path.exists():
+            config = json.loads(metadata_path.read_text())["config"]
+            if config["priors_type"] != "constraint_based":
+                raise ValueError(f"Expected constraint-based setup: {batch_dir}")
+            setup = {
+                "prior_width": config["priors_deviation"] * 100,
+                "fix_sld": "back"
+                if config["fix_sld_mode"] == "backing"
+                else config["fix_sld_mode"],
+                "prominent": config["use_prominent_features"],
+            }
+        if setup["prior_width"] is None:
+            raise ValueError(f"Cannot determine constraint setup: {batch_dir}")
         setup_label = (
-            f"width{setup['prior_width']}"
+            f"width{setup['prior_width']:g}"
             f"_sld{setup['fix_sld']}"
             f"{'_prominent' if setup['prominent'] else ''}"
         )
+        if setup_label in by_setup:
+            raise ValueError(
+                f"Duplicate setup {setup_label}: {by_setup[setup_label]['dir']} and {batch_dir.name}"
+            )
 
         batch_results = load_batch(batch_dir)
         n_total = len(batch_results)

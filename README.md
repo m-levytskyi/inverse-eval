@@ -103,6 +103,8 @@ py -3.11 bootstrap_windows.py
 
 Setup creates a local `.venv`, downloads the vendored `nflows_reflectorch` package and its Git LFS files, installs PyTorch plus the project dependencies, and prints the detected compute backend.
 
+The framework is pinned to commit `04427478bfc6e4ad057eb3449df0dffa24253bc8`; setup checks out that revision without pulling a moving branch. PyTorch 2.7.1 uses `cu118`, `cu126`, or `cu128` wheels; drivers reporting CUDA 12.1–12.5 use `cu118` in auto mode.
+
 By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. On macOS, the default wheel can still expose the `mps` device at runtime on Apple Silicon.
 
 The bootstrap only installs Python wheels. It does not install or repair NVIDIA drivers, CUDA toolkits, or other system dependencies.
@@ -323,6 +325,8 @@ from simple_pipeline import run_single_experiment
 
 results = run_single_experiment(
     experiment_id="s000004",
+    data_directory="dataset/test",
+    inference_backend="nf",
     enable_preprocessing=True,
 )
 print(results["param_metrics"]["overall"]["constraint_mape"])
@@ -332,6 +336,7 @@ print(results["param_metrics"]["overall"]["constraint_mape"])
 
 ```bash
 .venv/bin/python batch_pipeline.py \
+  --data-directory dataset/test \
   --layer-count 1 \
   --num-experiments 100 \
   --priors-type constraint_based \
@@ -346,14 +351,18 @@ Key flags:
 
 | Flag | Values | Description |
 |------|--------|-------------|
-| `--layer-count` | `0`, `1`, `2` | Film layer count |
+| `--layer-count` | `1`, `2` | Film layer count |
 | `--num-experiments` | integer or omit | Experiments to process (omit = all) |
-| `--priors-deviation` | `5`, `30`, `99` | Constraint width as % of true value |
+| `--priors-deviation` | `5`, `30`, `99` | For constraint-based priors, width as % of the fixed evaluation range, limited by the selected model's support |
 | `--fix-sld-mode` | `none`, `backing`, `all` | Fix SLD parameters from ground truth |
 | `--use-prominent-features` | flag | Restrict to high-contrast curve subset |
-| `--inference-backend` | `nf` | Inference backend |
-| `--config-name` | filename | NF model YAML config file |
-| `--use-sigmas-input` | flag | Pass dR as additional model input |
+| `--inference-backend` | `predict`, `nf` | Inference backend |
+| `--config-name` | filename | Model YAML config file |
+| `--use-sigmas-input` | flag | Pass measured dR to inference, including the NF likelihood; the model controls whether dR is an input channel |
+
+NF selection uses the global maximum likelihood among finite posterior samples. By default its likelihood uses `sigma = 0.2 * R + 1e-12`; `--use-sigmas-input` switches to the supplied errors. Saved NF means, standard deviations, and percentiles describe unweighted proposal samples, even when importance sampling is enabled. Effective sample size is saved separately; singleton standard deviations are unavailable (`null`).
+
+Each batch saves `run_metadata.json` with its resolved configuration, model/environment identity, and completion status. Completed experiment records are written atomically under `experiments/`, so they survive interruption or a sweep timeout. The usual `batch_results.json` remains the final aggregate. Processing failures produce a nonzero exit status; all-outlier runs are explicitly marked as having no eligible results. Comparison tools also read older result directories, whose provenance is unavailable.
 
 ### Full parameter sweep
 
@@ -403,7 +412,8 @@ Core single-experiment workflow.
 |----------|-------------|
 | `run_single_experiment(experiment_id, layer_count, ...)` | Full pipeline for one experiment; returns metrics dict |
 | `load_experimental_data(path, enable_preprocessing, ...)` | Load Q/R/dR from `.dat` file with optional filtering |
-| `run_inference(model, q, curve, prior_bounds, ...)` | Execute NF inference, return prediction dict |
+| `run_inference(model, q, curve, prior_bounds, ...)` | Execute point-estimator inference, return model Q and prediction dict |
+| `run_nf_inference(model, q, curve, prior_bounds, ...)` | Execute NF inference and select the global maximum-likelihood sample |
 
 ### `batch_pipeline.py`
 
@@ -422,7 +432,7 @@ python batch_pipeline.py [OPTIONS]
 | Class / Function | Description |
 |-----------------|-------------|
 | `BatchInferencePipeline` | Orchestrates multi-experiment processing |
-| `.run_batch_inference()` | Main entry point; discovers experiments, runs pipeline, saves JSON |
+| `.run()` | Main entry point; discovers experiments, runs pipeline, saves JSON |
 
 ### `batch_sweep_runner.py`
 
@@ -474,7 +484,11 @@ Discovers experiment files, parses true structural parameters from `model.dat`, 
 
 Calculates MAPE variants:
 - **Standard MAPE**: `|pred - true| / |true| × 100`
-- **Constraint MAPE**: `|pred - true| / constraint_width × 100` — normalises by prior half-width rather than true value, making it interpretable across different parameter scales
+- **Constraint MAPE**: `|pred - true| / constraint_width × 100` — normalises by the fixed global range in `model_constraints.json` (999 for thickness, 60 for roughness, 24 for SLD). Changing a run's prior width does not change this denominator. The production NF metric uses the global maximum-likelihood sample; truth-selected clustered modes are an oracle diagnostic.
+
+`make test`, `make lint`, `make type-check`, and `make pre-commit` use the existing root `.venv` without installing or upgrading packages. Install dependencies explicitly with the setup/dependency targets.
+
+The positional-pickle comparison and denoising scripts require the complete ordered experiment sequence `s000000` through the final pickle row. Subsets, gaps, and duplicate IDs are rejected before curve generation to prevent row misalignment.
 
 ### `find_prominent_peaks.py`
 

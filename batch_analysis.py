@@ -13,6 +13,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _constraint_mape_values(results):
+    values = []
+    for result in results.values():
+        if not result.get("success", True) or result.get("excluded_as_outlier"):
+            continue
+        metrics = result.get("param_metrics") or {}
+        value = metrics.get("overall", {}).get("constraint_mape")
+        if value is not None:
+            if not np.isfinite(value) or value < 0:
+                raise ValueError(
+                    "Successful results must contain finite, nonnegative constraint MAPE"
+                )
+            values.append(value)
+    return values
+
+
 def create_summary_statistics(
     successful_results,
     layer_count,
@@ -21,21 +37,25 @@ def create_summary_statistics(
     narrow_priors_deviation=None,
 ):
     """Create summary statistics focused on constraint-based MAPE."""
-    constraint_mape_values = []
-
-    for exp_id, result in successful_results.items():
-        if "param_metrics" in result and result["param_metrics"]:
-            param_metrics = result["param_metrics"]
-            overall = param_metrics.get("overall", {})
-            if isinstance(overall, dict):
-                if "constraint_mape" in overall:
-                    constraint_mape_values.append(overall["constraint_mape"])
+    constraint_mape_values = _constraint_mape_values(successful_results)
+    n_outliers = sum(
+        bool(result.get("excluded_as_outlier"))
+        for result in successful_results.values()
+    )
+    n_success = sum(
+        bool(result.get("success", True)) and not result.get("excluded_as_outlier")
+        for result in successful_results.values()
+    )
 
     summary = {
         "total_experiments": len(successful_results),
+        "successful_experiments": n_success,
+        "failed_experiments": len(successful_results) - n_success - n_outliers,
+        "excluded_experiments": n_outliers,
         "layer_count": layer_count,
         "preprocessing_enabled": enable_preprocessing,
         "priors_type": priors_type,
+        "priors_deviation": narrow_priors_deviation,
         "narrow_priors_deviation": narrow_priors_deviation
         if priors_type == "narrow"
         else None,
@@ -60,14 +80,24 @@ def print_summary_statistics(summary):
     """Print summary statistics focusing on constraint-based MAPE."""
     print("\nBATCH PROCESSING SUMMARY")
     print("=" * 60)
-    print(f"Total successful experiments: {summary['total_experiments']}")
+    print(f"Total experiments: {summary['total_experiments']}")
+    print(
+        f"Successful experiments: {summary.get('successful_experiments', summary['total_experiments'])}"
+    )
+    print(f"Failed experiments: {summary.get('failed_experiments', 0)}")
+    print(f"Excluded outliers: {summary.get('excluded_experiments', 0)}")
     print(f"Layer count: {summary['layer_count']}")
     print(f"Preprocessing enabled: {summary['preprocessing_enabled']}")
     print(f"Prior bounds: {summary.get('priors_type', 'unknown')}")
 
-    if summary.get("narrow_priors_deviation"):
-        deviation_percent = summary["narrow_priors_deviation"] * 100
-        print(f"Narrow priors deviation: +/-{deviation_percent:.1f}%")
+    deviation = summary.get("priors_deviation", summary.get("narrow_priors_deviation"))
+    if deviation is not None:
+        if summary.get("priors_type") == "constraint_based":
+            print(
+                f"Requested prior width: {deviation * 100:.1f}% of fixed evaluation range"
+            )
+        else:
+            print(f"Prior bounds deviation: +/-{deviation * 100:.1f}%")
 
     if "constraint_accuracy" in summary and summary["constraint_accuracy"]:
         print("\nParameter Accuracy (constraint-based MAPE):")
@@ -82,14 +112,7 @@ def print_summary_statistics(summary):
 
 def print_constraint_mape_summary(successful_results):
     """Print the constraint-based MAPE summary."""
-    constraint_mape_values = []
-
-    for result in successful_results.values():
-        if "param_metrics" in result and result["param_metrics"]:
-            overall = result["param_metrics"].get("overall", {})
-            if isinstance(overall, dict):
-                if "constraint_mape" in overall:
-                    constraint_mape_values.append(overall["constraint_mape"])
+    constraint_mape_values = _constraint_mape_values(successful_results)
 
     if not constraint_mape_values:
         print("\nNo constraint-based MAPE data available")

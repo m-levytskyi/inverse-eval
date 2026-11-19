@@ -22,19 +22,18 @@ VENDOR_DIR = ROOT / "vendor"
 FW_DIR = VENDOR_DIR / "nflows_reflectorch"
 
 FW_REPO_URL = "https://github.com/m-levytskyi/reflectorch-nflows"
-FW_REF = "dev_ml"
+FW_REF = "04427478bfc6e4ad057eb3449df0dffa24253bc8"
 
 REQ_FILE = ROOT / "requirements.txt"
 DEV_REQ_FILE = ROOT / "requirements-dev.txt"
 TORCH_REQ_CU118 = ROOT / "requirements.torch-cu118.txt"
-TORCH_REQ_CU121 = ROOT / "requirements.torch-cu121.txt"
 TORCH_REQ_CU126 = ROOT / "requirements.torch-cu126.txt"
 TORCH_REQ_CU128 = ROOT / "requirements.torch-cu128.txt"
 
 MIN_PYTHON = (3, 10)
 MAX_PYTHON = (3, 12)
 TORCH_VERSION = "2.7.1"
-SUPPORTED_TORCH_WHEELS = ("auto", "cpu", "cu118", "cu121", "cu126", "cu128")
+SUPPORTED_TORCH_WHEELS = ("auto", "cpu", "cu118", "cu126", "cu128")
 
 
 @dataclass(frozen=True)
@@ -54,12 +53,11 @@ class TorchSelection:
 TORCH_BACKENDS: dict[str, TorchBackend] = {
     "cpu": TorchBackend(name="cpu", min_cuda=None, req_file=None),
     "cu118": TorchBackend(name="cu118", min_cuda=(11, 8), req_file=TORCH_REQ_CU118),
-    "cu121": TorchBackend(name="cu121", min_cuda=(12, 1), req_file=TORCH_REQ_CU121),
     "cu126": TorchBackend(name="cu126", min_cuda=(12, 6), req_file=TORCH_REQ_CU126),
     "cu128": TorchBackend(name="cu128", min_cuda=(12, 8), req_file=TORCH_REQ_CU128),
 }
 
-CUDA_BACKEND_PREFERENCE = ("cu128", "cu126", "cu121", "cu118")
+CUDA_BACKEND_PREFERENCE = ("cu128", "cu126", "cu118")
 
 
 class BootstrapError(RuntimeError):
@@ -513,20 +511,11 @@ def clone_or_update_framework() -> None:
         next_step="Check your network connection and try again.",
     )
     run(
-        ["git", "checkout", FW_REF],
+        ["git", "checkout", "--detach", FW_REF],
         cwd=FW_DIR,
         step="Checking out pinned framework ref",
         likely_cause=f"The pinned framework ref `{FW_REF}` could not be checked out.",
         next_step="Verify that the repository still contains that ref, or update the pinned ref in `bootstrap.py`.",
-    )
-    run(
-        ["git", "pull", "--ff-only", "origin", FW_REF],
-        cwd=FW_DIR,
-        step="Fast-forwarding framework repository",
-        likely_cause="The local framework branch cannot be fast-forwarded cleanly to the pinned remote branch.",
-        next_step=(
-            "Inspect `vendor/nflows_reflectorch`, resolve any local branch state issues, or delete the directory and rerun setup."
-        ),
     )
 
 
@@ -584,7 +573,7 @@ def install_torch(torch_wheel: str) -> TorchSelection:
             likely_cause="PyTorch CPU/default wheels could not be downloaded or installed.",
             next_step=(
                 "Check your network connection, then retry. If you need a specific CUDA build, rerun with "
-                "`TORCH_WHEEL=cu121` or another supported CUDA override."
+                "`TORCH_WHEEL=cu118` or another supported CUDA override."
             ),
         )
         return selection

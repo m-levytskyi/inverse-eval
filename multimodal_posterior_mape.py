@@ -11,31 +11,7 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import silhouette_score
 
 from constraints_utils import get_constraint_width
-
-
-def _as_2d_samples(samples) -> np.ndarray:
-    samples_array = np.asarray(samples, dtype=float)
-    if samples_array.ndim != 2:
-        raise ValueError(
-            f"samples must be 2D (num_samples, num_params), got {samples_array.shape}"
-        )
-    if samples_array.shape[0] == 0 or samples_array.shape[1] == 0:
-        raise ValueError("samples must contain at least one sample and one parameter")
-    return samples_array
-
-
-def _as_1d_log_likelihoods(log_likelihoods, num_samples: int) -> np.ndarray:
-    log_likelihoods_array = np.asarray(log_likelihoods, dtype=float)
-    if log_likelihoods_array.ndim != 1:
-        raise ValueError(
-            f"log_likelihoods must be 1D, got {log_likelihoods_array.shape}"
-        )
-    if log_likelihoods_array.shape[0] != num_samples:
-        raise ValueError(
-            "log_likelihoods length must match samples, "
-            f"got {log_likelihoods_array.shape[0]} and {num_samples}"
-        )
-    return log_likelihoods_array
+from nf_statistics import select_global_ml_index, validate_nf_samples
 
 
 def _constraint_widths(param_names: Iterable[str]) -> np.ndarray:
@@ -43,10 +19,6 @@ def _constraint_widths(param_names: Iterable[str]) -> np.ndarray:
     if np.any(widths <= 0):
         raise ValueError(f"constraint widths must be positive, got {widths}")
     return widths
-
-
-def _valid_rows(samples: np.ndarray, log_likelihoods: np.ndarray) -> np.ndarray:
-    return np.isfinite(log_likelihoods) & np.all(np.isfinite(samples), axis=1)
 
 
 def constraint_mape(pred_params, true_params, param_names: Iterable[str]) -> float:
@@ -66,18 +38,16 @@ def constraint_mape(pred_params, true_params, param_names: Iterable[str]) -> flo
     return float(np.mean(np.abs(pred - true) / widths * 100.0))
 
 
-def select_current_ml_sample(samples, log_likelihoods, true_params, param_names):
+def select_current_ml_sample(
+    samples, log_likelihoods, true_params, param_names, valid_mask=None
+):
     """Select the same single point estimate as the current NF pipeline."""
-    samples_array = _as_2d_samples(samples)
-    log_likelihoods_array = _as_1d_log_likelihoods(
-        log_likelihoods, samples_array.shape[0]
+    samples_array, log_likelihoods_array, valid_mask = validate_nf_samples(
+        samples, log_likelihoods, valid_mask
     )
-    valid_mask = _valid_rows(samples_array, log_likelihoods_array)
-    if not np.any(valid_mask):
-        raise ValueError("posterior contains no finite sample/log-likelihood rows")
-
-    valid_indices = np.flatnonzero(valid_mask)
-    selected_index = int(valid_indices[np.argmax(log_likelihoods_array[valid_mask])])
+    selected_index = select_global_ml_index(
+        samples_array, log_likelihoods_array, valid_mask
+    )
     selected_params = samples_array[selected_index]
 
     return {
@@ -114,19 +84,16 @@ def select_multimodal_ml_sample(
     param_names,
     k_values=(1, 2, 3, 4, 5),
     random_state: int = 0,
+    valid_mask=None,
 ):
     """Select the closest local-ML posterior mode after k-means clustering.
 
     `k=1` is treated as the current global ML baseline with silhouette 0.0,
     because the sklearn silhouette score is undefined for one cluster.
     """
-    samples_array = _as_2d_samples(samples)
-    log_likelihoods_array = _as_1d_log_likelihoods(
-        log_likelihoods, samples_array.shape[0]
+    samples_array, log_likelihoods_array, valid_mask = validate_nf_samples(
+        samples, log_likelihoods, valid_mask
     )
-    valid_mask = _valid_rows(samples_array, log_likelihoods_array)
-    if not np.any(valid_mask):
-        raise ValueError("posterior contains no finite sample/log-likelihood rows")
 
     valid_indices = np.flatnonzero(valid_mask)
     valid_samples = samples_array[valid_mask]
@@ -170,6 +137,9 @@ def select_multimodal_ml_sample(
             best_score = score
             best_labels = labels
             selected_k = k
+
+    if not np.isfinite(best_score):
+        best_score = 0.0
 
     mode_rows = []
     for cluster_label in sorted(np.unique(best_labels).tolist()):

@@ -8,14 +8,22 @@ experiments, building upon the single experiment processing in simple_pipeline.
 
 import sys
 import argparse
-import json
+import hashlib
+import math
 import time
 import logging
+import subprocess
+from importlib import metadata
 from pathlib import Path
 from datetime import datetime
+import torch
 
 # Import core functionality
-from simple_pipeline import run_single_experiment
+from simple_pipeline import (
+    create_inference_model,
+    resolve_inference_config,
+    run_single_experiment,
+)
 from parameter_discovery import (
     discover_batch_experiments,
     parse_true_parameters_from_model_file,
@@ -29,7 +37,7 @@ from batch_analysis import (
     detect_edge_cases,
 )
 from plotting_utils import create_batch_analysis_plots
-from utils import convert_to_json_serializable, ensure_directory_exists
+from utils import ensure_directory_exists, write_json_atomic
 from find_prominent_peaks import find_experiments_with_prominent_peaks
 
 # =============================================================================
@@ -66,6 +74,60 @@ DEFAULT_USE_PROMINENT_FEATURES = False  # Prominent features analysis
 
 
 logger = logging.getLogger(__name__)
+
+
+def _file_identity(path):
+    path = Path(path).resolve()
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "path": str(path),
+        "sha256": digest.hexdigest(),
+        "size_bytes": path.stat().st_size,
+    }
+
+
+def _collect_provenance():
+    root = Path(__file__).resolve().parent
+    provenance = {"python": sys.version.split()[0], "packages": {}}
+    for package in ("reflectorch", "torch", "numpy", "scipy"):
+        try:
+            provenance["packages"][package] = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            provenance["packages"][package] = None
+    for name, path in (
+        ("repository", root),
+        ("framework", root / "vendor/nflows_reflectorch"),
+    ):
+        try:
+            commit = subprocess.run(
+                ["git", "-C", str(path), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+            dirty = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(path),
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=no",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+            provenance[name] = {"commit": commit, "dirty": bool(dirty)}
+        except (OSError, subprocess.SubprocessError):
+            provenance[name] = {"commit": None, "dirty": None}
+    provenance["constraints"] = _file_identity(root / "model_constraints.json")
+    return provenance
 
 
 class BatchInferencePipeline:
@@ -117,11 +179,17 @@ class BatchInferencePipeline:
             config_name: Optional reflectorch config name (overrides backend default)
             nf_num_samples: NF backend only: number of samples
             nf_enable_importance_sampling: NF backend only: importance sampling toggle
-            use_sigmas_input: Use sigmas as additional input channel to neural network (requires 2-channel model)
+            use_sigmas_input: Supply measured uncertainties to the inference backend
         """
-        self.experiment_ids = experiment_ids
+        if num_experiments is not None and num_experiments < 0:
+            raise ValueError("num_experiments must be nonnegative or None")
+        if nf_num_samples <= 0:
+            raise ValueError("nf_num_samples must be positive")
+        self.experiment_ids = (
+            list(dict.fromkeys(experiment_ids)) if experiment_ids else None
+        )
         self.num_experiments = (
-            len(experiment_ids) if experiment_ids else num_experiments
+            len(self.experiment_ids) if self.experiment_ids else num_experiments
         )
         self.layer_count = layer_count
         self.data_directory = Path(data_directory)
@@ -133,7 +201,9 @@ class BatchInferencePipeline:
         self.use_prominent_features = use_prominent_features
         self.use_theoretical = use_theoretical
         self.inference_backend = inference_backend
-        self.config_name = config_name
+        self.config_name = resolve_inference_config(
+            layer_count, inference_backend, config_name
+        )
         self.nf_num_samples = nf_num_samples
         self.nf_enable_importance_sampling = nf_enable_importance_sampling
         self.use_sigmas_input = use_sigmas_input
@@ -151,6 +221,50 @@ class BatchInferencePipeline:
         folder_name = self._generate_folder_name(timestamp)
         self.output_dir = self.base_output_dir / folder_name
         ensure_directory_exists(self.output_dir)
+        self.results = {}
+        self._inference_model = None
+        self._model_error = None
+        self.run_metadata = {
+            "config": {
+                "num_experiments": self.num_experiments,
+                "experiment_ids": self.experiment_ids,
+                "layer_count": self.layer_count,
+                "data_directory": str(self.data_directory.resolve()),
+                "enable_preprocessing": self.enable_preprocessing,
+                "preprocessing_threshold": DEFAULT_PREPROCESSING_THRESHOLD,
+                "preprocessing_consecutive": DEFAULT_PREPROCESSING_CONSECUTIVE,
+                "preprocessing_remove_singles": DEFAULT_PREPROCESSING_REMOVE_SINGLES,
+                "apply_constraints": self.apply_constraints,
+                "priors_type": self.priors_type,
+                "priors_deviation": self.narrow_priors_deviation
+                if self.use_narrow_priors
+                else 0.5,
+                "fix_sld_mode": self.fix_sld_mode,
+                "use_prominent_features": self.use_prominent_features,
+                "use_theoretical": self.use_theoretical,
+                "inference_backend": self.inference_backend,
+                "config_name": self.config_name,
+                "nf_num_samples": self.nf_num_samples,
+                "nf_enable_importance_sampling": self.nf_enable_importance_sampling,
+                "use_sigmas_input": self.use_sigmas_input,
+                "clip_prediction": True,
+                "q_resolution": 0.1,
+                "metric_policy": "constraint_mape_global_max_log_likelihood"
+                if self.inference_backend == "nf"
+                else "constraint_mape_polished_prediction",
+                "noise_policy": "provided_sigmas"
+                if self.use_sigmas_input
+                else (
+                    "relative_0.2_absolute_floor_1e-12"
+                    if self.inference_backend == "nf"
+                    else "model_default"
+                ),
+            },
+            "provenance": _collect_provenance(),
+            "experiment_ids": [],
+            "started_at": datetime.now().astimezone().isoformat(),
+        }
+        self._write_metadata("initialized")
 
         logger.info(f"Output directory: {self.output_dir}")
         logger.info(f"Layer count: {self.layer_count}")
@@ -184,6 +298,64 @@ class BatchInferencePipeline:
         logger.info(
             f"Prominent features: {'enabled' if self.use_prominent_features else 'disabled'}"
         )
+
+    def _write_metadata(self, status):
+        self.run_metadata["status"] = status
+        self.run_metadata["counts"] = {
+            "completed": len(self.results),
+            "successful": sum(
+                bool(value.get("success")) for value in self.results.values()
+            ),
+            "failed": sum(
+                not value.get("success") and not value.get("excluded_as_outlier")
+                for value in self.results.values()
+            ),
+            "outliers": sum(
+                bool(value.get("excluded_as_outlier"))
+                for value in self.results.values()
+            ),
+        }
+        write_json_atomic(self.output_dir / "run_metadata.json", self.run_metadata)
+
+    def _get_inference_model(self):
+        if self._model_error is not None:
+            raise RuntimeError(self._model_error)
+        if self._inference_model is None:
+            try:
+                self._inference_model = create_inference_model(
+                    layer_count=self.layer_count,
+                    inference_backend=self.inference_backend,
+                    config_name=self.config_name,
+                )
+                model = self._inference_model
+                self.run_metadata["config"]["inference_device"] = str(model.device)
+                self.run_metadata["provenance"]["model_config"] = _file_identity(
+                    Path(model.config_dir) / model.config_name
+                )
+                self.run_metadata["provenance"]["model_weights"] = _file_identity(
+                    Path(model.model_dir) / model.model_name
+                )
+                self._write_metadata("running")
+            except Exception as error:
+                self._model_error = (
+                    f"Model initialization failed: {type(error).__name__}: {error}"
+                )
+                raise RuntimeError(self._model_error) from error
+        return self._inference_model
+
+    def _record_result(self, experiment_id, result):
+        if (
+            not experiment_id
+            or experiment_id in (".", "..")
+            or any(char in experiment_id for char in ("/", "\\"))
+        ):
+            raise ValueError(
+                f"Invalid experiment ID for a result filename: {experiment_id!r}"
+            )
+        write_json_atomic(
+            self.output_dir / "experiments" / f"{experiment_id}.json", result
+        )
+        self.results[experiment_id] = result
 
     def _get_next_index(self):
         """Get the next available index by scanning existing directories."""
@@ -264,75 +436,29 @@ class BatchInferencePipeline:
         return "_".join(components)
 
     def discover_experiments(self):
-        """
-        Discover available experiments using the parameter_discovery module.
-        If use_prominent_features is enabled, filter experiments by prominent peaks.
-
-        Returns:
-            List of experiment IDs
-        """
+        """Select a deterministic, deduplicated set, then apply the requested limit."""
+        experiments = discover_batch_experiments(
+            data_directory=str(self.data_directory),
+            layer_count=self.layer_count,
+            num_experiments=None,
+            experiment_ids=self.experiment_ids,
+            use_theoretical=self.use_theoretical,
+        )
+        experiments = list(dict.fromkeys(experiments))
+        if not self.experiment_ids:
+            experiments.sort()
         if self.use_prominent_features:
-            logger.info("\nPROMINENT FEATURES MODE ENABLED")
-
-            # Find experiments with prominent peaks
-            experiments_with_peaks = find_experiments_with_prominent_peaks(
-                layer_count=self.layer_count,
-                data_directory=str(self.data_directory),
-                verbose=True,
-            )
-
-            if not experiments_with_peaks:
-                logger.info("No experiments with prominent peaks found!")
-                return []
-
-            # Update experiment count based on filtered results
-            original_num = self.num_experiments
-            self.num_experiments = len(experiments_with_peaks)
-
-            logger.info("\nPROMINENT FEATURES FILTERING RESULTS:")
-            logger.info(
-                f"  Found {len(experiments_with_peaks)} experiments with prominent peaks"
-            )
-            logger.info(f"  Original request: {original_num} experiments")
-            logger.info(f"  Updated count: {self.num_experiments} experiments")
-
-            # If specific experiment_ids were provided, filter them
-            if self.experiment_ids:
-                # Intersect provided IDs with experiments that have peaks
-                filtered_ids = [
-                    exp_id
-                    for exp_id in self.experiment_ids
-                    if exp_id in experiments_with_peaks
-                ]
-                logger.info("  Filtering provided experiment IDs...")
-                logger.info(f"  Provided: {len(self.experiment_ids)} experiments")
-                logger.info(f"  With prominent peaks: {len(filtered_ids)} experiments")
-
-                if not filtered_ids:
-                    logger.info(
-                        "None of the provided experiment IDs have prominent peaks!"
-                    )
-                    return []
-
-                return filtered_ids
-            else:
-                # Use the first N experiments with peaks
-                selected_experiments = experiments_with_peaks[: self.num_experiments]
-                logger.info(
-                    f"  Selected first {len(selected_experiments)} experiments with peaks"
+            experiments_with_peaks = set(
+                find_experiments_with_prominent_peaks(
+                    layer_count=self.layer_count,
+                    data_directory=str(self.data_directory),
+                    verbose=True,
                 )
-                logger.info(f"  Examples: {selected_experiments[:5]}")
-                return selected_experiments
-
-        else:
-            # Standard experiment discovery
-            return discover_batch_experiments(
-                data_directory=str(self.data_directory),
-                layer_count=self.layer_count,
-                num_experiments=self.num_experiments,
-                experiment_ids=self.experiment_ids,
-                use_theoretical=self.use_theoretical,
             )
+            experiments = [
+                exp_id for exp_id in experiments if exp_id in experiments_with_peaks
+            ]
+        return experiments[: self.num_experiments]
 
     def process_single_experiment_wrapper(self, experiment_id):
         """
@@ -351,7 +477,6 @@ class BatchInferencePipeline:
         start_time = time.time()
 
         try:
-            # First attempt: Use configured priors (narrow if enabled)
             results = run_single_experiment(
                 experiment_id=experiment_id,
                 layer_count=self.layer_count,
@@ -372,6 +497,7 @@ class BatchInferencePipeline:
                 nf_enable_importance_sampling=self.nf_enable_importance_sampling,
                 use_sigmas_input=self.use_sigmas_input,
                 data_directory=str(self.data_directory),
+                inference_model=self._get_inference_model(),
             )
 
             # Success with primary priors
@@ -413,7 +539,7 @@ class BatchInferencePipeline:
         """
         logger.info(f"\nProcessing {len(experiments)} experiments sequentially...")
 
-        all_results = {}
+        all_results = self.results
         successful_count = 0
         failed_count = 0
         outlier_count = 0
@@ -421,6 +547,7 @@ class BatchInferencePipeline:
 
         for i, exp_id in enumerate(experiments, 1):
             logger.info(f"\nProgress: {i}/{len(experiments)} experiments")
+            result = None
 
             # Check for outliers if using constraint-based priors
             if self.priors_type == "constraint_based":
@@ -457,7 +584,7 @@ class BatchInferencePipeline:
                                 )
 
                             # Record as outlier
-                            all_results[exp_id] = {
+                            result = {
                                 "experiment_id": exp_id,
                                 "success": False,
                                 "excluded_as_outlier": True,
@@ -472,18 +599,32 @@ class BatchInferencePipeline:
                                 ],
                                 "processing_time": 0,
                             }
-                            outlier_count += 1
-                            continue  # Skip processing this experiment
-
+                            invalid = [
+                                f"{name}={value}"
+                                for name, value, _, _ in outlier_params
+                                if not math.isfinite(value)
+                            ]
+                            if invalid:
+                                result = {
+                                    "experiment_id": exp_id,
+                                    "success": False,
+                                    "processing_time": 0,
+                                    "error_type": "ValueError",
+                                    "error": "Non-finite true parameters: "
+                                    + ", ".join(invalid),
+                                }
                 except (OSError, ValueError, KeyError) as e:
                     logger.warning("  Could not check for outliers: %s", e)
                     # Continue with normal processing if outlier check fails
 
             # Process experiment normally
-            result = self.process_single_experiment_wrapper(exp_id)
-            all_results[exp_id] = result
+            if result is None:
+                result = self.process_single_experiment_wrapper(exp_id)
+            self._record_result(exp_id, result)
 
-            if result.get("success", False):
+            if result.get("excluded_as_outlier", False):
+                outlier_count += 1
+            elif result.get("success", False):
                 successful_count += 1
             else:
                 failed_count += 1
@@ -498,7 +639,7 @@ class BatchInferencePipeline:
         if outlier_count > 0:
             logger.info(f"  Excluded as outliers: {outlier_count}")
         logger.info(
-            f"  Average time per experiment: {total_time / len(experiments):.1f} seconds"
+            f"  Average time per experiment: {total_time / len(experiments) if experiments else 0:.1f} seconds"
         )
 
         return all_results
@@ -510,11 +651,7 @@ class BatchInferencePipeline:
         # Save detailed results as JSON
         results_file = self.output_dir / "batch_results.json"
 
-        # Convert to JSON serializable format
-        json_results = convert_to_json_serializable(all_results)
-
-        with open(results_file, "w", encoding="utf-8") as f:
-            json.dump(json_results, f, indent=2)
+        write_json_atomic(results_file, all_results)
 
         logger.info(f"  Detailed results saved to: {results_file}")
 
@@ -531,10 +668,7 @@ class BatchInferencePipeline:
         # Save failed experiments (excluding outliers) to separate file
         if failed_results:
             failed_file = self.output_dir / "failed_experiments.json"
-            failed_json_results = convert_to_json_serializable(failed_results)
-
-            with open(failed_file, "w", encoding="utf-8") as f:
-                json.dump(failed_json_results, f, indent=2)
+            write_json_atomic(failed_file, failed_results)
 
             logger.info(f"  Failed experiments saved to: {failed_file}")
             logger.info(f"  Total failed experiments: {len(failed_results)}")
@@ -544,10 +678,7 @@ class BatchInferencePipeline:
         # Save outliers to separate file
         if outlier_results:
             outlier_file = self.output_dir / "outlier_experiments.json"
-            outlier_json_results = convert_to_json_serializable(outlier_results)
-
-            with open(outlier_file, "w", encoding="utf-8") as f:
-                json.dump(outlier_json_results, f, indent=2)
+            write_json_atomic(outlier_file, outlier_results)
 
             logger.info(f"  Outlier experiments saved to: {outlier_file}")
             logger.info(f"  Total outlier experiments: {len(outlier_results)}")
@@ -557,28 +688,18 @@ class BatchInferencePipeline:
             k: v for k, v in all_results.items() if v.get("success", False)
         }
 
+        summary = create_summary_statistics(
+            all_results,
+            self.layer_count,
+            self.enable_preprocessing,
+            self.priors_type,
+            self.narrow_priors_deviation if self.use_narrow_priors else 0.5,
+        )
+        summary_file = self.output_dir / f"batch_summary_{self.layer_count}layer.json"
+        write_json_atomic(summary_file, summary)
+        logger.info(f"  Summary statistics saved to: {summary_file}")
+        print_summary_statistics(summary)
         if successful_results:
-            summary = create_summary_statistics(
-                successful_results,
-                self.layer_count,
-                self.enable_preprocessing,
-                self.priors_type,
-                self.narrow_priors_deviation if self.use_narrow_priors else None,
-            )
-
-            # Save summary
-            summary_file = (
-                self.output_dir / f"batch_summary_{self.layer_count}layer.json"
-            )
-            with open(summary_file, "w", encoding="utf-8") as f:
-                json.dump(summary, f, indent=2)
-
-            logger.info(f"  Summary statistics saved to: {summary_file}")
-
-            # Print summary to console
-            print_summary_statistics(summary)
-
-            # Print MAPE distribution
             print_constraint_mape_summary(successful_results)
 
         return (
@@ -596,20 +717,36 @@ class BatchInferencePipeline:
 
         start_time = time.time()
 
-        # Discover experiments
-        experiments = self.discover_experiments()
+        try:
+            self.run_metadata["provenance"]["torch_initial_seed"] = torch.initial_seed()
+            experiments = self.discover_experiments()
+            self.run_metadata["experiment_ids"] = experiments
+            self._write_metadata("running")
+            if not experiments:
+                logger.error("No experiments found!")
+                self.save_results({})
+                self._write_metadata("failed")
+                return None
+            all_results = self.process_experiments_sequential(experiments)
+            _, successful_count, total_count, failed_count, outlier_count = (
+                self.save_results(all_results)
+            )
+        except KeyboardInterrupt:
+            self.save_results(self.results)
+            self._write_metadata("interrupted")
+            raise
+        except Exception as error:
+            self.run_metadata["error"] = f"{type(error).__name__}: {error}"
+            self._write_metadata("failed")
+            raise
 
-        if not experiments:
-            logger.info("No experiments found!")
-            return None
-
-        # Process experiments sequentially
-        all_results = self.process_experiments_sequential(experiments)
-
-        # Save results
-        _, successful_count, total_count, failed_count, outlier_count = (
-            self.save_results(all_results)
+        status = (
+            "failed"
+            if failed_count
+            else ("completed" if successful_count else "completed_no_eligible_results")
         )
+        self.run_metadata["finished_at"] = datetime.now().astimezone().isoformat()
+        self._write_metadata(status)
 
         # Detect edge cases
         successful_results = {
@@ -640,6 +777,7 @@ class BatchInferencePipeline:
         logger.info(f"\n{'=' * 60}")
         logger.info("BATCH PIPELINE COMPLETED")
         logger.info(f"{'=' * 60}")
+        logger.info("Batch status: %s", status)
         logger.info(f"Total time: {total_pipeline_time:.1f} seconds")
         logger.info(f"Successful experiments: {successful_count}/{total_count}")
         if outlier_count > 0:
@@ -751,7 +889,7 @@ def parse_arguments():
     parser.add_argument(
         "--use-sigmas-input",
         action="store_true",
-        help="Use sigmas as additional input channel to neural network (requires 2-channel model)",
+        help="Supply measured uncertainties to the inference backend",
     )
     parser.add_argument(
         "--use-theoretical",
@@ -767,41 +905,45 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = parse_arguments()
 
-    # Create batch pipeline
-    batch_pipeline = BatchInferencePipeline(
-        num_experiments=args.num_experiments,
-        layer_count=args.layer_count,
-        output_dir=args.output_dir,
-        data_directory=args.data_directory,
-        enable_preprocessing=not args.disable_preprocessing,
-        apply_constraints=not args.disable_constraints,
-        fix_sld_mode=args.fix_sld_mode,
-        experiment_ids=args.experiment_ids,
-        use_prominent_features=args.use_prominent_features,
-        narrow_priors_deviation=args.priors_deviation
-        / 100.0,  # Convert percentage to decimal
-        priors_type=args.priors_type,
-        inference_backend=args.inference_backend,
-        config_name=args.config_name,
-        nf_num_samples=args.nf_num_samples,
-        nf_enable_importance_sampling=not args.nf_disable_importance_sampling,
-        use_sigmas_input=args.use_sigmas_input,
-        use_theoretical=args.use_theoretical,
-    )
-
-    # Run the pipeline
     try:
+        batch_pipeline = BatchInferencePipeline(
+            num_experiments=args.num_experiments,
+            layer_count=args.layer_count,
+            output_dir=args.output_dir,
+            data_directory=args.data_directory,
+            enable_preprocessing=not args.disable_preprocessing,
+            apply_constraints=not args.disable_constraints,
+            fix_sld_mode=args.fix_sld_mode,
+            experiment_ids=args.experiment_ids,
+            use_prominent_features=args.use_prominent_features,
+            narrow_priors_deviation=args.priors_deviation / 100.0,
+            priors_type=args.priors_type,
+            inference_backend=args.inference_backend,
+            config_name=args.config_name,
+            nf_num_samples=args.nf_num_samples,
+            nf_enable_importance_sampling=not args.nf_disable_importance_sampling,
+            use_sigmas_input=args.use_sigmas_input,
+            use_theoretical=args.use_theoretical,
+        )
         results = batch_pipeline.run()
         if results is None:
             logger.info("\nBatch pipeline failed: No experiments found")
-            sys.exit(1)
+            return 1
+        if any(
+            not value.get("success") and not value.get("excluded_as_outlier")
+            for value in results.values()
+        ):
+            logger.error("\nBatch pipeline completed with processing failures")
+            return 1
         logger.info("\nBatch pipeline completed successfully!")
+        return 0
     except KeyboardInterrupt:
         logger.warning("\nBatch pipeline interrupted by user")
+        return 130
     except (OSError, ValueError, KeyError, RuntimeError) as e:
         logger.exception("\nBatch pipeline failed: %s", e)
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
