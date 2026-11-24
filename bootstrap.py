@@ -179,7 +179,7 @@ def resolve_torch_backend(
         return TorchSelection(
             requested=requested_mode,
             resolved="cpu",
-            reason="macOS uses the default PyTorch wheel; Apple Silicon may still use the MPS runtime at execution time.",
+            reason="macOS uses the default PyTorch wheel for CPU evaluation.",
         )
 
     if not supports_explicit_cuda_install(platform_name, machine):
@@ -629,17 +629,17 @@ def check_torch(torch_wheel: str) -> None:
     selection = resolve_torch_backend(torch_wheel)
     code = (
         "import torch; "
+        "from device_utils import detect_torch_device; "
         f"print('requested mode', {selection.requested!r}); "
         f"print('resolved backend', {selection.resolved!r}); "
         f"print('resolution details', {selection.reason!r}); "
         "print('torch', torch.__version__); "
         "print('cuda available', torch.cuda.is_available()); "
-        "print('mps available', getattr(getattr(torch.backends, 'mps', None), 'is_available', lambda: False)()); "
-        "print('device', 'cuda' if torch.cuda.is_available() else "
-        "('mps' if getattr(getattr(torch.backends, 'mps', None), 'is_available', lambda: False)() else 'cpu'))"
+        "print('default evaluation device', detect_torch_device())"
     )
     run(
         [str(venv_python()), "-c", code],
+        cwd=ROOT,
         step="Checking PyTorch backend",
         likely_cause="PyTorch is not installed correctly inside `.venv`, or the selected backend is unavailable.",
         next_step="Rerun `make torch` with a different wheel if needed, then retry `make check-torch`.",

@@ -18,6 +18,8 @@ from pathlib import Path
 from datetime import datetime
 import torch
 
+from device_utils import INFERENCE_DEVICES, detect_torch_device
+
 # Import core functionality
 from simple_pipeline import (
     create_inference_model,
@@ -155,6 +157,7 @@ class BatchInferencePipeline:
         nf_num_samples=1000,
         nf_enable_importance_sampling=True,
         use_sigmas_input=False,
+        inference_device=None,
     ):
         """
         Initialize the batch inference pipeline.
@@ -180,6 +183,7 @@ class BatchInferencePipeline:
             nf_num_samples: NF backend only: number of samples
             nf_enable_importance_sampling: NF backend only: importance sampling toggle
             use_sigmas_input: Supply measured uncertainties to the inference backend
+            inference_device: PyTorch device ("cpu" by default, or "cuda")
         """
         if num_experiments is not None and num_experiments < 0:
             raise ValueError("num_experiments must be nonnegative or None")
@@ -207,6 +211,7 @@ class BatchInferencePipeline:
         self.nf_num_samples = nf_num_samples
         self.nf_enable_importance_sampling = nf_enable_importance_sampling
         self.use_sigmas_input = use_sigmas_input
+        self.inference_device = detect_torch_device(inference_device)
 
         # Determine priors type - explicit parameter takes precedence
         if priors_type is not None:
@@ -326,6 +331,7 @@ class BatchInferencePipeline:
                     layer_count=self.layer_count,
                     inference_backend=self.inference_backend,
                     config_name=self.config_name,
+                    inference_device=self.inference_device,
                 )
                 model = self._inference_model
                 self.run_metadata["config"]["inference_device"] = str(model.device)
@@ -870,6 +876,11 @@ def parse_arguments():
         help="Inference backend: predict (default) or nf",
     )
     parser.add_argument(
+        "--device",
+        choices=INFERENCE_DEVICES,
+        help="Inference device (default: cpu)",
+    )
+    parser.add_argument(
         "--config-name",
         type=str,
         default=None,
@@ -924,6 +935,7 @@ def main():
             nf_enable_importance_sampling=not args.nf_disable_importance_sampling,
             use_sigmas_input=args.use_sigmas_input,
             use_theoretical=args.use_theoretical,
+            inference_device=args.device,
         )
         results = batch_pipeline.run()
         if results is None:

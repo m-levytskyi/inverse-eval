@@ -105,7 +105,7 @@ Setup creates a local `.venv`, downloads the vendored `nflows_reflectorch` packa
 
 The framework is pinned to commit `04427478bfc6e4ad057eb3449df0dffa24253bc8`; setup checks out that revision without pulling a moving branch. PyTorch 2.7.1 uses `cu118`, `cu126`, or `cu128` wheels; drivers reporting CUDA 12.1–12.5 use `cu118` in auto mode.
 
-By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. On macOS, the default wheel can still expose the `mps` device at runtime on Apple Silicon.
+By default, setup uses `TORCH_WHEEL=auto`, which tries to select the best repo-pinned backend for the current machine and falls back to the default CPU wheel whenever CUDA is unavailable or unsupported. Evaluation runs use CPU by default, including on machines with CUDA available.
 
 The bootstrap only installs Python wheels. It does not install or repair NVIDIA drivers, CUDA toolkits, or other system dependencies.
 
@@ -130,7 +130,6 @@ On Windows:
 - Missing Git: install Git and retry after reopening the terminal.
 - Missing Git LFS: install Git LFS, run `git lfs install` once, and rerun setup.
 - Torch wheel mismatch: force CPU with `make setup TORCH_WHEEL=cpu` on macOS/Linux or `python bootstrap_windows.py --torch-wheel cpu` on Windows. You can also keep the default `auto` mode and let setup fall back automatically when CUDA is not usable.
-- Apple Silicon: use the default `auto` mode; PyTorch can still report `device mps` after install.
 - Windows `c10.dll` or `WinError 1114`: install or repair the Microsoft Visual C++ Redistributable 2015-2022 (x64), reboot if prompted, then rerun the Windows bootstrap.
 - Windows + Conda: if you launched setup from an activated Conda `base` shell, close it and rerun from a normal PowerShell window with `python bootstrap_windows.py`, since Conda DLLs can interfere with PyTorch imports in `.venv`.
 
@@ -141,6 +140,10 @@ On macOS/Linux, maintenance targets such as `make venv`, `make framework`, `make
 ## Notebooks (Quick Start)
 
 After setup, the notebooks are the easiest way to explore the pipeline:
+
+Inference notebooks default to CPU. Set `INFERENCE_DEVICE = "cuda"` in the
+notebook to use an available NVIDIA GPU. Saved outputs can reflect earlier
+runs on different hardware.
 
 
 
@@ -429,6 +432,8 @@ Windows (PowerShell, with `.venv` activated):
 python batch_pipeline.py [OPTIONS]
 ```
 
+Use `--device cuda` to run inference on an available NVIDIA GPU. The default is `cpu`.
+
 | Class / Function | Description |
 |-----------------|-------------|
 | `BatchInferencePipeline` | Orchestrates multi-experiment processing |
@@ -447,6 +452,9 @@ Windows (PowerShell, with `.venv` activated):
 ```powershell
 python batch_sweep_runner.py --config sweep_configs/baseline.yaml
 ```
+
+Sweeps default to `cpu`. Set `inference_device: cuda` in the sweep YAML or pass
+`--device cuda` to the Python command. The command-line option overrides YAML.
 
 | Class / Function | Description |
 |-----------------|-------------|

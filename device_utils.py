@@ -1,47 +1,29 @@
-"""Helpers for selecting the best available PyTorch inference device."""
+"""Helpers for selecting a supported PyTorch inference device."""
 
 from __future__ import annotations
 
 import torch
 
 
+INFERENCE_DEVICES = ("cpu", "cuda")
+
+
 def detect_torch_device(preferred_device: str | None = None) -> str:
-    """Return the best available torch device.
-
-    If ``preferred_device`` is provided, it is validated first. Otherwise the
-    function prefers CUDA, then MPS, then CPU.
-    """
-    if preferred_device is not None:
-        device = preferred_device.strip().lower()
-        if device == "cuda":
-            if torch.cuda.is_available():
-                return "cuda"
-            raise ValueError("Requested device 'cuda' is not available.")
-        if device == "mps":
-            mps_backend = getattr(torch.backends, "mps", None)
-            if mps_backend is not None and mps_backend.is_available():
-                return "mps"
-            raise ValueError("Requested device 'mps' is not available.")
-        if device == "cpu":
-            return "cpu"
+    """Validate an explicit inference device or return the CPU default."""
+    if preferred_device is None:
+        return "cpu"
+    device = (
+        preferred_device.strip().lower() if isinstance(preferred_device, str) else ""
+    )
+    if device not in INFERENCE_DEVICES:
         raise ValueError(
-            f"Unsupported device '{preferred_device}'. Expected one of: cpu, cuda, mps."
+            f"Unsupported device '{preferred_device}'. Expected one of: cpu, cuda."
         )
-
-    if torch.cuda.is_available():
-        return "cuda"
-
-    mps_backend = getattr(torch.backends, "mps", None)
-    if mps_backend is not None and mps_backend.is_available():
-        return "mps"
-
-    return "cpu"
+    if device == "cuda" and not torch.cuda.is_available():
+        raise ValueError("Requested device 'cuda' is not available.")
+    return device
 
 
 def summarize_torch_backends() -> dict[str, bool]:
-    """Return a simple availability summary for common torch backends."""
-    mps_backend = getattr(torch.backends, "mps", None)
-    return {
-        "cuda": torch.cuda.is_available(),
-        "mps": bool(mps_backend is not None and mps_backend.is_available()),
-    }
+    """Report CUDA availability. CPU is always available."""
+    return {"cuda": torch.cuda.is_available()}

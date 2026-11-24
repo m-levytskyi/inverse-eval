@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from reflectorch import EasyInferenceModel
 
-from device_utils import detect_torch_device
+from device_utils import INFERENCE_DEVICES, detect_torch_device
 from error_calculation import calculate_parameter_metrics
 from nf_statistics import validate_nf_samples
 from multimodal_posterior_mape import (
@@ -62,7 +62,13 @@ def parse_args():
     parser.add_argument("--output-dir", default="multimodal_eval_results")
     parser.add_argument("--config-name", default="example_nf_config_reflectorch.yaml")
     parser.add_argument("--nf-num-samples", type=int, default=1000)
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--device",
+        type=lambda device: device.strip().lower(),
+        choices=INFERENCE_DEVICES,
+        default="cpu",
+        help="Inference device (default: cpu)",
+    )
     parser.add_argument("--k-values", default="1,2,3,4,5")
     parser.add_argument("--use-theoretical", action="store_true")
     return parser.parse_args()

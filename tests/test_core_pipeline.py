@@ -135,6 +135,17 @@ def test_nonzero_ambient_reaches_both_inference_backends_and_metrics_stay_absolu
             assert [name for name, _ in model.calls] == ["sample", "sample"]
 
 
+def test_injected_model_must_use_supported_device(tmp_path):
+    write_experiment(tmp_path)
+    model = FakeModel()
+    model.device = "mps"
+
+    with pytest.raises(ValueError, match="Expected cpu or cuda"):
+        run_single_experiment(
+            "s000001", data_directory=str(tmp_path), inference_model=model
+        )
+
+
 def test_true_sld_uses_parsed_ambient_and_explicit_override(tmp_path):
     _, model_path = write_experiment(tmp_path, ambient=3.5)
     truth = parse_true_parameters_from_model_file(model_path)

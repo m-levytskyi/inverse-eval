@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 from reflectorch import EasyInferenceModel
-from device_utils import detect_torch_device
+from device_utils import INFERENCE_DEVICES, detect_torch_device
 
 # Import our modular utilities
 from plotting_utils import plot_simple_comparison
@@ -508,8 +508,8 @@ def run_single_experiment(
         clip_prediction: Whether to clip predicted parameters to prior bounds (default: True)
         use_sigmas_input: Provide loaded uncertainties for likelihood/polishing;
                           the selected model controls whether they also enter the network.
-        inference_device: Optional explicit torch device ("cpu", "cuda", or "mps").
-                         If None, automatically prefers CUDA, then MPS, then CPU.
+        inference_device: Optional torch device ("cpu" or "cuda"). Defaults to CPU
+                          when creating a model.
         data_directory: Base data directory to search for experiment files (default: "data")
         inference_model: Optional compatible model to reuse across experiments.
 
@@ -549,8 +549,13 @@ def run_single_experiment(
     else:
         _validate_inference_model(inference_model, final_layer_count, config_name)
     resolved_device = str(inference_model.device)
-    if inference_device is not None and resolved_device != str(
-        detect_torch_device(inference_device)
+    device_type = torch.device(resolved_device).type
+    if device_type not in INFERENCE_DEVICES:
+        raise ValueError(
+            f"Unsupported model device '{resolved_device}'. Expected cpu or cuda."
+        )
+    if inference_device is not None and device_type != detect_torch_device(
+        inference_device
     ):
         raise ValueError(
             "Injected model device does not match the requested inference_device"
