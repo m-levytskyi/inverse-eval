@@ -82,6 +82,7 @@ def test_model_reused_and_all_artifacts_preserve_current_result_map(pipeline_fac
     results = pipeline.run()
     assert list(results) == ["s001", "s002"]
     assert pipeline_factory.model_loader.call_count == 1
+    assert pipeline_factory.model_loader.call_args.kwargs["inference_device"] == "cpu"
     model = pipeline_factory.model_loader.return_value
     assert all(
         call.kwargs["inference_model"] is model

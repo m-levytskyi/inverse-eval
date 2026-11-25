@@ -51,6 +51,7 @@ def test_forwards_options_and_links_actual_child_directory(tmp_path, monkeypatch
     offset = cmd.index("--experiment-ids")
     assert cmd[offset + 1 : offset + 3] == ["s002", "s001"]
     assert cmd[cmd.index("--num-experiments") + 1] == "1"
+    assert cmd[cmd.index("--device") + 1] == "cpu"
     assert result["output_dir"].endswith("run_001/001_batch")
     assert Path(result["output_dir"]).is_dir()
     saved = json.loads((runner.sweep_dir / "sweep_summary.json").read_text())
@@ -104,6 +105,7 @@ def test_timeout_keeps_child_records_and_output_link(tmp_path, monkeypatch):
 
 
 def test_cli_yaml_overrides_and_failed_sweep_exit_code(tmp_path, monkeypatch):
+    monkeypatch.setattr("device_utils.torch.cuda.is_available", lambda: True)
     config_file = tmp_path / "sweep.yaml"
     config_file.write_text(yaml.safe_dump(config(tmp_path, num_experiments=20)))
     launch = Mock(
@@ -125,6 +127,8 @@ def test_cli_yaml_overrides_and_failed_sweep_exit_code(tmp_path, monkeypatch):
             "s001",
             "--config-name",
             "custom.yaml",
+            "--device",
+            "cuda",
         ],
     )
     assert sweep.main() == 1
@@ -133,6 +137,7 @@ def test_cli_yaml_overrides_and_failed_sweep_exit_code(tmp_path, monkeypatch):
     assert "--disable-preprocessing" in cmd and "--disable-constraints" in cmd
     assert cmd[cmd.index("--experiment-ids") + 1] == "s001"
     assert cmd[cmd.index("--config-name") + 1] == "custom.yaml"
+    assert cmd[cmd.index("--device") + 1] == "cuda"
 
 
 def test_interruption_records_current_run_and_returns_130(tmp_path, monkeypatch):
@@ -159,6 +164,8 @@ def test_interruption_records_current_run_and_returns_130(tmp_path, monkeypatch)
         {"prior_deviations": [42]},
         {"sld_modes": ["invalid"]},
         {"prominent_features": ["false"]},
+        {"inference_device": "mps"},
+        {"inference_device": ["cpu", "cuda"]},
     ],
 )
 def test_invalid_sweep_combinations_fail_before_launch(tmp_path, invalid):

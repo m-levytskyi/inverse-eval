@@ -24,6 +24,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 import yaml
+from device_utils import INFERENCE_DEVICES, detect_torch_device
 from utils import write_json_atomic
 
 # =============================================================================
@@ -38,6 +39,7 @@ DEFAULT_CONFIG = {
     "priors_type": "constraint_based",
     # Inference backend configuration
     "inference_backend": "nf",
+    "inference_device": "cpu",
     "nf_config_name": "example_nf_config_reflectorch.yaml",
     "config_name": None,
     "nf_num_samples": 1000,
@@ -88,6 +90,9 @@ class BatchPipelineSweep:
         self.num_experiments = self.config["num_experiments"]
         self.layer_count = self.config["layer_count"]
         self.data_directory = self.config["data_directory"]
+        self.config["inference_device"] = detect_torch_device(
+            self.config["inference_device"]
+        )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         self.sweep_dir = (
@@ -152,6 +157,8 @@ class BatchPipelineSweep:
                 sld_mode,
                 "--inference-backend",
                 self.config["inference_backend"],
+                "--device",
+                self.config["inference_device"],
             ]
         )
 
@@ -378,6 +385,11 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--device",
+        choices=INFERENCE_DEVICES,
+        help="Override the sweep configuration's inference_device (default: cpu)",
+    )
+    parser.add_argument(
         "--config-name",
         type=str,
         help="Optional reflectorch config name (overrides backend default)",
@@ -463,6 +475,9 @@ def main():
 
     if args.inference_backend:
         config["inference_backend"] = args.inference_backend
+
+    if args.device:
+        config["inference_device"] = args.device
 
     if args.config_name:
         config["config_name"] = args.config_name
